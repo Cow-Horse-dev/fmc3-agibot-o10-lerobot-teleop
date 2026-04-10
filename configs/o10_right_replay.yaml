@@ -1,0 +1,50 @@
+# O10 右臂回放配置
+# 供脚本 `./scripts/replay_o10_right.sh` 使用。
+#
+# 这份文件用于把已经录好的 LeRobot 数据集动作回放到 O10 上。
+# 使用前最重要的是改 `dataset.root` 到你要回放的那个具体数据集目录。
+
+dataset:
+  # 数据集名字。
+  # 如果 `root` 已经直接写到了具体数据集目录，这里可以留空。
+  repo_id: null
+
+  # 要回放的具体数据集目录。
+  # 这里应当直接指向某一个已经录好的数据集目录，例如：
+  # /home/phl/workspace/dataset/Robot/agi_arm_bot/pick_and_place_20260410
+  root: /home/phl/workspace/dataset/Robot/agi_arm_bot/please_replace_with_dataset_dir
+
+replay:
+  # 回放第几个 episode，从 0 开始编号。
+  episode_index: 0
+
+  # 回放频率，单位 Hz。
+  fps: 30
+
+robot:
+  # 机器人类型。
+  # 当前 O10 右臂固定使用这个值。
+  type: pico_follower_single_arm_agibot_o10
+
+  # 机械臂 CAN 口。
+  port: can0
+
+  # 机器人名字，仅用于日志显示。
+  id: o10_right
+
+  # 当前控制的是哪一侧 O10。
+  handedness: right
+
+  # O10 手通道模式。
+  # 当前代码真正支持的只有：
+  # - multiChannel
+  channel_mode: multiChannel
+
+  # OmniHand device_id。
+  device_id: 1
+
+  # CANFD 适配器编号。
+  canfd_id: 0
+
+  # O10 channel_id。
+  channel_id: 1
