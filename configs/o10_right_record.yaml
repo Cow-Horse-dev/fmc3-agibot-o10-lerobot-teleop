@@ -1,10 +1,11 @@
-# O10 右臂录制配置
+# O10 单臂录制配置
 # 供脚本 `./scripts/record_o10_right.sh` 使用。
 #
 # 这份文件负责把数据录成 LeRobot 数据集格式。
 # 当前已经配置成：
 # - 数据保存在 /home/phl/workspace/dataset/Robot/agi_arm_bot 下面
 # - 目录名自动按“任务名 + 当天日期”生成
+# 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
 
 robot:
   # 机器人类型。
@@ -16,7 +17,7 @@ robot:
   # 机器人名字，仅用于日志显示。
   id: o10_right
 
-  # 当前控制的是哪一侧 O10。
+  # 选择“哪只 follower 手/臂”被录制并接收动作。
   handedness: right
 
   # O10 手通道模式。
@@ -31,7 +32,10 @@ robot:
   canfd_id: 0
 
   # O10 channel_id。
-  channel_id: 1
+  # 保持 null 时会自动跟随 robot.handedness：
+  # - left  -> 0
+  # - right -> 1
+  channel_id: null
 
   cameras:
     right:
@@ -68,7 +72,8 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_right
 
-  # 当前控制的是哪一侧。
+  # 选择“哪只 leader 手”来做遥操作录制。
+  # 这决定 glove 数据按左手还是右手解释。
   handedness: right
 
   # Pico wrist 位姿流端口。
@@ -90,6 +95,9 @@ teleop:
   enable_hand: true
 
   # 手复位姿态 JSON 路径。
+  # 如果改成 left，建议一起改成：
+  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
+  # 文件不存在时会在第一次成功连到手套后自动创建。
   hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
 
 run:

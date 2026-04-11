@@ -1,0 +1,644 @@
+Metadata-Version: 2.4
+Name: lerobot_play
+Version: 1.0.4
+Summary: AIRBOT lerobot_play package
+Author-email: hanyang shao <shy757@126.com>
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pip>=24.0
+Requires-Dist: setuptools>=68.1.2
+Requires-Dist: wheel>=0.42.0
+Requires-Dist: numpy
+Requires-Dist: zmq
+Requires-Dist: bidict
+Requires-Dist: pyrealsense2
+Requires-Dist: lerobot==0.4.2
+Requires-Dist: scipy>=1.11
+Requires-Dist: aiortc
+Requires-Dist: aiohttp_cors
+Requires-Dist: transformers==4.57.1
+Requires-Dist: grpcio==1.73.1
+Requires-Dist: grpcio-tools==1.73.1
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+Dynamic: license-file
+
+<!--
+ * @Copyright: qiuzhi.tech
+ * @Author: hanyang
+ * @Date: 2025-09-10 14:56:14
+ * @LastEditTime: 2025-09-28 11:18:50
+-->
+# lerobot_play 项目简介
+
+基于 lerobot框架 的 AIRBOT Play 机械臂
+- 无缝接入 lerobot 框架
+- 快速进行数据采集，遥操作，模型推理和复现
+
+
+## 硬件连接
+
+
+
+## 运行环境快速概览
+
+建议：
+Python 3.12
+OS: Linux (推荐 Ubuntu 24.04)
+
+
+
+## 仓库目录结构
+```bash
+.
+├── CHANGELOG.md
+├── docs
+│   └── data_collect_format.md
+├── examples
+├── LICENSE
+├── pyproject.toml
+├── README.md
+├── requirements.txt
+├── scripts
+│   └── record.sh
+├── setup.py
+├── src
+│   └── lerobot_play
+│       ├── robots
+│       │   ├── airbot_play_follower   # airbot_play + G2 EEF 机械臂
+│       │   │   ├── airbot_play_follower.py
+│       │   │   ├── config_play_follower.py
+│       │   │   ├── __init__.py
+│       │   └── __init__.py
+│       └── teleoperators
+│           ├── airbot_play_leader_e2   # 带E2的airbot_play 机械臂
+│           ├── airbot_replay           # replay
+│           └── __init__.py
+└── tests
+    ├── test_1f1.py
+    ├── test_play_control.py
+    ├── test_rs_camera.py
+    └── test_usb_camera.py
+
+```
+
+
+## 快速开始
+
+### 键盘快捷键（沿用 lerobot 默认）
+- 按右箭头(→) : 停止录制,save,然后record下一个
+- 按左箭头(←) : 取消当前录制并重新录制
+- ESC: 立即停止录制,并save数据集。
+
+
+## 启动方式
+
+### 模型推理 (Inference)
+
+支持4种具身模型推理：ACT、DP、PI0、SmolVLA，提供同步和异步两种推理模式。
+
+#### 同步推理 (Synchronous Inference)
+
+同步推理是传统的推理模式，机器人控制循环与模型推理在同一进程中顺序执行。
+
+##### 基本用法
+
+```bash
+python3 -m lerobot_play.infer --policy <policy_type> --task_description "<task>" --model_path "/path/to/model"
+```
+
+##### 同步推理脚本
+
+1. **ACT 模型推理**
+```bash
+bash scripts/infer_act.sh
+```
+
+2. **Diffusion Policy 推理**
+```bash
+bash scripts/infer_dp.sh
+```
+
+3. **PI0 模型推理**
+```bash
+bash scripts/infer_pi0.sh
+```
+
+4. **SmolVLA 模型推理**
+```bash
+bash scripts/infer_smolvla.sh
+```
+
+5. **Play 单臂机器人推理**
+```bash
+bash scripts/infer_act_play.sh
+```
+
+##### 同步推理参数说明
+
+| 参数 | 含义 | 推荐值 | 说明 |
+|------|------|--------|------|
+| `--policy` | 策略类型 | `act`, `dp`, `pi0`, `smolvla` | 必需参数，指定推理模型类型 |
+| `--task_description` | 任务描述 | 字符串 | 必需参数，描述推理任务目标 |
+| `--model_path` | 模型路径 | 绝对路径 | 必需参数，指定训练好的模型目录 |
+| `--save_data` | 保存数据 | `true`/`false` | 可选，是否保存推理结果 |
+| `--num_episodes` | 推理轮数 | `1` | 可选，执行推理的轮数 |
+| `--episode_time_sec` | 单次时长 | `100` | 可选，每轮推理的时长（秒） |
+| `--fps` | 推理帧率 | `30` | 可选，推理时的帧率 |
+| `--device` | 计算设备 | `cuda` | 可选，指定计算设备 |
+| `--save_path` | 保存路径 | 自动生成 | 可选，自定义数据保存路径 |
+| `--robot.type` | 机器人类型 | `airbot_PTK_follower` | 可选，支持 `airbot_play_follower` 和 `airbot_PTK_follower` |
+| `--robot.port` | 机器人端口 | `can0` | 可选，Play 单臂机器人端口 |
+| `--robot.left_arm_port` | 左臂端口 | `can0` | 可选，PTK 双臂机器人左臂端口 |
+| `--robot.right_arm_port` | 右臂端口 | `can1` | 可选，PTK 双臂机器人右臂端口 |
+| `--robot.id` | 机器人ID | `PTK_follower` | 可选，机器人标识符 |
+| `--robot.cameras` | 相机配置 | JSON字符串 | 可选，相机配置信息 |
+
+##### 同步推理示例
+
+```bash
+python3 -m lerobot_play.infer \
+    --policy act \
+    --task_description "put the orange cube into the yellow bowl" \
+    --model_path "/path/to/act/model" \
+    --robot.type=airbot_PTK_follower \
+    --robot.left_arm_port=can0 \
+    --robot.right_arm_port=can1 \
+    --robot.id=PTK_follower
+```
+
+#### 异步推理 (Asynchronous Inference)
+
+异步推理采用客户端-服务器架构，将模型推理与机器人控制分离，提供更高的性能和稳定性。
+
+##### 异步推理原理
+
+异步推理系统由两个独立进程组成：
+
+1. **推理服务器**：专门负责模型推理计算
+   - 预加载模型到GPU内存
+   - 持续监听推理请求
+   - 批量处理推理任务
+   - 返回推理结果
+
+2. **机器人客户端**：负责机器人控制和数据采集
+   - 发送观测数据到推理服务器
+   - 接收推理结果
+   - 执行机器人动作
+   - 处理相机数据
+
+##### 异步推理优势
+
+- **性能提升**：
+  - 模型预加载，减少推理延迟
+  - 批量处理，提高GPU利用率
+  - 避免模型重复加载开销
+
+- **稳定性增强**：
+  - 推理错误不影响机器人控制
+  - 服务器崩溃可独立重启
+  - 支持多机器人共享推理服务
+
+- **资源优化**：
+  - GPU资源集中管理
+  - 支持多客户端并发
+  - 降低单机资源消耗
+
+##### 异步推理脚本
+
+1. **ACT 异步推理**
+```bash
+bash scripts/infer_act_async.sh
+```
+
+2. **SmolVLA 异步推理**
+```bash
+bash scripts/infer_smolvla_async.sh
+```
+
+##### 异步推理参数说明
+
+| 参数 | 含义 | 推荐值 | 说明 |
+|------|------|--------|------|
+| `--async_infer` | 启用异步推理 | `true` | 必需参数，启用异步推理模式 |
+| `--server_address` | 服务器地址 | `localhost:8080` | 必需参数，异步推理服务器地址 |
+| `--policy` | 策略类型 | `act`, `smolvla` | 必需参数，仅支持 `act` 和 `smolvla` |
+| `--task_description` | 任务描述 | 字符串 | 必需参数，描述推理任务目标 |
+| `--model_path` | 模型路径 | 绝对路径 | 必需参数，指定训练好的模型目录 |
+| `--save_data` | 保存数据 | `true`/`false` | 可选，是否保存推理结果 |
+| `--num_episodes` | 推理轮数 | `1` | 可选，执行推理的轮数 |
+| `--episode_time_sec` | 单次时长 | `100` | 可选，每轮推理的时长（秒） |
+| `--fps` | 推理帧率 | `30` | 可选，推理时的帧率 |
+| `--device` | 计算设备 | `cuda` | 可选，指定计算设备 |
+| `--save_path` | 保存路径 | 自动生成 | 可选，自定义数据保存路径 |
+| `--robot.type` | 机器人类型 | `airbot_PTK_follower` | 可选，支持 `airbot_play_follower` 和 `airbot_PTK_follower` |
+| `--robot.port` | 机器人端口 | `can0` | 可选，Play 单臂机器人端口 |
+| `--robot.left_arm_port` | 左臂端口 | `can0` | 可选，PTK 双臂机器人左臂端口 |
+| `--robot.right_arm_port` | 右臂端口 | `can1` | 可选，PTK 双臂机器人右臂端口 |
+| `--robot.id` | 机器人ID | `PTK_follower` | 可选，机器人标识符 |
+| `--robot.cameras` | 相机配置 | JSON字符串 | 可选，相机配置信息 |
+
+##### 异步推理示例
+
+```bash
+python3 -m lerobot_play.infer \
+    --policy act \
+    --task_description "put the orange cube into the yellow bowl" \
+    --model_path "/path/to/act/model" \
+    --async_infer \
+    --server_address "localhost:8080"
+```
+
+##### 异步推理部署
+
+1. **启动推理服务器**：
+```bash
+# 在服务器机器上启动推理服务
+python -m lerobot.scripts.server.policy_server \
+    --host="localhost" \
+    --port=8080
+```
+
+2. **启动机器人客户端**：
+```bash
+# 在机器人控制机器上启动客户端
+python3 -m lerobot_play.infer \
+    --policy act \
+    --async_infer \
+    --server_address "server_ip:8080"
+```
+
+### 数据可视化 (Visualization)
+
+支持使用 Rerun 可视化数据集，支持两种机器人类型的状态和动作可视化。
+
+#### 基本用法
+
+```bash
+python3 -m lerobot_play.utils.rerun_vis --repo-id <dataset_id> --root <dataset_path> --robot-type <robot_type>
+```
+
+#### 可视化脚本
+
+1. **PTK 双臂机器人数据可视化**
+```bash
+bash scripts/data_vis_ptk.sh
+```
+
+2. **Play 单臂机器人数据可视化**
+```bash
+bash scripts/data_vis_play.sh
+```
+
+#### 可视化参数说明
+
+| 参数 | 含义 | 推荐值 | 说明 |
+|------|------|--------|------|
+| `--repo-id` | 数据集ID | 字符串 | 必需参数，指定数据集标识符 |
+| `--root` | 数据集路径 | 绝对路径 | 必需参数，数据集存储的根目录 |
+| `--robot-type` | 机器人类型 | `airbot_play_follower`, `airbot_PTK_follower` | 必需参数，指定机器人类型 |
+| `--episode-index` | 可视化轮次 | `0` | 可选，指定要可视化的轮次索引 |
+| `--max-episodes` | 最大轮次数 | `1` | 可选，加载的最大轮次数，用于快速初始化 |
+| `--batch-size` | 批处理大小 | `32` | 可选，DataLoader 的批处理大小 |
+| `--num-workers` | 工作进程数 | `0` | 可选，DataLoader 的工作进程数 |
+
+#### 可视化示例
+
+1. **PTK 双臂机器人数据可视化**
+```bash
+python3 -m lerobot_play.utils.rerun_vis \
+    --repo-id test_03 \
+    --root /home/air/.cache/huggingface/lerobot/test_03 \
+    --robot-type airbot_PTK_follower \
+    --episode-index 0
+```
+
+2. **Play 单臂机器人数据可视化**
+```bash
+python3 -m lerobot_play.utils.rerun_vis \
+    --repo-id 01 \
+    --root /home/air/.cache/huggingface/lerobot/lerobot/01 \
+    --robot-type airbot_play_follower \
+    --episode-index 0
+```
+
+#### 可视化特性
+
+- **机器人状态可视化**：
+  - Play 单臂：7个状态量（6个关节 + 1个末端执行器）
+  - PTK 双臂：14个状态量（左臂7个 + 右臂7个）
+
+- **动作可视化**：
+  - 支持实时显示机器人的动作序列
+  - 按机器人类型分组显示状态和动作
+
+- **相机图像可视化**：
+  - 支持多相机同时显示
+  - 实时播放采集的视频数据
+
+- **时间轴控制**：
+  - 支持时间轴回放控制
+  - 可查看特定时间点的机器人状态
+
+### 数据回放 (Replay)
+
+支持真机回放采集的数据，支持两种机器人类型的数据回放。
+
+#### 基本用法
+
+```bash
+python3 -m lerobot_play.replay --dataset.repo_id <dataset_id> --dataset.root <dataset_path> --robot.type <robot_type>
+```
+
+#### 回放脚本
+
+1. **PTK 双臂机器人数据回放**
+```bash
+bash scripts/replay_ptk.sh
+```
+
+2. **Play 单臂机器人数据回放**
+```bash
+bash scripts/replay_play.sh
+```
+
+#### 回放参数说明
+
+| 参数 | 含义 | 推荐值 | 说明 |
+|------|------|--------|------|
+| `--dataset.repo_id` | 数据集ID | 字符串 | 必需参数，指定数据集标识符 |
+| `--dataset.root` | 数据集路径 | 绝对路径 | 必需参数，数据集存储的根目录 |
+| `--robot.type` | 机器人类型 | `airbot_play_follower`, `airbot_PTK_follower` | 必需参数，指定机器人类型 |
+| `--robot.port` | 机器人端口 | `can0` | 可选，Play 单臂机器人端口 |
+| `--robot.left_arm_port` | 左臂端口 | `can0` | 可选，PTK 双臂机器人左臂端口 |
+| `--robot.right_arm_port` | 右臂端口 | `can1` | 可选，PTK 双臂机器人右臂端口 |
+| `--robot.id` | 机器人ID | `PTK_follower` | 可选，机器人标识符 |
+| `--episode_index` | 回放轮次 | `0` | 可选，指定要回放的轮次索引 |
+| `--fps` | 回放帧率 | `30` | 可选，回放时的帧率 |
+
+#### 回放示例
+
+1. **PTK 双臂机器人数据回放**
+```bash
+python3 -m lerobot_play.replay \
+    --dataset.repo_id test_03 \
+    --dataset.root /home/air/.cache/huggingface/lerobot/test_03 \
+    --robot.type=airbot_PTK_follower \
+    --robot.left_arm_port=can0 \
+    --robot.right_arm_port=can1 \
+    --robot.id=PTK_follower \
+    --episode_index=0 \
+    --fps=30
+```
+
+2. **Play 单臂机器人数据回放**
+```bash
+python3 -m lerobot_play.replay \
+    --dataset.repo_id 01 \
+    --dataset.root /home/air/.cache/huggingface/lerobot/lerobot/01 \
+    --robot.type=airbot_play_follower \
+    --robot.port=can0 \
+    --robot.id=airbot_play \
+    --episode_index=0 \
+    --fps=30
+```
+
+#### 回放特性
+
+- **真机回放**：
+  - 支持在真实机器人上回放采集的数据
+  - 保持原始动作序列的时序和精度
+
+- **机器人类型支持**：
+  - Play 单臂：7个动作量（6个关节 + 1个末端执行器）
+  - PTK 双臂：14个动作量（左臂7个 + 右臂7个）
+
+- **速度控制**：
+  - 支持自定义回放帧率
+  - 精确的时间控制，确保动作流畅
+
+- **安全保护**：
+  - 回放结束后自动归零
+  - 异常情况下安全断开连接
+
+### 数据合并预处理 (Merge)
+
+支持将多个 LeRobot 数据集合并为一个统一的数据集，处理索引、维度和元数据的兼容性。
+
+#### 基本用法
+
+```bash
+python3 -m lerobot_play.utils.merge_data --sources <source1> <source2> ... --output <output_path>
+```
+
+#### 合并脚本
+
+```bash
+bash scripts/merge_data.sh
+```
+
+#### 合并参数说明
+
+| 参数 | 含义 | 推荐值 | 说明 |
+|------|------|--------|------|
+| `--sources` | 源数据集路径列表 | 多个绝对路径 | 必需参数，要合并的数据集文件夹路径 |
+| `--output` | 输出数据集路径 | 绝对路径 | 必需参数，合并后数据集的存储路径 |
+| `--max_dim` | 最大向量维度 | `14`, `18`, `32` | 可选，统一后的向量维度，默认32 |
+| `--fps` | 数据集帧率 | `20`, `30` | 可选，数据集帧率，默认20 |
+
+#### 合并示例
+
+```bash
+python3 -m lerobot_play.utils.merge_data \
+  --sources \
+    "/home/air/.cache/huggingface/lerobot/0917/9-17-angle-01" \
+    "/home/air/.cache/huggingface/lerobot/0917/9-17-angle-02" \
+    "/home/air/.cache/huggingface/lerobot/0917/9-17-pos-01" \
+    "/home/air/.cache/huggingface/lerobot/0917/9-17-pos-02" \
+    "/home/air/.cache/huggingface/lerobot/0917/9-17-pos-03" \
+  --output /home/air/.cache/huggingface/lerobot/0917_merged \
+  --max_dim 14 \
+  --fps 30
+```
+
+#### 合并特性
+
+- **智能索引管理**：
+  - 自动重新编号所有 episode 索引，保持连续性
+  - 处理不同数据集的帧索引冲突
+  - 维护全局累积帧计数
+
+- **维度统一处理**：
+  - 自动检测源数据集的向量维度
+  - 支持零填充到目标维度
+  - 处理 observation.state 和 action 向量
+
+- **元数据合并**：
+  - 合并所有数据集的统计信息
+  - 重新计算全局统计量（均值、标准差、最值）
+  - 处理任务索引映射关系
+
+- **文件结构保持**：
+  - 保持 LeRobot 数据集的标准结构
+  - 复制并重新组织视频文件
+  - 更新 info.json 元数据文件
+
+- **错误处理**：
+  - 详细的错误日志和失败文件报告
+  - 支持部分数据集合并失败的情况
+  - 自动跳过损坏或缺失的文件
+
+#### 合并流程
+
+1. **数据收集**：扫描所有源数据集，收集 episodes、tasks、stats
+2. **索引重映射**：重新分配 episode_index、task_index、frame_index
+3. **维度统一**：将不同维度的向量填充到统一维度
+4. **统计合并**：合并所有数据集的统计信息
+5. **文件复制**：复制并重新组织数据和视频文件
+6. **元数据更新**：生成新的 info.json 和统计文件
+
+### 数据采集 (Recording)
+
+### Play 单臂机械臂
+
+1. 命令行run方式
+```shell
+python3 -m lerobot_play.record \
+    --robot.type=airbot_play_follower \
+    --robot.port=can0 \
+    --robot.id=airbot_play \
+    --robot.cameras='{
+        hand_camera: {"type": "realsense", "serial_number_or_name": "336222071023", "width": 640, "height": 480, "fps": 30},
+        env_cam_A: {"type": "opencv", "index_or_path": "/dev/video8", "width": 640, "height": 480, "fps": 25}
+    }' \
+    --teleop.type=airbot_replay \
+    --teleop.port=can1 \
+    --teleop.id=airbot_replay \
+    --display_data=false \
+    --fps=30 \
+    --dataset.repo_id=test_02 \
+    --dataset.num_episodes=25 \
+    --episode_time_sec=60 \
+    --reset_time_sec=10 \
+    --single_task="Grab the black cube" \
+    --dataset.num_image_writer_threads_per_camera=4 \
+    --dataset.num_image_writer_processes=0 \
+    --dataset.video_encoding_batch_size=1
+```
+
+2. 加载yaml方式
+```shell
+python3 -m lerobot_play.record --yaml ./configs/play.yaml
+```
+
+3. 一键脚本方式
+```shell
+bash scripts/record_play.sh
+```
+
+### PTK 双臂机械臂
+
+1. 命令行run方式
+```shell
+python3 -m lerobot_play.record \
+    --robot.type=airbot_PTK_follower \
+    --robot.left_arm_port=can0 \
+    --robot.right_arm_port=can1 \
+    --robot.id=PTK_follower \
+    --robot.cameras='{
+        left_hand_camera: {"type": "realsense", "serial_number_or_name": "243322073683", "width": 640, "height": 480, "fps": 30},
+        right_hand_camera: {"type": "realsense", "serial_number_or_name": "243322072684", "width": 640, "height": 480, "fps": 30},
+        env_camera: {"type": "opencv", "index_or_path": "/dev/video0", "width": 640, "height": 480, "fps": 30}
+    }' \
+    --teleop.type=airbot_PTK_leader \
+    --teleop.left_arm_port=can2 \
+    --teleop.right_arm_port=can3 \
+    --teleop.id=PTK_leader \
+    --display_data=false \
+    --fps=30 \
+    --dataset.repo_id=ptk_test \
+    --dataset.num_episodes=25 \
+    --episode_time_sec=60 \
+    --reset_time_sec=10 \
+    --single_task="Bimanual manipulation task" \
+    --dataset.num_image_writer_threads_per_camera=4 \
+    --dataset.num_image_writer_processes=0 \
+    --dataset.video_encoding_batch_size=1
+```
+
+2. 加载yaml方式
+```shell
+python3 -m lerobot_play.record --yaml ./configs/ptk.yaml
+```
+
+3. 一键脚本方式
+```shell
+bash scripts/record_ptk.sh
+```
+
+
+## 开发流程
+1. 新建功能分支：git checkout -b feature/xxx
+2. 实现 / 修改：聚焦 TODO 与模块化封装。
+3. 代码自测：编写测试脚本示例，统一放到tests文件夹
+4. 提交前： pre-commit run -a 检查代码规范
+5. 提交：git commit -m "feat: xxx"
+6. 发起合并请求 (MR/PR)，描述改动范围 + 测试方式。
+7. Review 通过后合并 main / dev 分支。
+
+建议：
+- 保持函数/类单一职责。
+- 增加最小化日志 (print 或 logging) 便于排错。
+
+
+## 常见问题 (FAQs)
+
+
+---
+
+## TODO:
+1控1 play:
+- [x] 实现 robot 和 teleop 模块下的机器人类型
+- [x] 1控1
+- [x] 数据采集 record
+- [x] 数据真机重放 replay
+- [x] 模型推理 Inference
+- [x] 数据可视化 Visualization
+- [x] 数据合并预处理 Merge
+- [x] 教程文档
+
+
+2控2 PTK:
+- [x] 实现 robot 和 teleop 模块下的机器人类型
+- [x] 2控2
+- [x] 数据采集 record
+- [x] 数据真机重放 replay
+- [x] 模型推理 Inference
+- [x] 数据可视化 Visualization
+- [x] 数据合并预处理 Merge
+- [x] 教程文档
+
+robot 和 teleop 模块
+- [ ] 接入 TOK
+- [ ] 接入 MMK2
+- [ ] 接入 replay2
+- [ ] 接入 airbot_vr 库，使用VR遥操作
+
+web UI 界面
+- [ ] 参考 lelab https://github.com/nicolas-rabault/leLab 实现
+
+仿真器
+- [ ] 联动 discoverse 仿真器
+
+hilserl 教程
+- [ ] 单臂强化学习开柜门项目整合
+- [ ] 训练+人工干预
+- [ ] 推理案例
+
+pi0.5 教程
+- [ ] 使用 openpi 官方训练模型
+- [ ] 推理案例

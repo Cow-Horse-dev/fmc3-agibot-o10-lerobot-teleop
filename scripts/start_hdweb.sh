@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# 进入项目根目录。
+cd ~/workspace/arm-hand-teleop
 
-exec "$REPO_ROOT/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/start_hdweb.sh" "$@"
+# 启动 HDWeb 页面。
+exec ~/workspace/arm-hand-teleop/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/start_hdweb.sh "$@"

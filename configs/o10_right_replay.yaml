@@ -1,5 +1,6 @@
-# O10 右臂回放配置
+# O10 单臂回放配置
 # 供脚本 `./scripts/replay_o10_right.sh` 使用。
+# 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
 #
 # 这份文件用于把已经录好的 LeRobot 数据集动作回放到 O10 上。
 # 使用前最重要的是改 `dataset.root` 到你要回放的那个具体数据集目录。
@@ -32,7 +33,7 @@ robot:
   # 机器人名字，仅用于日志显示。
   id: o10_right
 
-  # 当前控制的是哪一侧 O10。
+  # 选择“哪只 follower 手/臂”执行回放。
   handedness: right
 
   # O10 手通道模式。
@@ -47,4 +48,7 @@ robot:
   canfd_id: 0
 
   # O10 channel_id。
-  channel_id: 1
+  # 保持 null 时会自动跟随 robot.handedness：
+  # - left  -> 0
+  # - right -> 1
+  channel_id: null

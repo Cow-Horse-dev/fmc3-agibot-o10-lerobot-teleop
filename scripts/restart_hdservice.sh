@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# 进入项目根目录。
+cd ~/workspace/arm-hand-teleop
 
-"$REPO_ROOT/scripts/stop_hdservice.sh" || true
+# 先停服务，再重新拉起。
+./scripts/stop_hdservice.sh || true
 sleep 1
-exec "$REPO_ROOT/scripts/start_hdservice.sh" "$@"
+./scripts/start_hdservice.sh "$@"

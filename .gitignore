@@ -1,0 +1,37 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local tool/runtime state
+.playwright-cli/
+.pytest_cache/
+
+# Local outputs
+logs/
+outputs/
+output/
+
+# Script caches
+scripts/__pycache__/
+
+# Nested project runtime/cache files after flattening
+qiuzhi/**/__pycache__/
+yudie/**/__pycache__/
+
+# Runtime logs generated during local robot runs
+qiuzhi/**/logs/
+qiuzhi/**/logs/**
+yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/log/
+yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/log/**
+
+# Python/env artifacts
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/

@@ -1,7 +1,8 @@
-# O10 右臂推理配置
+# O10 单臂推理配置
 # 供脚本 `./scripts/infer_o10_right.sh` 使用。
 #
 # 这份文件用于加载训练好的策略模型，让 O10 直接执行推理。
+# 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
 # 注意：
 # - `model_path` 必须改成你自己的模型目录
 # - 如果 `save_data: true`，才会保存推理过程中产生的数据
@@ -72,7 +73,7 @@ robot:
   # 机器人名字，仅用于日志显示。
   id: o10_right
 
-  # 当前控制的是哪一侧 O10。
+  # 选择“哪只 follower 手/臂”执行推理。
   handedness: right
 
   # O10 手通道模式。
@@ -87,7 +88,10 @@ robot:
   canfd_id: 0
 
   # O10 channel_id。
-  channel_id: 1
+  # 保持 null 时会自动跟随 robot.handedness：
+  # - left  -> 0
+  # - right -> 1
+  channel_id: null
 
   cameras:
     right:
