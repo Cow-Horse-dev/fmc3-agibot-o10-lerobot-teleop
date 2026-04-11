@@ -655,6 +655,10 @@ def main():
             device_id=cfg["robot"].get("device_id", 1),
             canfd_id=cfg["robot"].get("canfd_id", 0),
             channel_id=cfg["robot"].get("channel_id"),
+            hand_reset_joints_path=cfg["robot"].get("hand_reset_joints_path"),
+            include_tactile_observation=bool(
+                cfg["robot"].get("include_tactile_observation", False)
+            ),
             cameras=camera_cfgs,
             id=cfg["robot"]["id"],
         )
@@ -933,6 +937,7 @@ def main():
                 fps=int(cfg["run"]["fps"]),
                 teleop=teleop,
                 dataset=dataset,
+                dataset_features=dataset_features,
                 control_time_s=int(cfg["run"]["episode_time_sec"]),
                 single_task=cfg["run"].get("single_task"),
                 display_data=bool(cfg["run"].get("display_data", False)),
@@ -1069,12 +1074,6 @@ def main():
             print(f"Warning: robot reset failed: {e}")
 
         print("Stop recording")
-        try:
-            for cam in getattr(robot, "cameras", {}).values():
-                cam.disconnect()
-        except Exception:
-            pass
-        print("cam disconnected")
         try:
             import cv2
 

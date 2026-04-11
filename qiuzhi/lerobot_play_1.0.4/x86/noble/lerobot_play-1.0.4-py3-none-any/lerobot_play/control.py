@@ -148,11 +148,15 @@ def teleoperate(cfg: TeleoperateConfig):
         robot_action_processor,
         robot_observation_processor,
     ) = make_default_processors()
-
-    teleop.connect()
-    robot.connect()
+    teleop_connected = False
+    robot_connected = False
 
     try:
+        teleop.connect()
+        teleop_connected = True
+        robot.connect()
+        robot_connected = True
+
         teleop_loop(
             teleop=teleop,
             robot=robot,
@@ -165,9 +169,9 @@ def teleoperate(cfg: TeleoperateConfig):
             display_compressed_images=display_compressed_images,
         )
     finally:
-        if getattr(teleop, "is_connected", False):
+        if teleop_connected or getattr(teleop, "is_connected", False):
             teleop.disconnect()
-        if getattr(robot, "is_connected", False):
+        if robot_connected or getattr(robot, "is_connected", False):
             robot.disconnect()
 
 

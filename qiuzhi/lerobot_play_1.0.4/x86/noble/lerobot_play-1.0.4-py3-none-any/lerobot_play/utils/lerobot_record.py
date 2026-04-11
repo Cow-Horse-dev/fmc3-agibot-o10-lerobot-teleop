@@ -405,6 +405,7 @@ def record_loop(
         RobotObservation, RobotObservation
     ],  # runs after robot
     dataset: LeRobotDataset | None = None,
+    dataset_features: dict[str, Any] | None = None,
     teleop: Teleoperator | list[Teleoperator] | None = None,
     policy: PreTrainedPolicy | None = None,
     preprocessor: PolicyProcessorPipeline[dict[str, Any], dict[str, Any]] | None = None,
@@ -421,6 +422,12 @@ def record_loop(
         raise ValueError(
             f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps})."
         )
+    if dataset is None and policy is not None and dataset_features is None:
+        raise ValueError(
+            "dataset_features is required when running a policy without a dataset."
+        )
+
+    active_dataset_features = dataset.features if dataset is not None else dataset_features
 
     teleop_arm = teleop_keyboard = None
     if isinstance(teleop, list):
@@ -470,9 +477,9 @@ def record_loop(
         # Applies a pipeline to the raw robot observation, default is IdentityProcessor
         obs_processed = robot_observation_processor(obs)
 
-        if policy is not None or dataset is not None:
+        if active_dataset_features is not None:
             observation_frame = build_dataset_frame(
-                dataset.features, obs_processed, prefix=OBS_STR
+                active_dataset_features, obs_processed, prefix=OBS_STR
             )
 
         # Get action from either policy or teleop
@@ -493,7 +500,7 @@ def record_loop(
             )
 
             act_processed_policy: RobotAction = make_robot_action(
-                action_values, dataset.features
+                action_values, active_dataset_features
             )
 
         elif policy is None and isinstance(teleop, Teleoperator):
@@ -665,6 +672,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 preprocessor=preprocessor,
                 postprocessor=postprocessor,
                 dataset=dataset,
+                dataset_features=dataset_features,
                 control_time_s=cfg.dataset.episode_time_s,
                 single_task=cfg.dataset.single_task,
                 display_data=cfg.display_data,

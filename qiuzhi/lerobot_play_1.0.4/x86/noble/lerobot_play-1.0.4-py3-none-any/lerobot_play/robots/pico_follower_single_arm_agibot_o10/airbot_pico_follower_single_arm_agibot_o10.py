@@ -15,11 +15,16 @@ from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_HAND_FEATURE_NAMES,
     AGIBOT_O10_POSE_FEATURE_NAMES,
     AgibotO10Hand,
-    agibot_o10_action_feature_types,
+    agibot_o10_observation_feature_types,
     agibot_o10_joint_action_feature_types,
     build_agibot_o10_joint_action_dict,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
+from lerobot_play.utils.depth_observation import (
+    build_camera_feature_types,
+    collect_camera_observation,
+)
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
 
 from .config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
@@ -58,12 +63,17 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             canfd_id=self.config.canfd_id,
             channel_id=self.config.channel_id,
         )
+        self.hand_reset_store = PersistentJointTargetStore(
+            feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
+            path=self.config.hand_reset_joints_path,
+            label=f"{self.config.handedness} hand reset joint target",
+        )
+        self.hand_reset_joint_pos = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
         self.hand_joints = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
+        self.include_tactile_observation = bool(self.config.include_tactile_observation)
 
         resolve_auto_opencv_cameras(config.cameras)
         self.cameras = make_cameras_from_configs(config.cameras)
-        for cam in self.cameras.values():
-            cam.connect()
 
         self._is_connected = False
 
@@ -75,18 +85,34 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         if self.is_connected:
             raise RuntimeError(f"{self} already connected")
 
-        if not self.arm.init(self.io_context, self.arm_port, 250):
-            raise RuntimeError("Failed to initialize arm")
-
+        cameras_connected = False
+        arm_connected = False
+        hand_connected = False
         try:
-            self.hand.connect()
-        except Exception:
-            self.arm.uninit()
-            raise
+            self._connect_cameras()
+            cameras_connected = True
 
-        self.enable_motors()
-        self.configure()
-        self._is_connected = True
+            if not self.arm.init(self.io_context, self.arm_port, 250):
+                raise RuntimeError("Failed to initialize arm")
+            arm_connected = True
+
+            self.hand.connect()
+            hand_connected = True
+            if self.include_tactile_observation:
+                # Probe tactile data once so recording fails fast if the hand or SDK does not expose it.
+                self.hand.read_tactile_observation()
+            self._initialize_hand_reset_target()
+            self.enable_motors()
+            self.configure()
+            self._is_connected = True
+        except Exception:
+            if hand_connected:
+                self.hand.disconnect()
+            if arm_connected:
+                self.arm.uninit()
+            if cameras_connected:
+                self._disconnect_cameras()
+            raise
 
     def enable_motors(self) -> None:
         self.arm.enable()
@@ -102,14 +128,13 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @property
     def _motors_ft(self) -> dict[str, type]:
-        return agibot_o10_action_feature_types()
+        return agibot_o10_observation_feature_types(
+            include_tactile=self.include_tactile_observation
+        )
 
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
-        return {
-            cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3)
-            for cam in self.cameras
-        }
+        return build_camera_feature_types(self.config.cameras)
 
     @cached_property
     def action_features(self):
@@ -204,9 +229,11 @@ class PicoFollowerSingleArmAgibotO10(Robot):
                 for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES)
             },
         }
+        if self.include_tactile_observation:
+            obs_dict.update(self.hand.read_tactile_observation())
 
         for cam_key, cam in self.cameras.items():
-            obs_dict[cam_key] = cam.async_read()
+            obs_dict.update(collect_camera_observation(cam_key, cam))
 
         return obs_dict
 
@@ -253,7 +280,7 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         joints = [0.0] * (self.config.arm_joints_num - 1)
         velocities = [0.8] * (self.config.arm_joints_num - 1)
         effort = [10.0] * (self.config.arm_joints_num - 1)
-        zero_hand = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
+        reset_hand = self.hand_reset_joint_pos.copy()
 
         while True:
             state = list(self.arm.state().pos)
@@ -261,11 +288,11 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             if arm_arrived:
                 break
             self.arm.pvt(joints, velocities, effort)
-            self.hand.write_active_joint_angles(zero_hand)
+            self.hand.write_active_joint_angles(reset_hand)
             time.sleep(0.004)
 
-        self.hand.write_active_joint_angles(zero_hand)
-        self.hand_joints = zero_hand
+        self.hand.write_active_joint_angles(reset_hand)
+        self.hand_joints = reset_hand.copy()
 
     def reset_zero(self):
         self.return_zero()
@@ -291,5 +318,62 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             self.disable_motors()
             self.arm.uninit()
             self.hand.disconnect()
+        finally:
+            self._disconnect_cameras()
         self._is_connected = False
         logger.info(f"{self} safely disconnected.")
+
+    def _connect_cameras(self) -> None:
+        connected_cameras = []
+        try:
+            for cam in self.cameras.values():
+                cam.connect()
+                connected_cameras.append(cam)
+        except Exception:
+            for cam in reversed(connected_cameras):
+                try:
+                    cam.disconnect()
+                except Exception as exc:
+                    logger.warning("Failed to roll back camera connection: %s", exc)
+            raise
+
+    def _disconnect_cameras(self) -> None:
+        for cam in reversed(list(self.cameras.values())):
+            try:
+                if getattr(cam, "is_connected", False):
+                    cam.disconnect()
+            except Exception as exc:
+                logger.warning("Failed to disconnect camera cleanly: %s", exc)
+
+    def _initialize_hand_reset_target(self) -> None:
+        try:
+            reset_joint_pos = self.hand_reset_store.load()
+        except Exception as exc:
+            logger.warning(
+                "Failed to load persistent Agibot O10 hand reset target: %s. "
+                "Falling back to zero hand reset target.",
+                exc,
+            )
+            reset_joint_pos = None
+
+        if reset_joint_pos is None:
+            if self.hand_reset_store.has_path:
+                logger.warning(
+                    "No persistent Agibot O10 hand reset target found at %s. "
+                    "Falling back to zero hand reset target.",
+                    self.hand_reset_store.path,
+                )
+            else:
+                logger.warning(
+                    "No robot.hand_reset_joints_path configured for Agibot O10. "
+                    "Falling back to zero hand reset target."
+                )
+            reset_joint_pos = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
+        else:
+            logger.info(
+                "Loaded persistent Agibot O10 hand reset target from %s",
+                self.hand_reset_store.path,
+            )
+
+        self.hand_reset_joint_pos = self.hand_reset_store.normalize(reset_joint_pos)
+        self.hand_joints = self.hand_reset_joint_pos.copy()

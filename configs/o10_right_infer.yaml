@@ -24,7 +24,7 @@ infer:
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodel/please_replace_with_your_model
+  model_path: ~/workspace/mymodel/please_replace_with_your_model
 
   # 是否保存推理过程中的数据。
   # 可选值：
@@ -93,6 +93,14 @@ robot:
   # - right -> 1
   channel_id: null
 
+  # 机器人侧手复位姿态 JSON 路径。
+  # 默认与 control/record 复用同一份持久化手形定义。
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+
+  # 是否把 O10 触觉并进 observation.state。
+  # 如果模型训练时用了触觉，这里也要设成 true，保持输入维度一致。
+  include_tactile_observation: false
+
   cameras:
     right:
       # 右侧 RealSense 相机。
@@ -107,6 +115,9 @@ robot:
       fps: 30
 
       # 是否采集深度图。
+      # true 时会额外提供：
+      # - observation.images.right_depth
+      # 如果模型训练时用了这路深度，这里也要保持 true。
       use_depth: false
 
       # 彩色图通道顺序。
@@ -128,8 +139,8 @@ robot:
       # 建议使用稳定的 /dev/v4l/by-id 路径。
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
 
-      width: 640
-      height: 480
+      width: 1280
+      height: 720
       fps: 30
 
       # 图像旋转方式。

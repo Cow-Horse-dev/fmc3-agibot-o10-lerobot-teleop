@@ -15,7 +15,6 @@ import threading
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-import shutil
 import yaml
 
 from lerobot.cameras.configs import ColorMode, Cv2Rotation
@@ -98,6 +97,7 @@ def _load_camera_config(cameras_value: Any) -> dict:
 
 def _validate_model_path(model_path: str) -> bool:
     """验证模型路径有效性"""
+    model_path = os.path.expanduser(model_path)
     if not os.path.exists(model_path):
         raise ValueError(f"Model path does not exist: {model_path}")
 
@@ -112,6 +112,12 @@ def _validate_model_path(model_path: str) -> bool:
             print(f"Warning: {file} not found in model directory")
 
     return True
+
+
+def _expand_user_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    return os.path.expanduser(path)
 
 
 def _get_default_save_path(policy_type: str) -> str:
@@ -276,6 +282,20 @@ def _parse_cli_args() -> argparse.Namespace:
         default=None,
         help="Agibot O10 channel id",
     )
+    parser.add_argument(
+        "--robot.include_tactile_observation",
+        dest="robot_include_tactile_observation",
+        action="store_true",
+        default=False,
+        help="Include Agibot O10 tactile data in observation.state",
+    )
+    parser.add_argument(
+        "--robot.hand_reset_joints_path",
+        dest="robot_hand_reset_joints_path",
+        type=str,
+        default=None,
+        help="Persistent Agibot O10 hand reset joint target JSON path",
+    )
 
     return parser.parse_args()
 
@@ -315,6 +335,8 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "device_id": cli.robot_device_id,
             "canfd_id": cli.robot_canfd_id,
             "channel_id": cli.robot_channel_id,
+            "include_tactile_observation": cli.robot_include_tactile_observation,
+            "hand_reset_joints_path": cli.robot_hand_reset_joints_path,
         },
     }
 
@@ -347,11 +369,18 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_device_id=robot_cfg.get("device_id"),
         robot_canfd_id=robot_cfg.get("canfd_id"),
         robot_channel_id=robot_cfg.get("channel_id"),
+        robot_include_tactile_observation=bool(
+            robot_cfg.get("include_tactile_observation", False)
+        ),
+        robot_hand_reset_joints_path=robot_cfg.get("hand_reset_joints_path"),
     )
 
 
 def _validate_args(args: argparse.Namespace) -> None:
     """验证命令行参数"""
+    args.model_path = _expand_user_path(args.model_path)
+    args.save_path = _expand_user_path(args.save_path)
+
     for required_field in ["policy", "task_description", "model_path"]:
         if not getattr(args, required_field, None):
             raise ValueError(f"{required_field} is required")
@@ -480,6 +509,10 @@ def _create_robot_config(args: argparse.Namespace):
             device_id=1 if args.robot_device_id is None else args.robot_device_id,
             canfd_id=0 if args.robot_canfd_id is None else args.robot_canfd_id,
             channel_id=args.robot_channel_id,
+            hand_reset_joints_path=getattr(args, "robot_hand_reset_joints_path", None),
+            include_tactile_observation=bool(
+                getattr(args, "robot_include_tactile_observation", False)
+            ),
             id=args.robot_id,
             cameras=camera_config,
         )
@@ -523,32 +556,33 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
     try:
         # 加载策略
         policy = _load_policy(args.policy, args.model_path, args.device)
-
-        save_target = resolve_dataset_target(
-            path=args.save_path or _get_default_save_path(args.policy)
-        )
-        had_incomplete_dataset = is_incomplete_dataset_root(save_target.root)
-        prepare_dataset_root_for_recording(
-            repo_id=save_target.repo_id,
-            root=save_target.root,
-        )
-        if had_incomplete_dataset:
-            log_say(f"Removed stale incomplete inference dataset: {save_target.root}")
-        if args.save_data:
-            log_say(f"Inference data will be saved to: {save_target.root}")
-
-        # 创建数据集
-        dataset = _create_dataset(
+        dataset_features = build_dataset_features(
             robot,
-            args.fps,
-            repo_id=save_target.repo_id,
-            dataset_root=str(save_target.root),
+            use_videos=bool(robot.cameras),
         )
+
+        if args.save_data:
+            save_target = resolve_dataset_target(
+                path=args.save_path or _get_default_save_path(args.policy)
+            )
+            had_incomplete_dataset = is_incomplete_dataset_root(save_target.root)
+            prepare_dataset_root_for_recording(
+                repo_id=save_target.repo_id,
+                root=save_target.root,
+            )
+            if had_incomplete_dataset:
+                log_say(f"Removed stale incomplete inference dataset: {save_target.root}")
+            log_say(f"Inference data will be saved to: {save_target.root}")
+            dataset = _create_dataset(
+                robot,
+                args.fps,
+                repo_id=save_target.repo_id,
+                dataset_root=str(save_target.root),
+            )
 
         preprocessor, postprocessor = make_pre_post_processors(
             policy_cfg=policy.config,
             pretrained_path=args.model_path,
-            dataset_stats=dataset.meta.stats,
             # The inference device is automatically set to match the detected hardware, overriding any previous device settings from training to ensure compatibility.
             preprocessor_overrides={
                 "device_processor": {"device": str(policy.config.device)}
@@ -578,6 +612,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 preprocessor=preprocessor,
                 postprocessor=postprocessor,
                 dataset=dataset,
+                dataset_features=dataset_features,
                 control_time_s=args.episode_time_sec,
                 single_task=args.task_description,
                 display_data=False,
@@ -586,7 +621,8 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 robot_observation_processor=robot_observation_processor,
             )
 
-            dataset.save_episode()
+            if dataset is not None:
+                dataset.save_episode()
 
             if episode_idx < args.num_episodes - 1:
                 log_say("Resetting robot to zero position")
@@ -611,11 +647,6 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     finally:
         # 清理资源
-        for cam in getattr(robot, "cameras", {}).values():
-            try:
-                cam.disconnect()
-            except Exception:
-                pass
         if dataset is not None:
             try:
                 dataset.wait_all_async_tasks()
@@ -630,8 +661,6 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 robot.disconnect()
             except Exception as exc:
                 log_say(f"Warning: failed to disconnect robot: {exc}")
-        if not args.save_data and save_target is not None:
-            shutil.rmtree(save_target.root, ignore_errors=True)
 
 
 def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:

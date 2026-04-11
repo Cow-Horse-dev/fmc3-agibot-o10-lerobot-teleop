@@ -42,9 +42,9 @@ teleop:
 
   # 手复位姿态 JSON 路径。
   # 如果改成 left，建议一起改成：
-  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
+  #   ~/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
   # 文件不存在时会在第一次成功连到手套后自动创建。
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
 
 robot:
   # 机器人类型。
@@ -76,6 +76,15 @@ robot:
   # - right -> 1
   channel_id: null
 
+  # 机器人侧手复位姿态 JSON 路径。
+  # 默认和 teleop 共用同一份，这样 Y 键复位、启动自动复位、
+  # 退出自动复位都会回到同一只手形。
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+
+  # 是否把 O10 触觉并进 observation.state。
+  # 控制模式默认一般不用，保持 false 即可。
+  include_tactile_observation: false
+
   cameras:
     right:
       # Control 配置里 RealSense 类型写 `intelrealsense`。
@@ -90,6 +99,9 @@ robot:
       fps: 30
 
       # 是否采深度。
+      # true 时会额外生成：
+      # - observation.images.right_depth
+      # 控制模式一般可保持 false；只有想验证深度链路时再打开。
       use_depth: false
 
       # 彩色图通道顺序。
@@ -111,8 +123,8 @@ robot:
       # 建议使用稳定的 /dev/v4l/by-id 路径。
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
 
-      width: 640
-      height: 480
+      width: 1280
+      height: 720
       fps: 30
       rotation: NO_ROTATION
 

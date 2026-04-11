@@ -3,7 +3,7 @@
 #
 # 这份文件负责把数据录成 LeRobot 数据集格式。
 # 当前已经配置成：
-# - 数据保存在 /home/phl/workspace/dataset/Robot/agi_arm_bot 下面
+# - 数据保存在 ~/workspace/dataset/Robot/agi_arm_bot 下面
 # - 目录名自动按“任务名 + 当天日期”生成
 # 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
 
@@ -37,6 +37,15 @@ robot:
   # - right -> 1
   channel_id: null
 
+  # 机器人侧手复位姿态 JSON 路径。
+  # 默认与 teleop 共用同一份持久化手形定义。
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+
+  # 录制时是否把 O10 触觉并进 observation.state。
+  # - true: 额外录入 130 维触觉观测
+  # - false: 不录触觉，只录当前已有的臂/手/位姿/相机
+  include_tactile_observation: false
+
   cameras:
     right:
       # Record / infer 配置里 RealSense 类型写 `realsense`。
@@ -45,6 +54,9 @@ robot:
       width: 640
       height: 480
       fps: 30
+      # true 时会额外生成一条 LeRobot 图像流：
+      # - observation.images.right_depth
+      # 这里录入的是 RealSense 真深度，只是编码成 3 通道图像以兼容 LeRobot。
       use_depth: false
 
       # 可选值：RGB / BGR
@@ -60,8 +72,8 @@ robot:
     top:
       type: opencv
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-      width: 640
-      height: 480
+      width: 1280
+      height: 720
       fps: 30
       rotation: NO_ROTATION
 
@@ -96,9 +108,9 @@ teleop:
 
   # 手复位姿态 JSON 路径。
   # 如果改成 left，建议一起改成：
-  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
+  #   ~/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
   # 文件不存在时会在第一次成功连到手套后自动创建。
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
 
 run:
   # 录制频率，单位 Hz。
@@ -142,8 +154,8 @@ dataset:
 
   # 数据集根目录。
   # 最终实际路径会是：
-  #   /home/phl/workspace/dataset/Robot/agi_arm_bot/<任务名_日期>
-  root: /home/phl/workspace/dataset/Robot/agi_arm_bot
+  #   ~/workspace/dataset/Robot/agi_arm_bot/<任务名_日期>
+  root: ~/workspace/dataset/Robot/agi_arm_bot
 
   # 是否录相机视频。
   # - true: 录相机
