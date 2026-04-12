@@ -1,0 +1,27 @@
+{
+  "description": "O10 右手全手控制默认复位手型。用于 Y 键复位、启动复位、退出复位，以及 full_hand 模式的基础手型。",
+  "feature_names": [
+    "thumb_cm_roll.pos",
+    "thumb_cm_yaw.pos",
+    "thumb_cm_pitch.pos",
+    "index_mp_yaw.pos",
+    "index_mp_pitch.pos",
+    "middle_mp_pitch.pos",
+    "ring_mp_yaw.pos",
+    "ring_mp_pitch.pos",
+    "pinky_mp_yaw.pos",
+    "pinky_mp_pitch.pos"
+  ],
+  "joint_values": {
+    "thumb_cm_roll.pos": -0.17453292519943295,
+    "thumb_cm_yaw.pos": 0.0,
+    "thumb_cm_pitch.pos": 0.0,
+    "index_mp_yaw.pos": 0.0,
+    "index_mp_pitch.pos": 0.0,
+    "middle_mp_pitch.pos": 0.0,
+    "ring_mp_yaw.pos": 0.0,
+    "ring_mp_pitch.pos": 0.0,
+    "pinky_mp_yaw.pos": 0.0,
+    "pinky_mp_pitch.pos": 0.0
+  }
+}

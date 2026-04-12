@@ -16,6 +16,9 @@ class PicoLeaderSingleArmAgibotO10Config(TeleoperatorConfig):
     wrist_pose_source: str = "auto"
     enable_hand: bool = True
     hand_reset_joints_path: str | None = None
+    hand_grasp_preset_joints_path: str | None = None
+    hand_control_mode: str = "full_hand"
+    hand_grasp_preset: str = "pinch_index"
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])
     cameras: dict[str, CameraConfig] = field(default_factory=dict)

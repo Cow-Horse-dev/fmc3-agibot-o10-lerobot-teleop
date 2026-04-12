@@ -732,6 +732,11 @@ def main():
             wrist_pose_source=cfg["teleop"].get("wrist_pose_source", "auto"),
             enable_hand=cfg["teleop"].get("enable_hand", True),
             hand_reset_joints_path=cfg["teleop"].get("hand_reset_joints_path"),
+            hand_grasp_preset_joints_path=cfg["teleop"].get(
+                "hand_grasp_preset_joints_path"
+            ),
+            hand_control_mode=cfg["teleop"].get("hand_control_mode", "full_hand"),
+            hand_grasp_preset=cfg["teleop"].get("hand_grasp_preset", "pinch_index"),
             cameras=camera_cfgs,
             id=cfg["teleop"]["id"],
         )

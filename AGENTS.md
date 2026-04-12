@@ -27,4 +27,4 @@ Add Python tests under `qiuzhi/tests/` as `test_<feature>.py`. Prefer pure-Pytho
 
 ## Commit & Pull Request Guidelines
 
-History is sparse and uses short summary lines such as `第一次合并` and `宇叠手套控制手跑通版本`. Keep commits short, scoped, and single-purpose, for example `yudie: fix JSON role fallback`. `qiuzhi/` and `yudie/` each contain their own Git metadata while the root repo tracks gitlinks, so be explicit about whether you changed nested repos, root pointers, or both. PRs should list the affected area, hardware assumptions, exact test commands, and logs or screenshots for runtime control changes.
+History is sparse and uses short summary lines such as `第一次合并` and `宇叠手套控制手跑通版本`. Keep commits short, scoped, and single-purpose. Commit messages should use Chinese going forward, for example `宇叠: 修复 JSON 角色回退`. `qiuzhi/` and `yudie/` each contain their own Git metadata while the root repo tracks gitlinks, so be explicit about whether you changed nested repos, root pointers, or both. PRs should list the affected area, hardware assumptions, exact test commands, and logs or screenshots for runtime control changes.

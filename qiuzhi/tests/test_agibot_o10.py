@@ -17,7 +17,7 @@ LEROBOT_PLAY_PACKAGE_ROOT = (
     / "lerobot_play-1.0.4-py3-none-any"
 )
 YUDIE_REFERENCE_PATH = (
-    Path("/home/phl/workspace/yudie/AGIBOT/Omnihand_o10_yudie.py")
+    REPO_ROOT.parent / "yudie" / "AGIBOT" / "Omnihand_o10_yudie.py"
 )
 
 if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
@@ -138,6 +138,69 @@ def test_build_agibot_o10_joint_action_dict_contains_only_arm_and_hand_joints():
 def test_build_agibot_o10_joint_action_dict_rejects_non_joint_lengths():
     with pytest.raises(ValueError, match="must contain 16 values"):
         agibot_o10.build_agibot_o10_joint_action_dict(range(23))
+
+
+def test_agibot_o10_observation_feature_types_optionally_include_tactile():
+    observation_features = agibot_o10.agibot_o10_observation_feature_types()
+    tactile_observation_features = agibot_o10.agibot_o10_observation_feature_types(
+        include_tactile=True
+    )
+
+    assert list(observation_features.keys()) == [
+        *agibot_o10.AGIBOT_O10_ARM_FEATURE_NAMES,
+        *agibot_o10.AGIBOT_O10_HAND_FEATURE_NAMES,
+        *agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES,
+    ]
+    assert all(
+        feature_name not in observation_features
+        for feature_name in agibot_o10.AGIBOT_O10_TACTILE_FEATURE_NAMES
+    )
+    assert list(tactile_observation_features.keys()) == [
+        *agibot_o10.AGIBOT_O10_ARM_FEATURE_NAMES,
+        *agibot_o10.AGIBOT_O10_HAND_FEATURE_NAMES,
+        *agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES,
+        *agibot_o10.AGIBOT_O10_TACTILE_FEATURE_NAMES,
+    ]
+
+
+def test_agibot_o10_hand_read_tactile_observation_flattens_all_parts():
+    class FakeEFinger:
+        THUMB = 1
+        INDEX = 2
+        MIDDLE = 3
+        RING = 4
+        LITTLE = 5
+        PALM = 6
+        DORSUM = 7
+
+    class FakeSdk:
+        EFinger = FakeEFinger
+
+    tactile_payloads = {
+        FakeEFinger.THUMB: list(range(16)),
+        FakeEFinger.INDEX: list(range(100, 116)),
+        FakeEFinger.MIDDLE: list(range(200, 216)),
+        FakeEFinger.RING: list(range(300, 316)),
+        FakeEFinger.LITTLE: list(range(400, 416)),
+        FakeEFinger.PALM: list(range(500, 525)),
+        FakeEFinger.DORSUM: list(range(600, 625)),
+    }
+
+    class FakeHand:
+        def get_tactile_sensor_data(self, tactile_enum):
+            return tactile_payloads[tactile_enum]
+
+    hand = agibot_o10.AgibotO10Hand()
+    hand._sdk = FakeSdk
+    hand._hand = FakeHand()
+
+    tactile_observation = hand.read_tactile_observation()
+
+    assert len(tactile_observation) == len(agibot_o10.AGIBOT_O10_TACTILE_FEATURE_NAMES)
+    assert tactile_observation["tactile.thumb.00"] == 0.0
+    assert tactile_observation["tactile.index.15"] == 115.0
+    assert tactile_observation["tactile.palm.24"] == 524.0
+    assert tactile_observation["tactile.dorsum.24"] == 624.0
 
 
 def test_sdk_import_error_mentions_qiuzhi_omnihand_root(monkeypatch):

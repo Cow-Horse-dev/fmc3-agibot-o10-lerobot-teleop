@@ -93,9 +93,9 @@ robot:
   # - right -> 1
   channel_id: null
 
-  # 机器人侧手复位姿态 JSON 路径。
-  # 默认与 control/record 复用同一份持久化手形定义。
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  # 机器人侧全手复位姿态 JSON 路径。
+  # infer 模式下 robot 复位也使用这份全手复位手型。
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_full_reset_pose.json
 
   # 是否把 O10 触觉并进 observation.state。
   # 如果模型训练时用了触觉，这里也要设成 true，保持输入维度一致。

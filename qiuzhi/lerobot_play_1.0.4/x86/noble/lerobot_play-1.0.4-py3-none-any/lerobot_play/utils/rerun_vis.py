@@ -160,7 +160,7 @@ def visualize_dataset_local(
     # Check available episodes
     meta = LeRobotDatasetMetadata(repo_id, root=root)
     available = []
-    root_path = Path(root)
+    root_path = Path(root).expanduser()
 
     print("Checking available episodes...")
     for ep_idx in range(meta.total_episodes):
@@ -279,7 +279,7 @@ def main():
     parser.add_argument(
         "--root",
         type=str,
-        default="/home/discover/.cache/huggingface/lerobot/test_03",
+        default="~/.cache/huggingface/lerobot/test_03",
         help="Root directory where the dataset is stored locally",
     )
 
@@ -330,7 +330,7 @@ def main():
 
     # Set default root if not provided
     if args.root is None:
-        args.root = f"/home/air/.cache/huggingface/lerobot/lerobot/{args.repo_id}"
+        args.root = f"~/.cache/huggingface/lerobot/lerobot/{args.repo_id}"
 
     print(f"Visualizing dataset:")
     print(f"  Repository ID: {args.repo_id}")

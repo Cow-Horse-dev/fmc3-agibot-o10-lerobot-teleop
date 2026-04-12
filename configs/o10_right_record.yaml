@@ -37,9 +37,9 @@ robot:
   # - right -> 1
   channel_id: null
 
-  # 机器人侧手复位姿态 JSON 路径。
-  # 默认与 teleop 共用同一份持久化手形定义。
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  # 机器人侧全手复位姿态 JSON 路径。
+  # 这个文件给 Y 键复位、启动复位、退出复位用。
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_full_reset_pose.json
 
   # 录制时是否把 O10 触觉并进 observation.state。
   # - true: 额外录入 130 维触觉观测
@@ -106,11 +106,47 @@ teleop:
   # - false: 只录机械臂
   enable_hand: true
 
-  # 手复位姿态 JSON 路径。
+  # 全手控制复位手型 JSON 路径。
+  # 这个文件给 full_hand 模式和 Y 键复位用。
   # 如果改成 left，建议一起改成：
-  #   ~/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
+  #   ~/workspace/arm-hand-teleop/configs/o10_left_hand_full_reset_pose.json
   # 文件不存在时会在第一次成功连到手套后自动创建。
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_full_reset_pose.json
+
+  # 固定抓取手型骨架 JSON 路径。
+  # 这个文件只给 grasp_preset 模式用。
+  # 它决定：
+  # - 未激活手指锁定在哪个姿态
+  # - 拇指横向姿态基准是什么
+  # 如果改成 left，建议一起改成：
+  #   ~/workspace/arm-hand-teleop/configs/o10_left_hand_grasp_preset_pose.json
+  hand_grasp_preset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_hand_grasp_preset_pose.json
+
+  # 手控制模式。
+  # 可选值：
+  # - full_hand: 全手按手套原始数据控制
+  # - grasp_preset: 只让 preset 指定的抓取关节参与控制，其余手指固定在 grasp preset 骨架
+  #
+  # 推荐录“夹取摄像头”这种精细抓取时使用 `grasp_preset`。
+  # 这时拇指姿态不会跟着手套横向外翻，而是主要由 grasp preset 骨架决定，
+  # 抓取时只保留“往里扣”的闭合动作，更像夹子。
+  hand_control_mode: full_hand
+
+  # 固定抓取手型。
+  # 只有 hand_control_mode=grasp_preset 时才生效。
+  # 可选值：
+  # - pinch_index: 拇指 + 食指。只放开 thumb_cm_pitch / index_mp_pitch，
+  #   thumb_cm_roll、thumb_cm_yaw、index_mp_yaw 会锁在 grasp preset 骨架。
+  # - pinch_middle: 拇指 + 中指。只放开 thumb_cm_pitch / middle_mp_pitch，
+  #   拇指横向姿态锁在 grasp preset 骨架。
+  # - tripod: 拇指 + 食指 + 中指。只放开 thumb_cm_pitch / index_mp_pitch /
+  #   middle_mp_pitch，其余手指保持 grasp preset 骨架。
+  #
+  # 用法建议：
+  # 1. 先把 hand_grasp_preset_joints_path 这份 JSON 调成你想要的“竖直拇指”抓取骨架。
+  # 2. 再把 hand_control_mode 改成 grasp_preset。
+  # 3. 最后选 hand_grasp_preset。
+  hand_grasp_preset: pinch_index
 
 run:
   # 录制频率，单位 Hz。

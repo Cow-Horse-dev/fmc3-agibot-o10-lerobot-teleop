@@ -30,29 +30,29 @@
 
 假设你要把项目放到:
 
-- 项目目录: `/home/USER/workspace`
-- 环境目录: `/home/USER/envs/arm-hand-teleop`
+- 项目目录: `~/workspace`
+- 环境目录: `~/envs/arm-hand-teleop`
 
 先解压项目:
 
 ```bash
-mkdir -p /home/USER/workspace
-cd /home/USER/workspace
+mkdir -p ~/workspace
+cd ~/workspace
 unzip /path/to/yudie_project.zip
 ```
 
 再解压环境:
 
 ```bash
-mkdir -p /home/USER/envs/arm-hand-teleop
-cd /home/USER/envs/arm-hand-teleop
+mkdir -p ~/envs/arm-hand-teleop
+cd ~/envs/arm-hand-teleop
 unzip /path/to/arm-hand-teleop_env.zip
 ```
 
 ## 4. 激活环境
 
 ```bash
-source /home/USER/envs/arm-hand-teleop/bin/activate
+source ~/envs/arm-hand-teleop/bin/activate
 conda-unpack
 ```
 
@@ -66,7 +66,7 @@ conda-unpack
 ### 第一步: 启动宇叠服务
 
 ```bash
-cd /home/USER/workspace/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64
+cd ~/workspace/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64
 ./start_hdservice.sh
 ```
 
@@ -79,7 +79,7 @@ cd /home/USER/workspace/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64
 ### 第二步: 启动 web 页面
 
 ```bash
-cd /home/USER/workspace/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64
+cd ~/workspace/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64
 ./start_hdweb.sh
 ```
 
@@ -94,8 +94,8 @@ Open http://<你的机器IP>:8088/ in your browser
 新开一个终端:
 
 ```bash
-source /home/USER/envs/arm-hand-teleop/bin/activate
-cd /home/USER/workspace/yudie
+source ~/envs/arm-hand-teleop/bin/activate
+cd ~/workspace/yudie
 python DexHand_Motion_Control_Program.py
 ```
 

@@ -1,4 +1,5 @@
 {
+  "description": "O10 右手固定抓取手型骨架。用于 grasp_preset 模式下未激活手指的锁定姿态，以及拇指横向姿态基准。",
   "feature_names": [
     "thumb_cm_roll.pos",
     "thumb_cm_yaw.pos",

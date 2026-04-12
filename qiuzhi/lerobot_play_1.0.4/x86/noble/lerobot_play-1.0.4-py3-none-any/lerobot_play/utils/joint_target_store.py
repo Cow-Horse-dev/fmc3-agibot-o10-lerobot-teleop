@@ -43,19 +43,41 @@ class PersistentJointTargetStore:
 
         raise ValueError(f"Unsupported {self.label} format: {type(joint_values).__name__}")
 
-    def save(self, joint_values: Sequence[float]) -> list[float]:
+    def save(
+        self,
+        joint_values: Sequence[float],
+        *,
+        description: str | None = None,
+    ) -> list[float]:
         normalized_joint_values = self.normalize(joint_values)
         if self.path is None:
             return normalized_joint_values
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
+        payload: dict[str, object] = {}
+        if self.path.exists():
+            existing_payload = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(existing_payload, dict):
+                payload.update(
+                    {
+                        key: value
+                        for key, value in existing_payload.items()
+                        if key not in {"feature_names", "joint_values"}
+                    }
+                )
+
+        if description is not None:
+            payload["description"] = description
+
+        payload.update(
+            {
             "feature_names": list(self.feature_names),
             "joint_values": {
                 feature_name: normalized_joint_values[index]
                 for index, feature_name in enumerate(self.feature_names)
             },
-        }
+            },
+        )
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=True) + "\n",
             encoding="utf-8",

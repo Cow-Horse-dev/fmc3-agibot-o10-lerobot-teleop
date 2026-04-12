@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import importlib
 import importlib.util
 import math
 import os
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 AGIBOT_O10_HAND_FEATURE_NAMES = (
@@ -31,6 +32,30 @@ AGIBOT_O10_POSE_FEATURE_NAMES = (
     "quaternion.qy",
     "quaternion.qz",
     "quaternion.qw",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AgibotO10TactilePartSpec:
+    name: str
+    sdk_enum_name: str
+    value_count: int
+
+
+AGIBOT_O10_TACTILE_PART_SPECS = (
+    AgibotO10TactilePartSpec("thumb", "THUMB", 16),
+    AgibotO10TactilePartSpec("index", "INDEX", 16),
+    AgibotO10TactilePartSpec("middle", "MIDDLE", 16),
+    AgibotO10TactilePartSpec("ring", "RING", 16),
+    AgibotO10TactilePartSpec("little", "LITTLE", 16),
+    AgibotO10TactilePartSpec("palm", "PALM", 25),
+    AgibotO10TactilePartSpec("dorsum", "DORSUM", 25),
+)
+
+AGIBOT_O10_TACTILE_FEATURE_NAMES = tuple(
+    f"tactile.{spec.name}.{index:02d}"
+    for spec in AGIBOT_O10_TACTILE_PART_SPECS
+    for index in range(spec.value_count)
 )
 
 _ROBOT_HAND_ANGLE_LIMITS = {
@@ -134,6 +159,36 @@ def agibot_o10_action_feature_types() -> dict[str, type]:
         **agibot_o10_joint_action_feature_types(),
         **{name: float for name in AGIBOT_O10_POSE_FEATURE_NAMES},
     }
+
+
+def agibot_o10_tactile_feature_types() -> dict[str, type]:
+    return {name: float for name in AGIBOT_O10_TACTILE_FEATURE_NAMES}
+
+
+def agibot_o10_observation_feature_types(include_tactile: bool = False) -> dict[str, type]:
+    features = agibot_o10_action_feature_types()
+    if include_tactile:
+        features.update(agibot_o10_tactile_feature_types())
+    return features
+
+
+def flatten_agibot_o10_tactile_values(
+    tactile_values_by_part: Mapping[str, Sequence[float]],
+) -> dict[str, float]:
+    flattened: dict[str, float] = {}
+    for spec in AGIBOT_O10_TACTILE_PART_SPECS:
+        values = tactile_values_by_part.get(spec.name)
+        if values is None:
+            raise ValueError(f"Missing tactile values for part '{spec.name}'")
+        if len(values) != spec.value_count:
+            raise ValueError(
+                f"Tactile part '{spec.name}' must contain {spec.value_count} values, "
+                f"got {len(values)}"
+            )
+
+        for index, value in enumerate(values):
+            flattened[f"tactile.{spec.name}.{index:02d}"] = float(value)
+    return flattened
 
 
 def build_agibot_o10_joint_action_dict(joint_values: Sequence[float]) -> dict[str, float]:
@@ -345,6 +400,18 @@ class AgibotO10Hand:
         if self._hand is None:
             raise RuntimeError("Agibot O10 hand is not connected")
         return [float(angle) for angle in self._hand.get_all_active_joint_angles()]
+
+    def read_tactile_observation(self) -> dict[str, float]:
+        if self._hand is None or self._sdk is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+
+        tactile_values_by_part: dict[str, list[float]] = {}
+        for spec in AGIBOT_O10_TACTILE_PART_SPECS:
+            tactile_enum = getattr(self._sdk.EFinger, spec.sdk_enum_name)
+            tactile_values = [float(value) for value in self._hand.get_tactile_sensor_data(tactile_enum)]
+            tactile_values_by_part[spec.name] = tactile_values
+
+        return flatten_agibot_o10_tactile_values(tactile_values_by_part)
 
     def disconnect(self) -> None:
         self._hand = None
