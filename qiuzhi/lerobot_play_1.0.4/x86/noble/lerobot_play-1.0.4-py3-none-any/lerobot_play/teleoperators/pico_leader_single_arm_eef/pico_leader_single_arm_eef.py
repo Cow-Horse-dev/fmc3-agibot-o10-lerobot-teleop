@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 from pathlib import Path
+import psutil
 
 # project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # sys.path.insert(0, project_root)
@@ -147,12 +148,21 @@ class PicoLeaderSingleArmEEF(Teleoperator):
             pose_port_busy = self._is_tcp_port_open(self.config.vr_pose_port)
             ctrl_port_busy = self._is_tcp_port_open(self.config.vr_ctrl_port)
             if pose_port_busy and ctrl_port_busy:
+                if self._has_live_webrtc_stream():
+                    print(
+                        "检测到已有健康的 WebRTC/ZMQ 发布进程，"
+                        f"直接复用端口 {self.config.vr_pose_port}/{self.config.vr_ctrl_port}"
+                    )
+                    self.process = None
+                    return True
+
                 print(
-                    "检测到已有 WebRTC/ZMQ 发布进程在运行，"
-                    f"直接复用端口 {self.config.vr_pose_port}/{self.config.vr_ctrl_port}"
+                    "检测到已有 WebRTC/ZMQ 进程占用端口，但没有收到实时 pose/control 数据，"
+                    "准备清理旧进程后重新启动。"
                 )
-                self.process = None
-                return True
+                self._stop_existing_webrtc_publishers()
+                pose_port_busy = self._is_tcp_port_open(self.config.vr_pose_port)
+                ctrl_port_busy = self._is_tcp_port_open(self.config.vr_ctrl_port)
 
             if pose_port_busy or ctrl_port_busy:
                 print(
@@ -220,6 +230,79 @@ class PicoLeaderSingleArmEEF(Teleoperator):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(0.2)
             return sock.connect_ex(("127.0.0.1", port)) == 0
+
+    def _get_listener_processes_for_ports(self) -> list[psutil.Process]:
+        listener_pids = set()
+        target_ports = {self.config.vr_pose_port, self.config.vr_ctrl_port}
+
+        for connection in psutil.net_connections(kind="tcp"):
+            if connection.status != psutil.CONN_LISTEN:
+                continue
+            if not connection.laddr or connection.laddr.port not in target_ports:
+                continue
+            if connection.pid in (None, os.getpid()):
+                continue
+            listener_pids.add(connection.pid)
+
+        processes = []
+        for pid in sorted(listener_pids):
+            try:
+                processes.append(psutil.Process(pid))
+            except psutil.Error:
+                continue
+        return processes
+
+    def _stop_existing_webrtc_publishers(self):
+        for process in self._get_listener_processes_for_ports():
+            try:
+                cmdline = " ".join(process.cmdline())
+            except psutil.Error:
+                cmdline = "<unknown>"
+
+            print(f"停止旧 WebRTC/ZMQ 进程 PID={process.pid}: {cmdline}")
+            try:
+                process.terminate()
+                process.wait(timeout=3)
+            except psutil.TimeoutExpired:
+                print(f"PID={process.pid} 未在 3 秒内退出，改为强制杀掉")
+                process.kill()
+                try:
+                    process.wait(timeout=3)
+                except psutil.Error:
+                    pass
+            except psutil.Error as exc:
+                print(f"停止 PID={process.pid} 失败: {exc}")
+
+    def _receive_zmq_message_once(self, port: int, timeout_s: float) -> dict[str, Any] | None:
+        temp_context = zmq.Context()
+        temp_socket = temp_context.socket(zmq.SUB)
+        temp_socket.setsockopt(zmq.CONFLATE, 1)
+        temp_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        temp_socket.setsockopt(zmq.RCVTIMEO, max(1, int(timeout_s * 1000)))
+        temp_socket.connect(f"tcp://127.0.0.1:{port}")
+        time.sleep(0.1)
+
+        try:
+            return temp_socket.recv_json()
+        except zmq.Again:
+            return None
+        finally:
+            temp_socket.close(linger=0)
+            temp_context.term()
+
+    def _has_live_webrtc_stream(self, timeout_s: float = 1.5) -> bool:
+        pose_message = self._receive_zmq_message_once(self.config.vr_pose_port, timeout_s)
+        control_message = self._receive_zmq_message_once(self.config.vr_ctrl_port, timeout_s)
+
+        pose_ok = isinstance(pose_message, dict) and "tracking_state" in pose_message
+        control_ok = isinstance(control_message, dict) and "buttons" in control_message
+
+        if not pose_ok:
+            print(f"端口 {self.config.vr_pose_port} 未收到有效 pose 数据")
+        if not control_ok:
+            print(f"端口 {self.config.vr_ctrl_port} 未收到有效 control 数据")
+
+        return pose_ok and control_ok
 
     def stop_WebRTC(self, signum=None, frame=None):
         print(f"=== 收到信号 {signum}，调用 stop_WebRTC ===")
