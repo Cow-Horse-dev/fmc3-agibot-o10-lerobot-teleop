@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_DIR="$SCRIPT_DIR/HDService"
 LOCAL_PROTOBUF_DIR="$SERVICE_DIR/.local_deps/usr/lib/x86_64-linux-gnu"
+LOCAL_DEPS_ROOT="$SERVICE_DIR/.local_deps"
+BUNDLED_PROTOBUF_DEB="$SERVICE_DIR/libprotobuf23_3.12.4-1ubuntu7_amd64.deb"
 PORT="${HD_WS_PORT:-7789}"
 UDP_TARGET="${HD_UDP_TARGET:-127.0.0.1:7777}"
 DATA_STREAM_FILE="$SERVICE_DIR/log/data_stream.bin"
@@ -12,9 +14,33 @@ if [ ! -x "$SERVICE_DIR/HDService" ]; then
   chmod +x "$SERVICE_DIR/HDService"
 fi
 
+ensure_local_protobuf_dependency() {
+  if [ -e "$LOCAL_PROTOBUF_DIR/libprotobuf.so.23" ]; then
+    return 0
+  fi
+
+  if [ ! -f "$BUNDLED_PROTOBUF_DEB" ]; then
+    return 1
+  fi
+
+  if ! command -v dpkg-deb >/dev/null 2>&1; then
+    echo "Missing required tool: dpkg-deb" >&2
+    return 1
+  fi
+
+  echo "Bootstrapping local protobuf dependency from bundled package..."
+  mkdir -p "$LOCAL_DEPS_ROOT"
+  dpkg-deb -x "$BUNDLED_PROTOBUF_DEB" "$LOCAL_DEPS_ROOT"
+}
+
+if [ ! -e "$LOCAL_PROTOBUF_DIR/libprotobuf.so.23" ]; then
+  ensure_local_protobuf_dependency || true
+fi
+
 if [ ! -e "$LOCAL_PROTOBUF_DIR/libprotobuf.so.23" ]; then
   echo "Missing local protobuf dependency in: $LOCAL_PROTOBUF_DIR" >&2
   echo "Expected file: $LOCAL_PROTOBUF_DIR/libprotobuf.so.23" >&2
+  echo "Bundled package checked at: $BUNDLED_PROTOBUF_DEB" >&2
   exit 1
 fi
 

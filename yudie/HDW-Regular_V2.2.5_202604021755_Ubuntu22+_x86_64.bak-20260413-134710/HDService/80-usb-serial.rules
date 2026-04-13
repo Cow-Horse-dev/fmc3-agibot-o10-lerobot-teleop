@@ -1,0 +1,3 @@
+SUBSYSTEM=="tty", KERNEL=="ttyUSB*", MODE="0666"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", MODE="0666"
+SUBSYSTEM=="usb", MODE="0666"

@@ -45,7 +45,7 @@ robot:
       width: 640
       height: 480
       fps: 30
-      use_depth: false
+      use_depth: true
 
       # 可选值：RGB / BGR
       color_mode: RGB
@@ -146,9 +146,10 @@ dataset:
   root: /home/phl/workspace/dataset/Robot/agi_arm_bot
 
   # 是否录相机视频。
-  # - true: 录相机
-  # - false: 只录 state / action
-  video: true
+  # 深度图需要保留 16-bit PNG，不能走 mp4 编码。
+  # - true: 录相机视频
+  # - false: 把每帧图像直接保存成图片
+  video: false
 
   # 是否用 MCAP 存相机流。
   # 如果你想直接双击看视频，保持 false。

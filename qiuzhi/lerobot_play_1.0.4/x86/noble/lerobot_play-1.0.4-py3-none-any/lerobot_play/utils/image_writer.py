@@ -45,20 +45,27 @@ def safe_stop_image_writer(func):
 def image_array_to_pil_image(
     image_array: np.ndarray, range_check: bool = True
 ) -> PIL.Image.Image:
-    # TODO(aliberts): handle 1 channel and 4 for depth images
-    if image_array.ndim != 3:
+    if image_array.ndim == 2:
+        pass
+    elif image_array.ndim == 3:
+        if image_array.shape[0] in (1, 3):
+            # Transpose from pytorch convention (C, H, W) to (H, W, C)
+            image_array = image_array.transpose(1, 2, 0)
+
+        channels = image_array.shape[-1]
+        if channels == 1:
+            image_array = image_array[..., 0]
+        elif channels != 3:
+            raise NotImplementedError(
+                f"The image has {channels} channels, but only 1 or 3 are supported."
+            )
+    else:
         raise ValueError(
-            f"The array has {image_array.ndim} dimensions, but 3 is expected for an image."
+            f"The array has {image_array.ndim} dimensions, but 2 or 3 are expected for an image."
         )
 
-    if image_array.shape[0] == 3:
-        # Transpose from pytorch convention (C, H, W) to (H, W, C)
-        image_array = image_array.transpose(1, 2, 0)
-
-    elif image_array.shape[-1] != 3:
-        raise NotImplementedError(
-            f"The image has {image_array.shape[-1]} channels, but 3 is required for now."
-        )
+    if image_array.dtype == np.uint16:
+        return PIL.Image.fromarray(image_array)
 
     if image_array.dtype != np.uint8:
         if range_check:

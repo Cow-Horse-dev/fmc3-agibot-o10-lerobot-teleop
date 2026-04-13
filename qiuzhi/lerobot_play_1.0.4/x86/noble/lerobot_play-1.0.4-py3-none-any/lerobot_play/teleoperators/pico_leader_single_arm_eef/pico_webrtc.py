@@ -415,6 +415,7 @@ class PicoWebrtcVRTeleop(WebRTCServerBase):
             self.log_error(f"Error publishing control data: {e}")
 
     async def on_connection_established(self, pc_id: str, pc: RTCPeerConnection):
+        print(f"[{pc_id}] VR 已连接到 {self.port} 端口")
         self.log_info(f"[{pc_id}] WebRTC connection established")
 
         # 更新连接状态

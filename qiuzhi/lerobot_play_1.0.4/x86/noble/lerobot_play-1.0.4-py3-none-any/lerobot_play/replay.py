@@ -148,7 +148,44 @@ def _load_yaml(path: str) -> dict:
 
 def _load_config(cli: argparse.Namespace) -> dict:
     if cli.yaml:
-        return _load_yaml(cli.yaml)
+        cfg = _load_yaml(cli.yaml)
+
+        if cli.repo_id is not None or cli.dataset_root is not None:
+            dataset_cfg = cfg.setdefault("dataset", {})
+            if cli.repo_id is not None:
+                dataset_cfg["repo_id"] = cli.repo_id
+            if cli.dataset_root is not None:
+                dataset_cfg["root"] = cli.dataset_root
+
+        replay_cfg = cfg.setdefault("replay", {})
+        if cli.episode_index != 0:
+            replay_cfg["episode_index"] = cli.episode_index
+        if cli.fps != 30:
+            replay_cfg["fps"] = cli.fps
+
+        robot_cfg = cfg.setdefault("robot", {})
+        if cli.robot_type != "airbot_PTK_follower":
+            robot_cfg["type"] = cli.robot_type
+        if cli.robot_port != "can0":
+            robot_cfg["port"] = cli.robot_port
+        if cli.robot_left_arm_port != "can0":
+            robot_cfg["left_arm_port"] = cli.robot_left_arm_port
+        if cli.robot_right_arm_port != "can1":
+            robot_cfg["right_arm_port"] = cli.robot_right_arm_port
+        if cli.robot_id != "PTK_follower":
+            robot_cfg["id"] = cli.robot_id
+        if cli.robot_handedness is not None:
+            robot_cfg["handedness"] = cli.robot_handedness
+        if cli.robot_channel_mode is not None:
+            robot_cfg["channel_mode"] = cli.robot_channel_mode
+        if cli.robot_device_id is not None:
+            robot_cfg["device_id"] = cli.robot_device_id
+        if cli.robot_canfd_id is not None:
+            robot_cfg["canfd_id"] = cli.robot_canfd_id
+        if cli.robot_channel_id is not None:
+            robot_cfg["channel_id"] = cli.robot_channel_id
+
+        return cfg
 
     return {
         "dataset": {

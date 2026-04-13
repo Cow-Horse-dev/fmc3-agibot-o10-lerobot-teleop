@@ -104,12 +104,31 @@ class PicoFollowerSingleArmAgibotO10(Robot):
     def _motors_ft(self) -> dict[str, type]:
         return agibot_o10_action_feature_types()
 
+    @staticmethod
+    def _camera_uses_depth(camera_config: Any) -> bool:
+        return bool(getattr(camera_config, "use_depth", False))
+
+    @staticmethod
+    def _depth_observation_name(camera_name: str) -> str:
+        return f"{camera_name}_depth"
+
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
-        return {
-            cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3)
-            for cam in self.cameras
-        }
+        camera_features: dict[str, tuple] = {}
+        for camera_name in self.cameras:
+            camera_config = self.config.cameras[camera_name]
+            camera_features[camera_name] = (
+                camera_config.height,
+                camera_config.width,
+                3,
+            )
+            if self._camera_uses_depth(camera_config):
+                camera_features[self._depth_observation_name(camera_name)] = (
+                    camera_config.height,
+                    camera_config.width,
+                    1,
+                )
+        return camera_features
 
     @cached_property
     def action_features(self):
@@ -206,6 +225,14 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         }
 
         for cam_key, cam in self.cameras.items():
+            if self._camera_uses_depth(self.config.cameras[cam_key]):
+                color_frame, depth_frame = cam.async_read_color_and_depth()
+                obs_dict[cam_key] = color_frame
+                obs_dict[self._depth_observation_name(cam_key)] = np.expand_dims(
+                    depth_frame, axis=-1
+                )
+                continue
+
             obs_dict[cam_key] = cam.async_read()
 
         return obs_dict
