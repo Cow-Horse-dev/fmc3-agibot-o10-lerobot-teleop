@@ -99,6 +99,24 @@ def _prune_empty_parent_dirs(path: Path, stop_at: Path) -> None:
         current = current.parent
 
 
+def _coerce_episode_index(episode_index) -> int:
+    if isinstance(episode_index, np.ndarray):
+        if episode_index.size == 0:
+            return 0
+        episode_index = (
+            episode_index.item() if episode_index.size == 1 else episode_index[0]
+        )
+    elif isinstance(episode_index, (list, tuple)):
+        if len(episode_index) == 0:
+            return 0
+        episode_index = episode_index[0]
+
+    if isinstance(episode_index, np.generic):
+        episode_index = episode_index.item()
+
+    return int(episode_index)
+
+
 class LeRobotDatasetMetadata:
     def __init__(
         self,
@@ -769,6 +787,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.streaming_encoders = {}
         self.writer = None
         self.latest_episode = None
+        self._image_writer_processes = 0
+        self._image_writer_threads = 0
+        self._image_writer_mode = None
         self._current_file_start_frame = (
             None  # Track the starting frame index of the current parquet file
         )
@@ -1345,7 +1366,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         episode_length = episode_buffer.pop("size")
         tasks = episode_buffer.pop("task")
         episode_tasks = list(set(tasks))
-        episode_index = episode_buffer["episode_index"]
+        episode_index = _coerce_episode_index(episode_buffer["episode_index"])
 
         episode_buffer["index"] = np.arange(
             self.meta.total_frames, self.meta.total_frames + episode_length
@@ -1435,7 +1456,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                     for key in self.features:
                         if self.features[key]["dtype"] in ["image", "video"]:
                             mcap_path = self._get_mcap_file_path(
-                                episode_index=self.episode_buffer["episode_index"][0],
+                                episode_index=episode_index,
                                 image_key=key,
                                 frame_index=0,
                             )
@@ -1829,9 +1850,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         if key not in self.streaming_encoders:
             # Initialize encoder for this key
-            episode_index = self.episode_buffer["episode_index"]
-            if isinstance(episode_index, (list, np.ndarray)):
-                episode_index = episode_index[0] if len(episode_index) > 0 else 0
+            episode_index = _coerce_episode_index(
+                self.episode_buffer["episode_index"]
+            )
 
             mcap_dir = self.root / f"mcap/{key}/episode-{episode_index:06d}"
             mcap_dir.mkdir(parents=True, exist_ok=True)
@@ -2202,44 +2223,74 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         shutil.rmtree(str(input_dir))
 
-    def clear_episode_buffer(self, delete_images: bool = True) -> None:
+    def _restart_image_writer(self) -> None:
+        if self._image_writer_mode == "image":
+            self.start_image_writer(
+                num_processes=self._image_writer_processes,
+                num_threads=self._image_writer_threads,
+            )
+        elif self._image_writer_mode == "mcap":
+            self.start_mcap_writer(
+                num_processes=self._image_writer_processes,
+                num_threads=self._image_writer_threads,
+            )
+
+    def clear_episode_buffer(
+        self, delete_images: bool = True, restart_image_writer: bool = False
+    ) -> None:
         # Clean up image files for the current episode buffer
+        had_image_writer = self.image_writer is not None
+        delete_error = None
         if delete_images:
-            # Wait for the async image writer to finish
-            if self.image_writer is not None:
+            # When re-recording an episode, fully stop writer workers before
+            # deleting temporary frame directories so no late writes hit a
+            # removed episode path.
+            if had_image_writer and restart_image_writer:
+                self.stop_image_writer()
+            elif self.image_writer is not None:
                 self._wait_image_writer()
-            episode_index = self.episode_buffer["episode_index"]
-            if isinstance(episode_index, np.ndarray):
-                episode_index = (
-                    episode_index.item()
-                    if episode_index.size == 1
-                    else episode_index[0]
-                )
+            episode_index = _coerce_episode_index(self.episode_buffer["episode_index"])
             for cam_key in self.meta.camera_keys:
                 img_dir = self._get_image_file_dir(episode_index, cam_key)
                 if img_dir.is_dir():
-                    shutil.rmtree(img_dir)
-                    _prune_empty_parent_dirs(img_dir.parent, self.root)
+                    try:
+                        shutil.rmtree(img_dir)
+                    except OSError as err:
+                        delete_error = err
+                    else:
+                        _prune_empty_parent_dirs(img_dir.parent, self.root)
 
             if self.online_encoding:
                 self._close_stream_encoders()
                 for cam_key in self.meta.camera_keys:
                     mcap_dir = self.root / f"mcap/{cam_key}/episode-{episode_index:06d}"
                     if mcap_dir.is_dir():
-                        shutil.rmtree(mcap_dir)
+                        try:
+                            shutil.rmtree(mcap_dir)
+                        except OSError as err:
+                            delete_error = err
             else:
                 for cam_key in self.meta.camera_keys:
                     mcap_path = self._get_mcap_file_path(
-                        episode_index=self.episode_buffer["episode_index"][0],
+                        episode_index=episode_index,
                         image_key=cam_key,
                         frame_index=0,
                     )
                     if mcap_path.parent.is_dir():
-                        shutil.rmtree(mcap_path.parent)
+                        try:
+                            shutil.rmtree(mcap_path.parent)
+                        except OSError as err:
+                            delete_error = err
 
         # Reset the buffer
         self.episode_buffer = self.create_episode_buffer()
         self.image_buffer = None
+
+        if delete_images and restart_image_writer and had_image_writer:
+            self._restart_image_writer()
+
+        if delete_error is not None:
+            raise delete_error
 
     def start_image_writer(self, num_processes: int = 0, num_threads: int = 4) -> None:
         if isinstance(self.image_writer, AsyncImageWriter):
@@ -2247,6 +2298,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 "You are starting a new AsyncImageWriter that is replacing an already existing one in the dataset."
             )
 
+        self._image_writer_processes = num_processes
+        self._image_writer_threads = num_threads
+        self._image_writer_mode = "image"
         self.image_writer = AsyncImageWriter(
             num_processes=num_processes,
             num_threads=num_threads,
@@ -2258,6 +2312,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 "You are starting a new AsyncMcapWriter that is replacing an already existing one in the dataset."
             )
 
+        self._image_writer_processes = num_processes
+        self._image_writer_threads = num_threads
+        self._image_writer_mode = "mcap"
         self.image_writer = AsyncMcapWriter(
             num_processes=num_processes,
             num_threads=num_threads,
@@ -2324,6 +2381,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.batch_encoding_size = batch_encoding_size
         obj.episodes_since_last_encoding = 0
         obj.online_encoding = online_encoding
+        obj._image_writer_processes = 0
+        obj._image_writer_threads = 0
+        obj._image_writer_mode = None
         if image_writer_processes or image_writer_threads:
             if not use_mcap:
                 obj.start_image_writer(image_writer_processes, image_writer_threads)

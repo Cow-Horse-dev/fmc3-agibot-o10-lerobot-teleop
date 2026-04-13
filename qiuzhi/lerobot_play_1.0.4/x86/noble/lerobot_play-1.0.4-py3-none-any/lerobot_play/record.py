@@ -999,18 +999,19 @@ def main():
                 events["start"] = False
                 for attempt in range(3):
                     try:
-                        dataset.clear_episode_buffer()
+                        dataset.clear_episode_buffer(restart_image_writer=True)
                         break  # 成功则退出
                     except OSError as e:
                         if "Directory not empty" in str(e) and attempt < 2:
                             time.sleep(0.1 * (attempt + 1))
                             continue
-                        # 最后一次尝试失败，忽略错误继续执行
-                        print(f"清除失败但继续执行: {e}")
-                        break
+                        raise RuntimeError(
+                            "Re-record cleanup failed; stopping to avoid corrupting the dataset."
+                        ) from e
                     except Exception as e:
-                        print(f"清除异常但继续执行: {e}")
-                        break
+                        raise RuntimeError(
+                            "Re-record cleanup failed; stopping to avoid corrupting the dataset."
+                        ) from e
             else:
                 dataset.save_episode(use_mcap=use_mcap)
                 recorded += 1
