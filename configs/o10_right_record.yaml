@@ -115,7 +115,7 @@ run:
   display_data: false
 
   # 一次运行最多录多少个 episode。
-  num_episodes: 1
+  num_episodes: 1000
 
   # 单个 episode 最长时长，单位秒。
   episode_time_sec: 30
@@ -127,7 +127,7 @@ run:
   # 自动数据集命名时会基于这个字段生成目录名。
   # 例如：
   # - pick and place -> pick_and_place_20260410
-  single_task: pick blue camera from yellow paper into black tray
+  single_task: pick up the camera from the yellow paper, then flip it over
 
 dataset:
   # 是否自动按“任务名 + 日期”命名数据集目录。
