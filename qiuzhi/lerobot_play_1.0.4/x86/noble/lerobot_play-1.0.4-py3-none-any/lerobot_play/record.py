@@ -655,6 +655,8 @@ def main():
             device_id=cfg["robot"].get("device_id", 1),
             canfd_id=cfg["robot"].get("canfd_id", 0),
             channel_id=cfg["robot"].get("channel_id"),
+            arm_reset_joints_path=cfg["robot"].get("arm_reset_joints_path"),
+            hand_reset_joints_path=cfg["robot"].get("hand_reset_joints_path"),
             cameras=camera_cfgs,
             id=cfg["robot"]["id"],
         )
@@ -727,6 +729,7 @@ def main():
             handedness=cfg["teleop"].get("handedness", "right"),
             wrist_pose_source=cfg["teleop"].get("wrist_pose_source", "auto"),
             enable_hand=cfg["teleop"].get("enable_hand", True),
+            arm_reset_joints_path=cfg["teleop"].get("arm_reset_joints_path"),
             hand_reset_joints_path=cfg["teleop"].get("hand_reset_joints_path"),
             cameras=camera_cfgs,
             id=cfg["teleop"]["id"],

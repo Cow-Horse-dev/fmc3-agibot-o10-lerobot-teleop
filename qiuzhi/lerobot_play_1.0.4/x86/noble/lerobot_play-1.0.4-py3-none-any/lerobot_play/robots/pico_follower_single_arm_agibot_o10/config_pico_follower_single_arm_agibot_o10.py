@@ -14,6 +14,8 @@ class PicoFollowerSingleArmAgibotO10Config(RobotConfig):
     device_id: int = 1
     canfd_id: int = 0
     channel_id: int | None = None
+    arm_reset_joints_path: str | None = None
+    hand_reset_joints_path: str | None = None
 
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])

@@ -20,6 +20,7 @@ from lerobot_play.utils.agibot_o10 import (
     build_agibot_o10_joint_action_dict,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
 
 from .config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
@@ -59,6 +60,20 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             channel_id=self.config.channel_id,
         )
         self.hand_joints = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
+        self.arm_reset_store = PersistentJointTargetStore(
+            feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
+            path=self.config.arm_reset_joints_path,
+            label=f"{self.config.handedness} arm reset joint target",
+            group_key="arm",
+        )
+        self.hand_reset_store = PersistentJointTargetStore(
+            feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
+            path=self.config.hand_reset_joints_path,
+            label=f"{self.config.handedness} hand reset joint target",
+            group_key="hand",
+        )
+        self.reset_arm_joint_pos = [0.0] * len(AGIBOT_O10_ARM_FEATURE_NAMES)
+        self.reset_hand_joint_pos = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
 
         resolve_auto_opencv_cameras(config.cameras)
         self.cameras = make_cameras_from_configs(config.cameras)
@@ -86,6 +101,7 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
         self.enable_motors()
         self.configure()
+        self.capture_current_joint_pos_as_reset_target(persist=True)
         self._is_connected = True
 
     def enable_motors(self) -> None:
@@ -99,6 +115,40 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     def get_joint_pos(self) -> list[list[float]]:
         return [list(self.arm.state().pos), self.hand.read_active_joint_angles()]
+
+    @staticmethod
+    def _log_joint_pos(title: str, feature_names: tuple[str, ...], joint_pos: list[float]) -> None:
+        logger.info(title)
+        for feature_name, joint_value in zip(feature_names, joint_pos, strict=True):
+            logger.info("  %s: %.4f", feature_name, joint_value)
+
+    def capture_current_joint_pos_as_reset_target(
+        self, persist: bool = True
+    ) -> tuple[list[float], list[float]]:
+        arm_joint_pos, hand_joint_pos = self.get_joint_pos()
+        arm_joint_pos = arm_joint_pos[: len(AGIBOT_O10_ARM_FEATURE_NAMES)]
+        if persist:
+            arm_joint_pos = self.arm_reset_store.save(arm_joint_pos)
+            hand_joint_pos = self.hand_reset_store.save(hand_joint_pos)
+        else:
+            arm_joint_pos = self.arm_reset_store.normalize(arm_joint_pos)
+            hand_joint_pos = self.hand_reset_store.normalize(hand_joint_pos)
+
+        self.reset_arm_joint_pos = arm_joint_pos.copy()
+        self.reset_hand_joint_pos = hand_joint_pos.copy()
+        self.hand_joints = hand_joint_pos.copy()
+
+        self._log_joint_pos(
+            "Captured Agibot O10 arm reset target:",
+            AGIBOT_O10_ARM_FEATURE_NAMES,
+            arm_joint_pos,
+        )
+        self._log_joint_pos(
+            "Captured Agibot O10 hand reset target:",
+            AGIBOT_O10_HAND_FEATURE_NAMES,
+            hand_joint_pos,
+        )
+        return arm_joint_pos, hand_joint_pos
 
     @property
     def _motors_ft(self) -> dict[str, type]:
@@ -277,10 +327,10 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         if not self.is_connected:
             raise RuntimeError(f"{self} is not connected.")
 
-        joints = [0.0] * (self.config.arm_joints_num - 1)
+        joints = self.reset_arm_joint_pos.copy()
         velocities = [0.8] * (self.config.arm_joints_num - 1)
         effort = [10.0] * (self.config.arm_joints_num - 1)
-        zero_hand = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
+        reset_hand = self.reset_hand_joint_pos.copy()
 
         while True:
             state = list(self.arm.state().pos)
@@ -288,11 +338,11 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             if arm_arrived:
                 break
             self.arm.pvt(joints, velocities, effort)
-            self.hand.write_active_joint_angles(zero_hand)
+            self.hand.write_active_joint_angles(reset_hand)
             time.sleep(0.004)
 
-        self.hand.write_active_joint_angles(zero_hand)
-        self.hand_joints = zero_hand
+        self.hand.write_active_joint_angles(reset_hand)
+        self.hand_joints = reset_hand
 
     def reset_zero(self):
         self.return_zero()

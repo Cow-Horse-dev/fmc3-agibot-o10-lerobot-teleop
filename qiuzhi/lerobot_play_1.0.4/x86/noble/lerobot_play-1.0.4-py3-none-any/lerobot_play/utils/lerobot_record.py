@@ -422,6 +422,24 @@ def record_loop(
             f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps})."
         )
 
+    if dataset is not None:
+        loop_dataset_features = dataset.features
+    else:
+        loop_dataset_features = combine_feature_dicts(
+            aggregate_pipeline_dataset_features(
+                pipeline=teleop_action_processor,
+                initial_features=create_initial_features(action=robot.action_features),
+                use_videos=True,
+            ),
+            aggregate_pipeline_dataset_features(
+                pipeline=robot_observation_processor,
+                initial_features=create_initial_features(
+                    observation=robot.observation_features
+                ),
+                use_videos=True,
+            ),
+        )
+
     teleop_arm = teleop_keyboard = None
     if isinstance(teleop, list):
         teleop_arm_types = _get_multi_teleop_arm_types()
@@ -472,7 +490,7 @@ def record_loop(
 
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(
-                dataset.features, obs_processed, prefix=OBS_STR
+                loop_dataset_features, obs_processed, prefix=OBS_STR
             )
 
         # Get action from either policy or teleop
@@ -493,7 +511,7 @@ def record_loop(
             )
 
             act_processed_policy: RobotAction = make_robot_action(
-                action_values, dataset.features
+                action_values, loop_dataset_features
             )
 
         elif policy is None and isinstance(teleop, Teleoperator):

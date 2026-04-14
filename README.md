@@ -112,7 +112,12 @@ cd ~/workspace/arm-hand-teleop
 - [o10_right_record.yaml](configs/o10_right_record.yaml)
 - [o10_right_infer.yaml](configs/o10_right_infer.yaml)
 - [o10_right_replay.yaml](configs/o10_right_replay.yaml)
-- [o10_right_hand_reset_pose.json](configs/o10_right_hand_reset_pose.json)
+- [o10_right_reset_pose.json](configs/o10_right_reset_pose.json)
+
+策略专用推理配置：
+
+- [o10_right_infer_act_pick_blue_camera_into_black_tray.yaml](configs/policies/o10_right_infer_act_pick_blue_camera_into_black_tray.yaml)
+- [o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml](configs/policies/o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml)
 
 如果要切换左手或右手，优先改 yaml 里的这些字段：
 
@@ -126,11 +131,11 @@ cd ~/workspace/arm-hand-teleop
 - `left -> 0`
 - `right -> 1`
 
-## 手复位姿态
+## 统一复位姿态
 
-手部复位姿态保存在：
+当前 arm + hand 的统一复位姿态保存在：
 
-- [o10_right_hand_reset_pose.json](configs/o10_right_hand_reset_pose.json)
+- [o10_right_reset_pose.json](configs/o10_right_reset_pose.json)
 
 当前逻辑：
 

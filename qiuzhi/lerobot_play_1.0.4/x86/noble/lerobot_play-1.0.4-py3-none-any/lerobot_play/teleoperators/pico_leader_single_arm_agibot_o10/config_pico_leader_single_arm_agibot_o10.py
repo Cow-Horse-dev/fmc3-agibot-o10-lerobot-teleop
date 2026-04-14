@@ -15,6 +15,7 @@ class PicoLeaderSingleArmAgibotO10Config(TeleoperatorConfig):
     handedness: str = "right"
     wrist_pose_source: str = "auto"
     enable_hand: bool = True
+    arm_reset_joints_path: str | None = None
     hand_reset_joints_path: str | None = None
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])

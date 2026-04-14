@@ -232,6 +232,8 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_device_id=robot_cfg.get("device_id"),
         robot_canfd_id=robot_cfg.get("canfd_id"),
         robot_channel_id=robot_cfg.get("channel_id"),
+        robot_arm_reset_joints_path=robot_cfg.get("arm_reset_joints_path"),
+        robot_hand_reset_joints_path=robot_cfg.get("hand_reset_joints_path"),
     )
 
 
@@ -308,6 +310,8 @@ def _create_robot_config(args: argparse.Namespace):
             device_id=1 if args.robot_device_id is None else args.robot_device_id,
             canfd_id=0 if args.robot_canfd_id is None else args.robot_canfd_id,
             channel_id=args.robot_channel_id,
+            arm_reset_joints_path=args.robot_arm_reset_joints_path,
+            hand_reset_joints_path=args.robot_hand_reset_joints_path,
             id=args.robot_id,
         )
     else:

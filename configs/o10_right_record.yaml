@@ -37,6 +37,10 @@ robot:
   # - right -> 1
   channel_id: null
 
+  # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
+  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+
   cameras:
     right:
       # Record / infer 配置里 RealSense 类型写 `realsense`。
@@ -94,11 +98,13 @@ teleop:
   # - false: 只录机械臂
   enable_hand: true
 
-  # 手复位姿态 JSON 路径。
+  # 统一复位姿态 JSON 路径。
+  # 同时保存 arm + hand 的起始关节。
   # 如果改成 left，建议一起改成：
-  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_hand_reset_pose.json
-  # 文件不存在时会在第一次成功连到手套后自动创建。
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_hand_reset_pose.json
+  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
+  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
 run:
   # 录制频率，单位 Hz。
@@ -109,7 +115,7 @@ run:
   display_data: false
 
   # 一次运行最多录多少个 episode。
-  num_episodes: 1000
+  num_episodes: 1
 
   # 单个 episode 最长时长，单位秒。
   episode_time_sec: 30

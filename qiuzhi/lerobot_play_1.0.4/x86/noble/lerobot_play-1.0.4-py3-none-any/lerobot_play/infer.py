@@ -347,6 +347,8 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_device_id=robot_cfg.get("device_id"),
         robot_canfd_id=robot_cfg.get("canfd_id"),
         robot_channel_id=robot_cfg.get("channel_id"),
+        robot_arm_reset_joints_path=robot_cfg.get("arm_reset_joints_path"),
+        robot_hand_reset_joints_path=robot_cfg.get("hand_reset_joints_path"),
     )
 
 
@@ -480,6 +482,8 @@ def _create_robot_config(args: argparse.Namespace):
             device_id=1 if args.robot_device_id is None else args.robot_device_id,
             canfd_id=0 if args.robot_canfd_id is None else args.robot_canfd_id,
             channel_id=args.robot_channel_id,
+            arm_reset_joints_path=args.robot_arm_reset_joints_path,
+            hand_reset_joints_path=args.robot_hand_reset_joints_path,
             id=args.robot_id,
             cameras=camera_config,
         )
@@ -524,31 +528,32 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
         # 加载策略
         policy = _load_policy(args.policy, args.model_path, args.device)
 
-        save_target = resolve_dataset_target(
-            path=args.save_path or _get_default_save_path(args.policy)
-        )
-        had_incomplete_dataset = is_incomplete_dataset_root(save_target.root)
-        prepare_dataset_root_for_recording(
-            repo_id=save_target.repo_id,
-            root=save_target.root,
-        )
-        if had_incomplete_dataset:
-            log_say(f"Removed stale incomplete inference dataset: {save_target.root}")
         if args.save_data:
+            save_target = resolve_dataset_target(
+                path=args.save_path or _get_default_save_path(args.policy)
+            )
+            had_incomplete_dataset = is_incomplete_dataset_root(save_target.root)
+            prepare_dataset_root_for_recording(
+                repo_id=save_target.repo_id,
+                root=save_target.root,
+            )
+            if had_incomplete_dataset:
+                log_say(f"Removed stale incomplete inference dataset: {save_target.root}")
             log_say(f"Inference data will be saved to: {save_target.root}")
 
-        # 创建数据集
-        dataset = _create_dataset(
-            robot,
-            args.fps,
-            repo_id=save_target.repo_id,
-            dataset_root=str(save_target.root),
-        )
+            dataset = _create_dataset(
+                robot,
+                args.fps,
+                repo_id=save_target.repo_id,
+                dataset_root=str(save_target.root),
+            )
+        else:
+            log_say("Inference data saving disabled; running without dataset recording.")
 
         preprocessor, postprocessor = make_pre_post_processors(
             policy_cfg=policy.config,
             pretrained_path=args.model_path,
-            dataset_stats=dataset.meta.stats,
+            dataset_stats=dataset.meta.stats if dataset is not None else None,
             # The inference device is automatically set to match the detected hardware, overriding any previous device settings from training to ensure compatibility.
             preprocessor_overrides={
                 "device_processor": {"device": str(policy.config.device)}
@@ -586,7 +591,8 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 robot_observation_processor=robot_observation_processor,
             )
 
-            dataset.save_episode()
+            if dataset is not None:
+                dataset.save_episode()
 
             if episode_idx < args.num_episodes - 1:
                 log_say("Resetting robot to zero position")

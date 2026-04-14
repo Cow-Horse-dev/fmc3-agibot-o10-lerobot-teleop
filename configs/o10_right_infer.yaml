@@ -6,6 +6,7 @@
 # 注意：
 # - `model_path` 必须改成你自己的模型目录
 # - 如果 `save_data: true`，才会保存推理过程中产生的数据
+# - 不同模型的专用推理配置建议放在 `configs/policies/` 目录下
 
 infer:
   # 策略类型。
@@ -24,7 +25,7 @@ infer:
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodel/please_replace_with_your_model
+  model_path: /home/phl/workspace/mymodel/agi_arm_bot
 
   # 是否保存推理过程中的数据。
   # 可选值：
@@ -92,6 +93,10 @@ robot:
   # - left  -> 0
   # - right -> 1
   channel_id: null
+
+  # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
+  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
   cameras:
     right:
