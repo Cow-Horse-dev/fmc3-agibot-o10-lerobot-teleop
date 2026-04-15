@@ -127,7 +127,7 @@ run:
   # 自动数据集命名时会基于这个字段生成目录名。
   # 例如：
   # - pick and place -> pick_and_place_20260410
-  single_task: pick up the camera from the yellow paper, then flip it over
+  single_task: pick up the camera from the yellow paper into black box
 
 dataset:
   # 是否自动按“任务名 + 日期”命名数据集目录。
