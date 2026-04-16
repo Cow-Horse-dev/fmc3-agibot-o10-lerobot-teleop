@@ -20,10 +20,13 @@
 ## 环境说明
 
 - 日常启动脚本时，不需要手动 `conda activate`。
-- `scripts/*.sh` 已经直接写死使用：
+- `scripts/*.sh` 现在会自动寻找 Python 解释器，优先顺序大致是：
 
 ```bash
+ARM_HAND_TELEOP_PYTHON
+./.venv/bin/python
 ~/miniconda3/envs/arm-hand-teleop/bin/python
+python3
 ```
 
 - 只在下面这些场景下，才需要你自己进虚拟环境：
@@ -35,6 +38,18 @@ conda activate arm-hand-teleop
 - 你想手动跑 `python`
 - 你想装包
 - 你想跑测试
+
+如果你想显式指定解释器，可以这样：
+
+```bash
+ARM_HAND_TELEOP_PYTHON=/your/python ./scripts/control_o10_right.sh
+```
+
+## Docker 迁移
+
+如果你要把整套源码和运行环境打成 Docker 并迁移到另一台机器，直接看：
+
+- [DOCKER_MIGRATION.md](DOCKER_MIGRATION.md)
 
 ## 常用启动命令
 

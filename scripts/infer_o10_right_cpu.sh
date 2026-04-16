@@ -5,9 +5,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/common_env.sh"
 
 cd "$arm_hand_teleop_repo_root"
 
-# 启动右手推理。
-# 额外参数会继续透传给 Python 命令。
+# 启动右手 CPU 推理。
+# 适用于没有 NVIDIA GPU 的机器。
 "$arm_hand_teleop_python_bin" \
   "$arm_hand_teleop_repo_root/run_lerobot_play.py" infer \
-  --yaml "$arm_hand_teleop_repo_root/configs/o10_right_infer.yaml" \
+  --yaml "$arm_hand_teleop_repo_root/configs/o10_right_infer_cpu.yaml" \
   "$@"

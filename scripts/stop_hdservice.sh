@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 进入项目根目录。
-cd ~/workspace/arm-hand-teleop
+source "$(dirname "${BASH_SOURCE[0]}")/common_env.sh"
 
 # 停掉 HDService。
-exec ~/workspace/arm-hand-teleop/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/stop_hdservice.sh "$@"
+exec "$arm_hand_teleop_repo_root/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/stop_hdservice.sh" "$@"

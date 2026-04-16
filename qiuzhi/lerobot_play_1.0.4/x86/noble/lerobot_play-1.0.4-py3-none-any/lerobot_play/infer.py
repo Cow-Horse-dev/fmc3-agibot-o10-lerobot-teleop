@@ -164,6 +164,12 @@ def _parse_cli_args() -> argparse.Namespace:
         "--save_data", action="store_true", default=False, help="Save inference results"
     )
     parser.add_argument(
+        "--display_data",
+        action="store_true",
+        default=False,
+        help="Visualize inference data with Rerun",
+    )
+    parser.add_argument(
         "--async_infer",
         action="store_true",
         default=False,
@@ -295,6 +301,7 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "task_description": cli.task_description,
             "model_path": cli.model_path,
             "save_data": cli.save_data,
+            "display_data": cli.display_data,
             "async_infer": cli.async_infer,
             "num_episodes": cli.num_episodes,
             "episode_time_sec": cli.episode_time_sec,
@@ -329,6 +336,7 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         task_description=infer_cfg.get("task_description"),
         model_path=infer_cfg.get("model_path"),
         save_data=bool(infer_cfg.get("save_data", False)),
+        display_data=bool(infer_cfg.get("display_data", False)),
         async_infer=bool(infer_cfg.get("async_infer", False)),
         num_episodes=int(infer_cfg.get("num_episodes", 1)),
         episode_time_sec=int(infer_cfg.get("episode_time_sec", 100)),
@@ -560,14 +568,23 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
             },
         )
 
-        # 初始化键盘监听和可视化
-        _, events = init_keyboard_listener()
-        if args.save_data:
+        # 初始化可选键盘监听和可视化。
+        # 不显示数据时跳过 pynput/X11 探测，避免在 headless 环境里额外报错和扰动。
+        events = {
+            "start": False,
+            "exit_early": False,
+            "rerecord_episode": False,
+            "stop_recording": False,
+        }
+        if args.display_data:
+            _, events = init_keyboard_listener()
             init_rerun(session_name="inference")
 
         # 连接机器人
         robot.connect()
         robot_connected = True
+        log_say("Resetting robot to zero position before inference starts")
+        robot.return_zero()
 
         for episode_idx in range(args.num_episodes):
             log_say(
@@ -585,7 +602,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 dataset=dataset,
                 control_time_s=args.episode_time_sec,
                 single_task=args.task_description,
-                display_data=False,
+                display_data=args.display_data,
                 teleop_action_processor=teleop_action_processor,
                 robot_action_processor=robot_action_processor,
                 robot_observation_processor=robot_observation_processor,

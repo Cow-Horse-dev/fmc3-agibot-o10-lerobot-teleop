@@ -1,0 +1,53 @@
+# O10 单臂 CPU 推理配置
+# 供脚本 `./scripts/infer_o10_right_cpu.sh` 使用。
+#
+# 这份文件和 `configs/o10_right_infer.yaml` 基本一致，
+# 主要区别是把推理设备固定成 `cpu`，
+# 方便迁移到没有 NVIDIA GPU 的机器上直接使用。
+
+infer:
+  policy: act
+  task_description: pick and place
+  model_path: /home/phl/workspace/mymodel/agi_arm_bot
+  save_data: false
+  async_infer: false
+  num_episodes: 1
+  episode_time_sec: 30
+  fps: 30
+
+  # CPU 主机必须使用 cpu。
+  device: cpu
+
+  server_address: localhost:8080
+  save_path: null
+
+robot:
+  type: pico_follower_single_arm_agibot_o10
+  port: can0
+  id: o10_right
+  handedness: right
+  channel_mode: multiChannel
+  device_id: 1
+  canfd_id: 0
+  channel_id: null
+  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+
+  cameras:
+    right:
+      type: realsense
+      serial_number_or_name: "260322273018"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+      color_mode: RGB
+      rotation: NO_ROTATION
+
+    top:
+      type: opencv
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
+      width: 640
+      height: 480
+      fps: 30
+      rotation: NO_ROTATION

@@ -1,0 +1,26 @@
+services:
+  arm-hand-teleop:
+    image: ${ARM_HAND_TELEOP_IMAGE:-arm-hand-teleop:jazzy}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: arm-hand-teleop
+    privileged: true
+    network_mode: host
+    ipc: host
+    stdin_open: true
+    tty: true
+    working_dir: /home/phl/workspace/arm-hand-teleop
+    environment:
+      ARM_HAND_TELEOP_PYTHON: /opt/arm-hand-teleop-venv/bin/python
+      DISPLAY: ${DISPLAY:-}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../logs:/home/phl/workspace/arm-hand-teleop/logs
+      - ${DATASET_ROOT:-../dataset}:/home/phl/workspace/dataset
+      - ${MODEL_ROOT_SINGLE:-../mymodel}:/home/phl/workspace/mymodel
+      - ${MODEL_ROOT:-../mymodels}:/home/phl/workspace/mymodels
+    command: /bin/bash -lc "sleep infinity"

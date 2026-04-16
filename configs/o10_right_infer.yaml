@@ -17,21 +17,27 @@ infer:
   # - pi05
   # - smolvla
   # - groot
-  policy: act
+  policy: diffusion
 
   # 任务描述。
   # 会作为推理时的 task 文本输入。
-  task_description: pick and place
+  task_description: pick blue camera from yellow paper into black tray
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodel/agi_arm_bot
+  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion/diffusion_pick_blue_camera_into_black_tray/checkpoints/last/pretrained_model
 
   # 是否保存推理过程中的数据。
   # 可选值：
   # - true: 保存
   # - false: 不保存
   save_data: false
+
+  # 是否用 Rerun 可视化推理过程中的相机和动作。
+  # 可选值：
+  # - true: 打开 Rerun 可视化
+  # - false: 不显示
+  display_data: true
 
   # 是否启用异步推理。
   # 可选值：
@@ -40,13 +46,13 @@ infer:
   async_infer: false
 
   # 运行多少个 episode。
-  num_episodes: 1
+  num_episodes: 100
 
   # 单个 episode 最长时长，单位秒。
   episode_time_sec: 30
 
   # 推理频率，单位 Hz。
-  fps: 30
+  fps: 15
 
   # 推理设备。
   # 常见值：
@@ -124,7 +130,7 @@ robot:
       # - ROTATE_90
       # - ROTATE_180
       # - ROTATE_270
-      rotation: NO_ROTATION
+      rotation: ROTATE_180
 
     top:
       # 顶部 USB 相机。

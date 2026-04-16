@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/common_env.sh"
+
+repo_root="$arm_hand_teleop_repo_root"
+python_bin="$arm_hand_teleop_python_bin"
 web_dir="$repo_root/yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDWebClient"
 port="${HDWEB_PORT:-8088}"
 server_port="${HD_WS_PORT:-7789}"
@@ -21,7 +24,7 @@ if ss -ltnp 2>/dev/null | grep -q ":${port} "; then
   exit 0
 fi
 
-exec ~/miniconda3/envs/arm-hand-teleop/bin/python \
+exec "$python_bin" \
   "$repo_root/scripts/serve_hdweb.py" \
   --web-dir "$web_dir" \
   --port "$port" \

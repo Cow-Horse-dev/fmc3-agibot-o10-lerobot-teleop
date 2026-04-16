@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/common_env.sh"
+
+repo_root="$arm_hand_teleop_repo_root"
 port="${HDWEB_PORT:-8088}"
 
 cd "$repo_root"

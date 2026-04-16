@@ -59,7 +59,7 @@ robot:
       # - ROTATE_90
       # - ROTATE_180
       # - ROTATE_270
-      rotation: NO_ROTATION
+      rotation: ROTATE_180
 
     top:
       type: opencv
