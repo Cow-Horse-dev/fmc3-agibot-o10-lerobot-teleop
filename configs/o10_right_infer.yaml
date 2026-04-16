@@ -21,11 +21,11 @@ infer:
 
   # 任务描述。
   # 会作为推理时的 task 文本输入。
-  task_description: pick blue camera from yellow paper into black tray
+  task_description: pick up blue camera into black box
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion/diffusion_pick_blue_camera_into_black_tray/checkpoints/last/pretrained_model
+  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion/diffusion_pick_up_blue_camera_into_black_box/checkpoints/035000/pretrained_model
 
   # 是否保存推理过程中的数据。
   # 可选值：

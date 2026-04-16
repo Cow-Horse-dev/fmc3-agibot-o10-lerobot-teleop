@@ -482,6 +482,16 @@ def record_loop(
             events["exit_early"] = False
             break
 
+        if events.get("reset_robot"):
+            logging.info("Reset event received. Moving robot to configured reset pose.")
+            robot.reset_zero()
+            events["reset_robot"] = False
+            if isinstance(teleop, Teleoperator) and hasattr(teleop, "reset_pose"):
+                teleop.reset_pose()
+            start_episode_t = time.perf_counter()
+            timestamp = 0
+            continue
+
         # Get robot observation
         obs = robot.get_observation()
 

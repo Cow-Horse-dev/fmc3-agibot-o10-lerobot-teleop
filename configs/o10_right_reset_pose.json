@@ -10,12 +10,12 @@
         "joint6.pos"
       ],
       "joint_values": {
-        "joint1.pos": -0.12606021761894226,
-        "joint2.pos": -1.4991943836212158,
-        "joint3.pos": 0.43469181656837463,
-        "joint4.pos": 1.8400473594665527,
-        "joint5.pos": 0.7906080484390259,
-        "joint6.pos": -2.6491570472717285
+        "joint1.pos": -0.000918361998628825,
+        "joint2.pos": 0.0013111975276842713,
+        "joint3.pos": -0.0053582885302603245,
+        "joint4.pos": 0.025749599561095238,
+        "joint5.pos": 0.001716639962978661,
+        "joint6.pos": 0.15392538905143738
       }
     },
     "hand": {
@@ -32,16 +32,16 @@
         "pinky_mp_pitch.pos"
       ],
       "joint_values": {
-        "thumb_cm_roll.pos": -0.009223632812499997,
-        "thumb_cm_yaw.pos": -1.64,
-        "thumb_cm_pitch.pos": 0.6707542056424787,
-        "index_mp_yaw.pos": -0.1534375,
-        "index_mp_pitch.pos": 0.011824588238011564,
-        "middle_mp_pitch.pos": 1.475893123323301,
-        "ring_mp_yaw.pos": 0.01008544921875,
-        "ring_mp_pitch.pos": 0.08474141786696078,
-        "pinky_mp_yaw.pos": 0.133037109375,
-        "pinky_mp_pitch.pos": 0.3208955529818042
+        "thumb_cm_roll.pos": 0.32881347656250004,
+        "thumb_cm_yaw.pos": -1.0512231445312499,
+        "thumb_cm_pitch.pos": 0.6338047291397362,
+        "index_mp_yaw.pos": -0.1330859375,
+        "index_mp_pitch.pos": 0.10194183479517945,
+        "middle_mp_pitch.pos": 0.7722156974009042,
+        "ring_mp_yaw.pos": 0.05947509765625,
+        "ring_mp_pitch.pos": 0.20366228173140147,
+        "pinky_mp_yaw.pos": 0.101494140625,
+        "pinky_mp_pitch.pos": 0.1630806866762365
       }
     }
   }

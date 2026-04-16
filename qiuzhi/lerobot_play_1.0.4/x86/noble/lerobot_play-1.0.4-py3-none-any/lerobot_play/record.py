@@ -477,16 +477,14 @@ def _start_events_thread(
                     print("X key pressed. Exiting loop...")
                     events["exit_early"] = True
                 if vr_ctrl["Y"]:
-                    print(
-                        "Y key pressed. Exiting loop and rerecord the last episode..."
-                    )
-                    events["rerecord_episode"] = True
-                    events["exit_early"] = True
+                    print("Y key pressed. Resetting robot to the configured reset pose...")
+                    events["reset_robot"] = True
             else:
                 events["start"] = False
                 events["exit_early"] = False
                 events["rerecord_episode"] = False
                 events["stop_recording"] = False
+                events["reset_robot"] = False
             time.sleep(0.1)
 
     pause_event.set()
@@ -519,6 +517,7 @@ def init_stdin_listener():
     events["exit_early"] = False
     events["rerecord_episode"] = False
     events["stop_recording"] = False
+    events["reset_robot"] = False
 
     def listen_stdin():
         """Listen for stdin input in a background thread"""
@@ -812,6 +811,7 @@ def main():
             events["exit_early"] = False
             events["rerecord_episode"] = False
             events["stop_recording"] = False
+            events["reset_robot"] = False
 
             pause_flag_events = threading.Event()
             stop_flag_events = threading.Event()
