@@ -25,7 +25,7 @@ infer:
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion/diffusion_pick_up_blue_camera_into_black_box/checkpoints/035000/pretrained_model
+  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
 
   # 是否保存推理过程中的数据。
   # 可选值：
@@ -49,10 +49,10 @@ infer:
   num_episodes: 100
 
   # 单个 episode 最长时长，单位秒。
-  episode_time_sec: 30
+  episode_time_sec: 100
 
   # 推理频率，单位 Hz。
-  fps: 15
+  fps: 30
 
   # 推理设备。
   # 常见值：

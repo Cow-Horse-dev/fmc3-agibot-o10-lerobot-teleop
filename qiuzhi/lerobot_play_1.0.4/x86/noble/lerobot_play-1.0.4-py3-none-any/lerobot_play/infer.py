@@ -122,7 +122,6 @@ def _get_default_save_path(policy_type: str) -> str:
 
 def _create_save_directory(save_path: str) -> str:
     """创建保存目录"""
-    os.makedirs(save_path, exist_ok=True)
     return save_path
 
 
@@ -558,7 +557,7 @@ def _create_dataset(robot, fps: int, save_path: str) -> LeRobotDataset:
         repo_id=dataset_root.name,
         fps=fps,
         features=dataset_features,
-        root=str(dataset_root.parent),
+        root=str(dataset_root),
         robot_type=robot.name,
         use_videos=bool(getattr(robot, "cameras", {})),
         image_writer_threads=4,
@@ -590,8 +589,9 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
     elif args.save_data:
         save_path = _get_default_save_path(args.policy)
     else:
-        save_path = tempfile.mkdtemp(
-            prefix=f"{args.policy}_infer_", dir=os.path.join(tempfile.gettempdir())
+        save_path = os.path.join(
+            tempfile.gettempdir(),
+            f"{args.policy}_infer_{next(tempfile._get_candidate_names())}",
         )
 
     save_path = _create_save_directory(save_path)
