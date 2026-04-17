@@ -479,6 +479,7 @@ def _start_events_thread(
                 if vr_ctrl["Y"]:
                     print("Y key pressed. Resetting robot to the configured reset pose...")
                     events["reset_robot"] = True
+                    events["exit_early"] = True
             else:
                 events["start"] = False
                 events["exit_early"] = False
@@ -831,8 +832,16 @@ def main():
         if bool(cfg["run"].get("display_data", False)):
             init_rerun(session_name="recording")
 
-        # Connect devices
+        # Connect devices（connect 会用当前位置覆盖 reset pose，先保存再恢复）
+        saved_arm = robot.arm_reset_store.load() if hasattr(robot, "arm_reset_store") else None
+        saved_hand = robot.hand_reset_store.load() if hasattr(robot, "hand_reset_store") else None
         robot.connect()
+        if saved_arm is not None:
+            robot.reset_arm_joint_pos = saved_arm
+            robot.arm_reset_store.save(saved_arm)
+        if saved_hand is not None:
+            robot.reset_hand_joint_pos = saved_hand
+            robot.hand_reset_store.save(saved_hand)
         teleop.connect()
 
         if robot.name == "airbot_play_follower":
@@ -947,6 +956,15 @@ def main():
                 episode_index=recorded + 1,
                 total_episodes=int(cfg["run"]["num_episodes"]),
             )
+
+            # Y 键复位：丢弃当前 episode 数据，执行复位，重新开始
+            if events.get("reset_robot"):
+                print("Performing Y-button reset...")
+                events["reset_robot"] = False
+                events["exit_early"] = False
+                dataset.clear_episode_buffer()
+                robot.reset_zero()
+                continue
 
             if robot.name == "airbot_play_follower":
                 robot.reset_zero()

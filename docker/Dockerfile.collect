@@ -1,0 +1,57 @@
+FROM osrf/ros:jazzy-desktop-full
+
+SHELL ["/bin/bash", "-lc"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV ROS_DISTRO=jazzy
+ENV ARM_HAND_TELEOP_HOME=/home/phl/workspace/arm-hand-teleop
+ENV CONDA_DIR=/opt/miniconda3
+ENV CONDA_ENV=arm-hand-teleop
+ENV ARM_HAND_TELEOP_PYTHON=${CONDA_DIR}/envs/${CONDA_ENV}/bin/python
+ENV PATH="${CONDA_DIR}/envs/${CONDA_ENV}/bin:${CONDA_DIR}/bin:${PATH}"
+ENV PIP_NO_CACHE_DIR=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    can-utils \
+    ffmpeg \
+    git \
+    iproute2 \
+    libegl1 \
+    libgl1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libudev1 \
+    libusb-1.0-0 \
+    libxext6 \
+    libxrender1 \
+    lsof \
+    net-tools \
+    procps \
+    udev \
+    usbutils \
+    v4l-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# --- 直接解压 conda 环境（conda pack 打包的） ---
+RUN mkdir -p ${CONDA_DIR}/envs/${CONDA_ENV}
+COPY arm-hand-teleop-env.tar.gz /tmp/arm-hand-teleop-env.tar.gz
+RUN tar -xzf /tmp/arm-hand-teleop-env.tar.gz -C ${CONDA_DIR}/envs/${CONDA_ENV} \
+  && rm /tmp/arm-hand-teleop-env.tar.gz \
+  && ${CONDA_DIR}/envs/${CONDA_ENV}/bin/conda-unpack
+
+# --- 代码由用户运行时从 GitHub 拉取，通过 volume 挂载 ---
+RUN mkdir -p \
+    ${ARM_HAND_TELEOP_HOME} \
+    /home/phl/workspace/dataset \
+    /home/phl/workspace/mymodels
+
+COPY docker/entrypoint.collect.sh /usr/local/bin/arm-hand-teleop-entrypoint
+RUN chmod +x /usr/local/bin/arm-hand-teleop-entrypoint
+
+WORKDIR ${ARM_HAND_TELEOP_HOME}
+
+ENTRYPOINT ["/usr/local/bin/arm-hand-teleop-entrypoint"]
+CMD ["/bin/bash"]

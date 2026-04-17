@@ -631,55 +631,6 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
         robot.reset_hand_joint_pos = saved_hand
         robot.hand_reset_store.save(saved_hand)
 
-    # 降低伺服速度，让运动更平滑
-    _orig_servo = robot.servo_joint_pos
-    robot.servo_joint_pos = lambda joints, vel=1.5, eff=8.0: _orig_servo(joints, vel=vel, eff=eff)
-
-    # Temporal ensembling: 在 predict_action_chunk 层面拦截，
-    # 保留完整 horizon 预测，重叠部分加权平均
-    import torch
-    import numpy as np
-    import numbers
-
-    _n_action_steps = policy.config.n_action_steps   # 8
-    _prev_chunk = [None]  # 上一次完整预测 (horizon, action_dim)
-    _orig_predict_chunk = policy.predict_action_chunk
-
-    def _ensemble_predict_chunk(batch, **kwargs):
-        new_chunk = _orig_predict_chunk(batch, **kwargs)  # (1, horizon, action_dim)
-        if _prev_chunk[0] is not None:
-            # 上一个 chunk 的后半段和新 chunk 的前半段有重叠
-            overlap = new_chunk.shape[1] - _n_action_steps  # horizon - n_action_steps = 8
-            if overlap > 0:
-                prev_tail = _prev_chunk[0][:, _n_action_steps:, :]  # 上一个 chunk 未执行的部分
-                new_head = new_chunk[:, :overlap, :]
-                # 线性权重：新预测权重从 0 递增到 1
-                w = torch.linspace(0, 1, overlap, device=new_chunk.device).reshape(1, -1, 1)
-                blended = (1 - w) * prev_tail + w * new_head
-                new_chunk = torch.cat([blended, new_chunk[:, overlap:, :]], dim=1)
-        _prev_chunk[0] = new_chunk.clone()
-        return new_chunk
-
-    policy.predict_action_chunk = _ensemble_predict_chunk
-
-    # EMA 平滑作为最后一道滤波
-    _ema_alpha = 0.6
-    _prev_action = [None]
-    _orig_send_action = robot.send_action
-
-    def _is_numeric(v):
-        return isinstance(v, (numbers.Number, np.floating, np.integer))
-
-    def _smoothed_send_action(action):
-        if _prev_action[0] is not None:
-            for key in action:
-                if _is_numeric(action[key]) and key in _prev_action[0]:
-                    action[key] = float(_ema_alpha * action[key] + (1 - _ema_alpha) * _prev_action[0][key])
-        _prev_action[0] = {k: float(v) for k, v in action.items() if _is_numeric(v)}
-        return _orig_send_action(action)
-
-    robot.send_action = _smoothed_send_action
-
     try:
         for episode_idx in range(args.num_episodes):
             log_say(
