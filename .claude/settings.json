@@ -29,7 +29,14 @@
       "Bash(grep \"\\\\.whl$\")",
       "Bash(grep -E \"^qiuzhi/lerobot_play_1.0.4/x86/noble/.*\\\\.whl$\")",
       "Bash(git filter-branch *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter 'git rm --cached --ignore-unmatch arm-hand-teleop-collect.tar.gz' --prune-empty -- --all)",
+      "Bash(git stash *)",
+      "Bash(git reflog *)",
+      "Bash(git gc *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git -C /home/phl/workspace/arm-hand-teleop status --short)"
     ]
   }
 }
