@@ -1,0 +1,28 @@
+robot:
+  robot_type: airbot_tok2 # 机器人类型
+  eef_type_left: none # 末端执行器类型 none, G2, INS_RH56DFX, INS_RH56BFX, INS_RH56E2, INS_RH56F1, BRAINCO_REVO1, BRAINCO_REVO2, ROH_LITES001, ROH_A002
+  eef_type_right: none
+  arm_sdk_type: thin # full-- 5.1.6, thin -- 5.2.7
+  can_port_left: can0
+  can_port_right: can1
+  hand_id_left: 127
+  hand_id_right: 127
+
+teleop:
+  vr_device: pico_webrtc # quest_webrtc, pico_webrtc
+  arm_device: pico  # pico_wrist, pico, quest
+  hand_device: pico # 遥操作手设备 # udexreal, pico, quest
+  handedness: right # left, right
+  control_freq:
+    udexreal_glove: 25 # 数据更新频率
+    arm: 100 # 位置更新频率
+    eef: 15 # 控制频率
+  pose_port: 8000
+  control_port: 8001
+
+base:
+  device_type: none # 移动底座类别 # none, go2
+  zmq_port: 8002
+  network_interface: wlp0s20f3
+
+GUI: False  # False, True

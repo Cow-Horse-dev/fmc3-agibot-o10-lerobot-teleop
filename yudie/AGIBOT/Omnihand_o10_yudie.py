@@ -10,7 +10,6 @@ def init_hand_OmnimultiChannel(hand_type: str):
     初始化手 多口CANFD
     """
     left_hand, right_hand = None, None
-
     if hand_type in ('left', 'both'):
         left_hand = AgibotHandO10.create_hand(device_id = 1,canfd_id = 0, channel_id= 0,hand_type = EHandType.LEFT)
     if hand_type in ('right', 'both'):

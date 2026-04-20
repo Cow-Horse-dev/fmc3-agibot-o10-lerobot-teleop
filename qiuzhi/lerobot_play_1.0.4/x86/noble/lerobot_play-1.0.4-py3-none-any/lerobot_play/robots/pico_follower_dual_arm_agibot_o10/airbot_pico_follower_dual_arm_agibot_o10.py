@@ -160,21 +160,23 @@ class PicoFollowerDualArmAgibotO10(Robot):
         # Left arm
         if not self.left_arm.init(self.left_io_context, self.left_port, 250):
             raise RuntimeError("Failed to initialize left arm")
-        try:
-            self.left_hand.connect()
-        except Exception:
-            self.left_arm.uninit()
-            raise
+        if self.config.enable_hand:
+            try:
+                self.left_hand.connect()
+            except Exception:
+                self.left_arm.uninit()
+                raise
 
         # Right arm (independent – left stays up even if right fails)
         if not self.right_arm.init(self.right_io_context, self.right_port, 250):
             logger.error("Failed to initialize right arm; left arm already up")
             raise RuntimeError("Failed to initialize right arm")
-        try:
-            self.right_hand.connect()
-        except Exception:
-            self.right_arm.uninit()
-            raise
+        if self.config.enable_hand:
+            try:
+                self.right_hand.connect()
+            except Exception:
+                self.right_arm.uninit()
+                raise
 
         self.enable_motors()
         self.configure()

@@ -7,7 +7,7 @@ teleop:
   vr_pose_port: 8000
   vr_ctrl_port: 8001
   vr_device: pico_wrist
-  enable_hand: true
+  enable_hand: false
   left:
     handedness: left
     wrist_pose_source: left
@@ -22,6 +22,7 @@ teleop:
 robot:
   type: pico_follower_dual_arm_agibot_o10
   id: o10_dual
+  enable_hand: false
   left:
     port: can1
     handedness: left

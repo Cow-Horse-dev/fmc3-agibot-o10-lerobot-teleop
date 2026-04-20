@@ -38,7 +38,7 @@ teleop:
   # 可选值：
   # - true: 手 + 臂一起控制
   # - false: 只控制机械臂
-  enable_hand: true
+  enable_hand: false
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。

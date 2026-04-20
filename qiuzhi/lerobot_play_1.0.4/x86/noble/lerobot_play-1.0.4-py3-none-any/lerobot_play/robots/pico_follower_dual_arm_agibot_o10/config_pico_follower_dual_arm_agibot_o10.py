@@ -22,6 +22,7 @@ class DualArmSideConfig:
 class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
+    enable_hand: bool = True
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])
     cameras: dict[str, CameraConfig] = field(default_factory=dict)
