@@ -9,7 +9,19 @@
       "Bash(ssh-keygen -t ed25519 -C \"phl@fmc3-robotics-01000\" -f /home/phl/.ssh/id_ed25519 -N \"\")",
       "Bash(scp /home/phl/workspace/arm-hand-teleop/arm-hand-teleop-collect.tar.gz robot@192.168.1.107:/tmp/)",
       "Bash(chmod +x /home/phl/workspace/arm-hand-teleop/scripts/set_pose.py)",
-      "Bash(chmod +x /home/phl/workspace/arm-hand-teleop/scripts/save_reset_pose.py)"
+      "Bash(chmod +x /home/phl/workspace/arm-hand-teleop/scripts/save_reset_pose.py)",
+      "Bash(mount)",
+      "Read(//tmp/**)",
+      "Read(//proc/sys/vm/**)",
+      "Bash(python3 -c \"import ctypes; ctypes.CDLL\\('libpython3.12.so.1.0'\\)\")",
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, 'qiuzhi/lerobot_play_1.0.4/x86/noble/lerobot_play-1.0.4-py3-none-any'\\); from lerobot_play.utils.agibot_o10 import import_omnihand_2025_module; import_omnihand_2025_module\\(\\)\")",
+      "Read(//home/phl/miniconda3/envs/arm-hand-teleop/lib/python3.12/site-packages/omnihand_2025/**)",
+      "Bash(/home/phl/miniconda3/envs/arm-hand-teleop/bin/python -c \"import omnihand_2025; print\\('OK'\\)\")",
+      "Read(//home/phl/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/040000/pretrained_model/**)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['dataset_repo_id','dataset_root'] if k in d}, indent=2\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{k}: {v}'\\) for k,v in d.items\\(\\) if 'dataset' in k.lower\\(\\) or 'data' in k.lower\\(\\) or 'repo' in k.lower\\(\\) or 'root' in k.lower\\(\\)]\")",
+      "Bash(python3 -c ' *)",
+      "Bash(/home/phl/miniconda3/envs/arm-hand-teleop/bin/python -c ' *)"
     ]
   }
 }

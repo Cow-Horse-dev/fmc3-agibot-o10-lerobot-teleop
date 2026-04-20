@@ -52,7 +52,7 @@ infer:
   episode_time_sec: 100
 
   # 推理频率，单位 Hz。
-  fps: 30
+  fps: 15
 
   # 推理设备。
   # 常见值：

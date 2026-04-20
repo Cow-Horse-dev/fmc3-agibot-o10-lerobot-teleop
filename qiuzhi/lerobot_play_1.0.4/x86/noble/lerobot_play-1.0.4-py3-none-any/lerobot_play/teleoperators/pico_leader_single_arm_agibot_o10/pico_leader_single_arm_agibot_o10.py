@@ -66,6 +66,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             self._initialize_hand_reset_target()
         else:
             print("Agibot O10 hand teleoperation disabled. Running in arm-only mode.")
+        self._refresh_reset_targets_from_store()
         self._is_connected = True
 
     @property

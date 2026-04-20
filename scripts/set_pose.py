@@ -81,6 +81,7 @@ def main():
     parser.add_argument("--arm", type=float, nargs=ARM_DOF, help=f"Arm joint positions ({ARM_DOF} floats, radians)")
     parser.add_argument("--hand", type=float, nargs=HAND_DOF, help=f"Hand joint positions ({HAND_DOF} floats, radians)")
     parser.add_argument("--read-only", action="store_true", help="Only read and print current pose")
+    parser.add_argument("--arm-only", action="store_true", help="Skip hand connection")
     parser.add_argument("--port", type=str, default="can0", help="CAN port (default: can0)")
     parser.add_argument("--handedness", type=str, default="right", choices=["left", "right"])
     args = parser.parse_args()
@@ -99,6 +100,9 @@ def main():
     if not args.read_only and arm_target is None and hand_target is None:
         parser.error("Provide --from-json, --arm, --hand, or --read-only")
 
+    if args.arm_only:
+        hand_target = None
+
     executor = ah.create_asio_executor(8)
     io_context = executor.get_io_context()
     arm = ah.Play.create(
@@ -112,17 +116,20 @@ def main():
         print("ERROR: Failed to initialize arm")
         sys.exit(1)
 
-    hand = AgibotO10Hand(handedness=args.handedness, channel_mode="multiChannel")
-    print(f"Connecting {args.handedness} hand...")
-    hand.connect()
+    hand = None
+    if not args.arm_only:
+        hand = AgibotO10Hand(handedness=args.handedness, channel_mode="multiChannel")
+        print(f"Connecting {args.handedness} hand...")
+        hand.connect()
 
     arm.enable()
     arm.set_param("arm.control_mode", ah.MotorControlMode.PVT)
 
     cur_arm = list(arm.state().pos)[:ARM_DOF]
-    cur_hand = hand.read_active_joint_angles()
     print_pose("Current arm", AGIBOT_O10_ARM_FEATURE_NAMES, cur_arm)
-    print_pose("Current hand", AGIBOT_O10_HAND_FEATURE_NAMES, cur_hand)
+    if hand is not None:
+        cur_hand = hand.read_active_joint_angles()
+        print_pose("Current hand", AGIBOT_O10_HAND_FEATURE_NAMES, cur_hand)
 
     if args.read_only:
         print("\n(read-only mode, no movement)")
@@ -130,21 +137,23 @@ def main():
         if arm_target is not None:
             print_pose("Target arm", AGIBOT_O10_ARM_FEATURE_NAMES, arm_target)
             move_arm_to(arm, arm_target)
-        if hand_target is not None:
+        if hand_target is not None and hand is not None:
             print_pose("Target hand", AGIBOT_O10_HAND_FEATURE_NAMES, hand_target)
             print("Setting hand joints...")
             hand.write_active_joint_angles(hand_target)
             time.sleep(0.5)
 
         final_arm = list(arm.state().pos)[:ARM_DOF]
-        final_hand = hand.read_active_joint_angles()
         print_pose("Final arm", AGIBOT_O10_ARM_FEATURE_NAMES, final_arm)
-        print_pose("Final hand", AGIBOT_O10_HAND_FEATURE_NAMES, final_hand)
+        if hand is not None:
+            final_hand = hand.read_active_joint_angles()
+            print_pose("Final hand", AGIBOT_O10_HAND_FEATURE_NAMES, final_hand)
 
     input("\nPress Enter to disable motors and exit...")
     arm.disable()
     arm.uninit()
-    hand.disconnect()
+    if hand is not None:
+        hand.disconnect()
     print("Done.")
 
 

@@ -486,6 +486,46 @@ def _load_policy(policy_type: str, model_path: str, device: str):
         raise RuntimeError(f"Failed to load policy: {e}")
 
 
+def _reset_to_training_start(robot, model_path: str) -> None:
+    """从模型的训练数据集中读取第一帧 state，复位臂和手到该姿态。"""
+    from lerobot_play.utils.agibot_o10 import (
+        AGIBOT_O10_ARM_FEATURE_NAMES,
+        AGIBOT_O10_HAND_FEATURE_NAMES,
+    )
+
+    train_config_path = os.path.join(model_path, "train_config.json")
+    if not os.path.exists(train_config_path):
+        log_say("No train_config.json found, skipping dataset-based reset")
+        return
+
+    with open(train_config_path) as f:
+        train_cfg = json.load(f)
+
+    dataset_cfg = train_cfg.get("dataset", {})
+    dataset_root = dataset_cfg.get("root")
+    repo_id = dataset_cfg.get("repo_id", "").split("/")[-1]
+    if not dataset_root or not os.path.isdir(dataset_root):
+        log_say(f"Training dataset not found at {dataset_root}, skipping reset")
+        return
+
+    try:
+        ds = LeRobotDataset(repo_id, root=dataset_root, episodes=[0])
+        state = ds[0]["observation.state"].tolist()
+    except Exception as exc:
+        log_say(f"Failed to load training dataset for reset: {exc}")
+        return
+
+    arm_dof = len(AGIBOT_O10_ARM_FEATURE_NAMES)
+    hand_dof = len(AGIBOT_O10_HAND_FEATURE_NAMES)
+    arm_target = state[:arm_dof]
+    hand_target = state[arm_dof:arm_dof + hand_dof]
+
+    robot.reset_arm_joint_pos = arm_target
+    robot.reset_hand_joint_pos = hand_target
+    log_say("Resetting to training dataset episode 0 start pose")
+    robot.reset_zero()
+
+
 def _create_robot_config(args: argparse.Namespace):
     """创建机器人配置"""
     camera_config = {}
@@ -626,6 +666,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 连接机器人
     robot.connect()
+    _reset_to_training_start(robot, args.model_path)
 
     try:
         for episode_idx in range(args.num_episodes):
