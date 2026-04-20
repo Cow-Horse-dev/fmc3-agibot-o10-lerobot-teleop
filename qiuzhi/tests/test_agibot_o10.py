@@ -17,7 +17,7 @@ LEROBOT_PLAY_PACKAGE_ROOT = (
     / "lerobot_play-1.0.4-py3-none-any"
 )
 YUDIE_REFERENCE_PATH = (
-    Path("/home/phl/workspace/yudie/AGIBOT/Omnihand_o10_yudie.py")
+    Path("~/workspace/yudie/AGIBOT/Omnihand_o10_yudie.py").expanduser()
 )
 
 if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:

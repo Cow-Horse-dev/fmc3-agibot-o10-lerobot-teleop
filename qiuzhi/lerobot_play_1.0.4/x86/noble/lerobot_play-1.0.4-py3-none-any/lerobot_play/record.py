@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 import threading
 import time
 
@@ -89,7 +90,7 @@ def _parse_cameras(cameras_obj: dict) -> dict:
 
 
 def _load_yaml(path: str) -> dict:
-    with open(path, encoding="utf-8") as f:
+    with open(Path(path).expanduser(), encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 

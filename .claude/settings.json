@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(rm -f /home/phl/workspace/arm-hand-teleop/.git/index.lock)",
+      "Bash(git push *)",
+      "Bash(ssh-keygen -t ed25519 -C \"phl@fmc3-robotics-01000\" -f /home/phl/.ssh/id_ed25519 -N \"\")",
+      "Bash(scp /home/phl/workspace/arm-hand-teleop/arm-hand-teleop-collect.tar.gz robot@192.168.1.107:/tmp/)",
+      "Bash(chmod +x /home/phl/workspace/arm-hand-teleop/scripts/set_pose.py)"
+    ]
+  }
+}

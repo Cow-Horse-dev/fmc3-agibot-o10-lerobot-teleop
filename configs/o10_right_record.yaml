@@ -3,7 +3,7 @@
 #
 # 这份文件负责把数据录成 LeRobot 数据集格式。
 # 当前已经配置成：
-# - 数据保存在 /home/phl/workspace/dataset/Robot/agi_arm_bot 下面
+# - 数据保存在 ~/workspace/dataset/Robot/agi_arm_bot 下面
 # - 目录名自动按“任务名 + 当天日期”生成
 # 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
 
@@ -38,8 +38,8 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
-  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
   cameras:
     right:
@@ -101,10 +101,10 @@ teleop:
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
   # 如果改成 left，建议一起改成：
-  #   /home/phl/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  #   ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
   # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
-  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
 run:
   # 录制频率，单位 Hz。
@@ -148,8 +148,8 @@ dataset:
 
   # 数据集根目录。
   # 最终实际路径会是：
-  #   /home/phl/workspace/dataset/Robot/agi_arm_bot/<任务名_日期>
-  root: /home/phl/workspace/dataset/Robot/agi_arm_bot
+  #   ~/workspace/dataset/Robot/agi_arm_bot/<任务名_日期>
+  root: ~/workspace/dataset/Robot/agi_arm_bot
 
   # 是否录相机视频。
   # - true: 录相机视频

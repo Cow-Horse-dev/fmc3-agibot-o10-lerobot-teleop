@@ -10,7 +10,7 @@ services:
     ipc: host
     stdin_open: true
     tty: true
-    working_dir: /home/phl/workspace/arm-hand-teleop
+    working_dir: /root/workspace/arm-hand-teleop
     environment:
       ARM_HAND_TELEOP_PYTHON: /opt/miniconda3/envs/arm-hand-teleop/bin/python
       DISPLAY: ${DISPLAY:-}
@@ -20,6 +20,6 @@ services:
       - /run/udev:/run/udev:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # 代码目录：先 git clone 到宿主机，再挂载进来
-      - ${CODE_ROOT:-/home/phl/workspace/arm-hand-teleop}:/home/phl/workspace/arm-hand-teleop
-      - ${DATASET_ROOT:-/home/phl/workspace/dataset}:/home/phl/workspace/dataset
+      - ${CODE_ROOT:-~/workspace/arm-hand-teleop}:/root/workspace/arm-hand-teleop
+      - ${DATASET_ROOT:-~/workspace/dataset}:/root/workspace/dataset
     command: /bin/bash -lc "sleep infinity"

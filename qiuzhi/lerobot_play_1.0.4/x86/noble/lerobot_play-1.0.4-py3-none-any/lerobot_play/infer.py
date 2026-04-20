@@ -85,6 +85,7 @@ def _parse_cameras(cameras_obj: dict) -> dict:
 
 def _validate_model_path(model_path: str) -> bool:
     """验证模型路径有效性"""
+    model_path = os.path.expanduser(model_path)
     if not os.path.exists(model_path):
         raise ValueError(f"Model path does not exist: {model_path}")
 
@@ -122,7 +123,7 @@ def _get_default_save_path(policy_type: str) -> str:
 
 def _create_save_directory(save_path: str) -> str:
     """创建保存目录"""
-    return save_path
+    return os.path.expanduser(save_path)
 
 
 def _parse_cli_args() -> argparse.Namespace:
@@ -286,7 +287,7 @@ def _parse_cli_args() -> argparse.Namespace:
 
 
 def _load_yaml(path: str) -> dict:
-    with open(path, encoding="utf-8") as file:
+    with open(Path(path).expanduser(), encoding="utf-8") as file:
         return yaml.safe_load(file) or {}
 
 
@@ -429,6 +430,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("infer.task_description is required")
     if not args.model_path:
         raise ValueError("infer.model_path is required")
+    args.model_path = os.path.expanduser(args.model_path)
+    if args.save_path:
+        args.save_path = os.path.expanduser(args.save_path)
 
     # 验证异步推理支持
     if args.async_infer and args.policy not in [

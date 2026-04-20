@@ -15,7 +15,7 @@ arm_hand_teleop_find_python_bin() {
 
   for candidate_python in \
     "${arm_hand_teleop_repo_root}/.venv/bin/python" \
-    "/home/phl/miniconda3/envs/arm-hand-teleop/bin/python" \
+    ~/miniconda3/envs/arm-hand-teleop/bin/python \
     "/opt/conda/envs/arm-hand-teleop/bin/python" \
     "$(command -v python3 2>/dev/null || true)" \
     "$(command -v python 2>/dev/null || true)"

@@ -7,6 +7,7 @@ AIRBOT Play 数据回放子系统
 """
 
 import argparse
+from pathlib import Path
 import time
 from typing import Dict, Any
 
@@ -142,7 +143,7 @@ def _parse_cli_args() -> argparse.Namespace:
 
 
 def _load_yaml(path: str) -> dict:
-    with open(path, encoding="utf-8") as file:
+    with open(Path(path).expanduser(), encoding="utf-8") as file:
         return yaml.safe_load(file) or {}
 
 

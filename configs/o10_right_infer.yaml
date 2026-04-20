@@ -25,7 +25,7 @@ infer:
 
   # 模型目录路径。
   # 这里必须改成你本机真实存在的模型目录。
-  model_path: /home/phl/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
+  model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
 
   # 是否保存推理过程中的数据。
   # 可选值：
@@ -101,8 +101,8 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
-  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
   cameras:
     right:

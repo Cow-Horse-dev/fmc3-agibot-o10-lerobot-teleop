@@ -5,7 +5,7 @@ SHELL ["/bin/bash", "-lc"]
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV ROS_DISTRO=jazzy
-ENV ARM_HAND_TELEOP_HOME=/home/phl/workspace/arm-hand-teleop
+ENV ARM_HAND_TELEOP_HOME=/root/workspace/arm-hand-teleop
 ENV CONDA_DIR=/opt/miniconda3
 ENV CONDA_ENV=arm-hand-teleop
 ENV ARM_HAND_TELEOP_PYTHON=${CONDA_DIR}/envs/${CONDA_ENV}/bin/python
@@ -45,8 +45,8 @@ RUN tar -xzf /tmp/arm-hand-teleop-env.tar.gz -C ${CONDA_DIR}/envs/${CONDA_ENV} \
 # --- 代码由用户运行时从 GitHub 拉取，通过 volume 挂载 ---
 RUN mkdir -p \
     ${ARM_HAND_TELEOP_HOME} \
-    /home/phl/workspace/dataset \
-    /home/phl/workspace/mymodels
+    /root/workspace/dataset \
+    /root/workspace/mymodels
 
 COPY docker/entrypoint.collect.sh /usr/local/bin/arm-hand-teleop-entrypoint
 RUN chmod +x /usr/local/bin/arm-hand-teleop-entrypoint

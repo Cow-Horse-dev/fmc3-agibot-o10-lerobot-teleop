@@ -44,6 +44,15 @@ def test_resolve_dataset_target_derives_repo_id_from_dataset_path(tmp_path):
     assert target.root == dataset_root
 
 
+def test_resolve_dataset_target_expands_tilde_paths(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    target = resolve_dataset_target(path="~/datasets/agi_arm_bot_20260410")
+
+    assert target.repo_id == "agi_arm_bot_20260410"
+    assert target.root == (tmp_path / "datasets" / "agi_arm_bot_20260410")
+
+
 def test_build_task_date_repo_id_uses_normalized_task_name():
     repo_id = build_task_date_repo_id("Pick And Place", date_format="%Y%m%d")
 

@@ -4,7 +4,7 @@
 infer:
   policy: act
   task_description: pick blue camera from yellow paper into black tray
-  model_path: /home/phl/workspace/mymodels/agi_arm_bot/act_pick_blue_camera_into_black_tray/checkpoints/last/pretrained_model
+  model_path: ~/workspace/mymodels/agi_arm_bot/act_pick_blue_camera_into_black_tray/checkpoints/last/pretrained_model
   save_data: false
   async_infer: false
   num_episodes: 1
@@ -23,8 +23,8 @@ robot:
   device_id: 1
   canfd_id: 0
   channel_id: null
-  arm_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: /home/phl/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
 
   cameras:
     right:
