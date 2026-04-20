@@ -1,0 +1,93 @@
+# O10 双臂推理配置
+# 供脚本 `./scripts/infer_o10_dual.sh` 使用。
+#
+# 这份文件用于加载训练好的策略模型，让 O10 双臂直接执行推理。
+# 注意：
+# - `model_path` 必须改成你自己的模型目录
+# - 如果 `save_data: true`，才会保存推理过程中产生的数据
+# - 不同模型的专用推理配置建议放在 `configs/policies/` 目录下
+
+infer:
+  # 策略类型。
+  policy: diffusion
+
+  # 任务描述。
+  task_description: pick up blue camera into black box
+
+  # 模型目录路径。
+  model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
+
+  # 是否保存推理过程中的数据。
+  save_data: false
+
+  # 是否用 Rerun 可视化推理过程中的相机和动作。
+  display_data: true
+
+  # 是否启用异步推理。
+  async_infer: false
+
+  # 运行多少个 episode。
+  num_episodes: 100
+
+  # 单个 episode 最长时长，单位秒。
+  episode_time_sec: 100
+
+  # 推理频率，单位 Hz。
+  fps: 15
+
+  # 推理设备。
+  device: cuda
+
+  # 异步推理服务地址。
+  server_address: localhost:8080
+
+  # 自定义推理数据保存路径。
+  save_path: null
+
+teleop:
+  type: pico_leader_dual_arm_agibot_o10
+  id: pico_dual
+  vr_pose_port: 8000
+  vr_ctrl_port: 8001
+  vr_device: pico_wrist
+  enable_hand: true
+  left:
+    handedness: left
+    wrist_pose_source: left
+    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  right:
+    handedness: right
+    wrist_pose_source: right
+    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+
+robot:
+  type: pico_follower_dual_arm_agibot_o10
+  id: o10_dual
+  left:
+    port: can1
+    handedness: left
+    channel_mode: multiChannel
+    device_id: 1
+    canfd_id: 0
+    channel_id: null
+    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  right:
+    port: can0
+    handedness: right
+    channel_mode: multiChannel
+    device_id: 1
+    canfd_id: 0
+    channel_id: null
+    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  cameras:
+    top:
+      type: opencv
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
+      width: 640
+      height: 480
+      fps: 30
+      rotation: NO_ROTATION
