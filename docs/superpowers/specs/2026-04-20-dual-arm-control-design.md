@@ -1,42 +1,42 @@
-# Dual-Arm Control Design
+# 双臂控制设计
 
-## Goal
+## 目标
 
-Extend the O10 single-arm teleoperation system to support three control modes:
-1. Left arm only
-2. Right arm only (existing)
-3. Both arms simultaneously (dual)
+扩展 O10 单臂遥操作系统，支持三种控制模式：
+1. 仅左臂
+2. 仅右臂（已有）
+3. 双臂同时控制
 
-## Hardware Setup
+## 硬件配置
 
-- Pico headset tracks both wrists via a single WebRTC connection (ports 8000/8001)
-- Left arm: CAN port `can1`, OmniHand channel_id auto → 0
-- Right arm: CAN port `can0`, OmniHand channel_id auto → 1
-- Both arms: `device_id: 1`, `canfd_id: 0`, `channel_mode: multiChannel`
-- Udexreal gloves: one per hand, data via HDService UDP
+- Pico 头显通过单个 WebRTC 连接同时追踪两只手腕（端口 8000/8001）
+- 左臂：CAN 口 `can1`，OmniHand channel_id 自动 → 0
+- 右臂：CAN 口 `can0`，OmniHand channel_id 自动 → 1
+- 两臂共用：`device_id: 1`，`canfd_id: 0`，`channel_mode: multiChannel`
+- 宇叠手套：左右各一只，数据通过 HDService UDP 传输
 
-## Approach
+## 方案
 
-New dual-arm types registered in the LeRobot type system, internally composing two single-arm instances. Single-arm configs remain unchanged.
+在 LeRobot 类型系统中注册新的双臂类型，内部组合两个单臂实例。现有单臂配置不受影响。
 
-## New Types
+## 新增类型
 
-### `pico_leader_dual_arm_agibot_o10` (Teleoperator)
+### `pico_leader_dual_arm_agibot_o10`（Teleoperator）
 
-- Inherits from `PicoLeaderSingleArmEEF` (reuses WebRTC connection + event thread)
-- Holds two `AgibotO10GloveTeleoperator` instances (left/right gloves)
-- WebRTC data parsed for both `left_wrist` and `right_wrist` simultaneously
-- Each wrist pose drives independent IK solving
-- `get_action()` returns 32D: left_arm[6] + left_hand[10] + right_arm[6] + right_hand[10]
+- 继承 `PicoLeaderSingleArmEEF`（复用 WebRTC 连接和事件线程）
+- 持有两个 `AgibotO10GloveTeleoperator` 实例（左右手套）
+- WebRTC 数据同时解析 `left_wrist` 和 `right_wrist` 位姿
+- 每只手腕位姿独立驱动 IK 求解
+- `get_action()` 返回 32D：left_arm[6] + left_hand[10] + right_arm[6] + right_hand[10]
 
-### `pico_follower_dual_arm_agibot_o10` (Robot)
+### `pico_follower_dual_arm_agibot_o10`（Robot）
 
-- Holds two `ah.Play` instances (left/right arms) + two `AgibotO10Hand` instances
-- `send_action()` accepts 32D action, splits and dispatches to each arm/hand
-- `get_observation()` returns 46D state: left_arm[6] + left_hand[10] + left_eef_pose[7] + right_arm[6] + right_hand[10] + right_eef_pose[7]
-- Independent connect/disconnect per arm; one failure does not block the other
+- 持有两个 `ah.Play` 实例（左右臂）+ 两个 `AgibotO10Hand` 实例
+- `send_action()` 接收 32D action，拆分后分别下发到各臂/手
+- `get_observation()` 返回 46D state：left_arm[6] + left_hand[10] + left_eef_pose[7] + right_arm[6] + right_hand[10] + right_eef_pose[7]
+- 左右臂独立 connect/disconnect；一个失败不阻塞另一个
 
-## Config Classes
+## Config 类
 
 ```python
 @TeleoperatorConfig.register_subclass("pico_leader_dual_arm_agibot_o10")
@@ -59,11 +59,11 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     cameras: dict[str, CameraConfig] = field(default_factory=dict)
 ```
 
-`left` / `right` sub-dicts contain per-arm parameters:
-- Leader: `handedness`, `wrist_pose_source`, `arm_reset_joints_path`, `hand_reset_joints_path`
-- Follower: `port`, `handedness`, `channel_mode`, `device_id`, `canfd_id`, `channel_id`, `arm_reset_joints_path`, `hand_reset_joints_path`
+`left` / `right` 子字典包含各臂参数：
+- Leader 端：`handedness`、`wrist_pose_source`、`arm_reset_joints_path`、`hand_reset_joints_path`
+- Follower 端：`port`、`handedness`、`channel_mode`、`device_id`、`canfd_id`、`channel_id`、`arm_reset_joints_path`、`hand_reset_joints_path`
 
-## File Layout
+## 文件布局
 
 ```
 qiuzhi/lerobot_play_1.0.4/x86/noble/lerobot_play-1.0.4-py3-none-any/lerobot_play/
@@ -79,17 +79,17 @@ qiuzhi/lerobot_play_1.0.4/x86/noble/lerobot_play-1.0.4-py3-none-any/lerobot_play
         └── airbot_pico_follower_dual_arm_agibot_o10.py
 ```
 
-## Configuration Files
+## 配置文件
 
-Three sets of YAML configs for each mode (control, record, replay, infer):
+每种模式（control、record、replay、infer）各三套 YAML：
 
-| Mode | Config file | teleop type | robot type |
-|------|-------------|-------------|------------|
-| Left only | `o10_left_*.yaml` | `pico_leader_single_arm_agibot_o10` | `pico_follower_single_arm_agibot_o10` |
-| Right only | `o10_right_*.yaml` | `pico_leader_single_arm_agibot_o10` | `pico_follower_single_arm_agibot_o10` |
-| Dual | `o10_dual_*.yaml` | `pico_leader_dual_arm_agibot_o10` | `pico_follower_dual_arm_agibot_o10` |
+| 模式 | 配置文件 | teleop 类型 | robot 类型 |
+|------|----------|-------------|------------|
+| 仅左臂 | `o10_left_*.yaml` | `pico_leader_single_arm_agibot_o10` | `pico_follower_single_arm_agibot_o10` |
+| 仅右臂 | `o10_right_*.yaml` | `pico_leader_single_arm_agibot_o10` | `pico_follower_single_arm_agibot_o10` |
+| 双臂 | `o10_dual_*.yaml` | `pico_leader_dual_arm_agibot_o10` | `pico_follower_dual_arm_agibot_o10` |
 
-### Dual control config example (`o10_dual_control.yaml`)
+### 双臂控制配置示例（`o10_dual_control.yaml`）
 
 ```yaml
 teleop:
@@ -140,9 +140,9 @@ fps: 30
 display_data: true
 ```
 
-## Scripts
+## 启动脚本
 
-New shell scripts:
+新增 shell 脚本：
 - `scripts/control_o10_left.sh`
 - `scripts/control_o10_dual.sh`
 - `scripts/record_o10_left.sh`
@@ -152,29 +152,29 @@ New shell scripts:
 - `scripts/infer_o10_left.sh`
 - `scripts/infer_o10_dual.sh`
 
-Each follows the same pattern as existing `*_right.sh` scripts, pointing to the corresponding YAML config.
+每个脚本与现有 `*_right.sh` 格式一致，指向对应的 YAML 配置。
 
-## Dataset Dimensions
+## 数据集维度
 
-| Mode | Action dim | State dim |
-|------|-----------|-----------|
-| Single arm | 16D (arm[6] + hand[10]) | 23D (arm[6] + hand[10] + eef_pose[7]) |
-| Dual arm | 32D (left_arm[6] + left_hand[10] + right_arm[6] + right_hand[10]) | 46D (left_arm[6] + left_hand[10] + left_eef[7] + right_arm[6] + right_hand[10] + right_eef[7]) |
+| 模式 | Action 维度 | State 维度 |
+|------|------------|------------|
+| 单臂 | 16D（arm[6] + hand[10]） | 23D（arm[6] + hand[10] + eef_pose[7]） |
+| 双臂 | 32D（left_arm[6] + left_hand[10] + right_arm[6] + right_hand[10]） | 46D（left_arm[6] + left_hand[10] + left_eef[7] + right_arm[6] + right_hand[10] + right_eef[7]） |
 
-## Left-Only Config
+## 仅左臂配置
 
-`o10_left_control.yaml` is a mirror of the existing right config with:
+`o10_left_control.yaml` 是现有右臂配置的镜像，修改点：
 - `handedness: left`
 - `wrist_pose_source: left`
 - `port: can1`
-- `channel_id: null` (auto → 0)
-- Reset paths point to `o10_left_reset_pose.json`
+- `channel_id: null`（自动 → 0）
+- 复位路径指向 `o10_left_reset_pose.json`
 
-No new Python types needed for left-only — reuses existing `pico_leader_single_arm_agibot_o10` / `pico_follower_single_arm_agibot_o10`.
+仅左臂不需要新 Python 类型 — 复用现有 `pico_leader_single_arm_agibot_o10` / `pico_follower_single_arm_agibot_o10`。
 
-## Testing
+## 测试
 
-- Unit tests for config parsing (dual YAML → correct left/right sub-configs)
-- Integration test: verify `get_action()` returns 32D, `get_observation()` returns 46D (stubbed hardware)
-- Manual validation: dual control with actual hardware before merging
+- 单元测试：配置解析（双臂 YAML → 正确的左右子配置）
+- 集成测试：验证 `get_action()` 返回 32D，`get_observation()` 返回 46D（mock 硬件）
+- 手动验证：实际硬件双臂控制，合并前完成
 
