@@ -44,12 +44,18 @@ from ._compat import Teleoperator, TeleoperatorConfig
 from .robots.pico_follower_single_arm_agibot_o10.config_pico_follower_single_arm_agibot_o10 import (  # noqa: F401
     PicoFollowerSingleArmAgibotO10Config,
 )
+from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (  # noqa: F401
+    PicoFollowerDualArmAgibotO10Config,
+)
 from .robots.pico_follower_single_arm_eef.config_pico_follower_single_arm_eef import (  # noqa: F401
     PicoFollowerSingleArmEEFConfig,
 )
 from .robots.utils import make_robot_from_config
 from .teleoperators.pico_leader_single_arm_agibot_o10.config_pico_leader_single_arm_agibot_o10 import (  # noqa: F401
     PicoLeaderSingleArmAgibotO10Config,
+)
+from .teleoperators.pico_leader_dual_arm_agibot_o10.config_pico_leader_dual_arm_agibot_o10 import (  # noqa: F401
+    PicoLeaderDualArmAgibotO10Config,
 )
 from .teleoperators.pico_leader_single_arm_eef.config_pico_leader_single_arm_eef import (  # noqa: F401
     PicoLeaderSingleArmEEFConfig,

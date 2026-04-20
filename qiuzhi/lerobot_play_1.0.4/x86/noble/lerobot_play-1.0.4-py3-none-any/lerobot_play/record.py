@@ -30,6 +30,9 @@ from .robots.pico_follower_single_arm_eef.config_pico_follower_single_arm_eef im
 from .robots.pico_follower_single_arm_agibot_o10.config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
 )
+from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
+    PicoFollowerDualArmAgibotO10Config,
+)
 from .robots.utils import make_robot_from_config
 from .teleoperators.airbot_replay.config_replay import AirbotReplayConfig
 from .teleoperators.airbot_replay_mini.config_replay_mini import AirbotReplayMiniConfig
@@ -49,6 +52,9 @@ from .teleoperators.pico_leader_single_arm_eef.config_pico_leader_single_arm_eef
 )
 from .teleoperators.pico_leader_single_arm_agibot_o10.config_pico_leader_single_arm_agibot_o10 import (
     PicoLeaderSingleArmAgibotO10Config,
+)
+from .teleoperators.pico_leader_dual_arm_agibot_o10.config_pico_leader_dual_arm_agibot_o10 import (
+    PicoLeaderDualArmAgibotO10Config,
 )
 from .teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.visualization_utils import init_rerun

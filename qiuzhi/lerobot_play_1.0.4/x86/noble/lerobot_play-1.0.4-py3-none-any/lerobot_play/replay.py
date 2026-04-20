@@ -26,6 +26,9 @@ from .robots.pico_follower.config_pico_follower import PicoFollowerConfig
 from .robots.pico_follower_single_arm_agibot_o10.config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
 )
+from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
+    PicoFollowerDualArmAgibotO10Config,
+)
 from .robots.utils import make_robot_from_config
 from .utils.runtime_helpers import decode_replay_action, resolve_dataset_target
 
