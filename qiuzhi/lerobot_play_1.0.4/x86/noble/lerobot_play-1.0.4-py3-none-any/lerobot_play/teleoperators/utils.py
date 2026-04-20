@@ -60,5 +60,10 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
 
         return PicoLeaderSingleArmAgibotO10(config)
 
+    elif config.type == "pico_leader_dual_arm_agibot_o10":
+        from .pico_leader_dual_arm_agibot_o10 import PicoLeaderDualArmAgibotO10
+
+        return PicoLeaderDualArmAgibotO10(config)
+
     else:
         return make_lerobot_teleoperator_from_config(config)
