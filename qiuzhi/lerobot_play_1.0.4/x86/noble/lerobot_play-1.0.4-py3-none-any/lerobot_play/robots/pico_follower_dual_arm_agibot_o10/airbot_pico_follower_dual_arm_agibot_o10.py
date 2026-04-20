@@ -205,14 +205,24 @@ class PicoFollowerDualArmAgibotO10(Robot):
         Returns dict with 'left' and 'right', each a pair
         ``[arm_pos, hand_pos]``.
         """
+        left_hand_pos = (
+            self.left_hand.read_active_joint_angles()
+            if self.config.enable_hand
+            else self.left_hand_joints.copy()
+        )
+        right_hand_pos = (
+            self.right_hand.read_active_joint_angles()
+            if self.config.enable_hand
+            else self.right_hand_joints.copy()
+        )
         return {
             "left": [
                 list(self.left_arm.state().pos),
-                self.left_hand.read_active_joint_angles(),
+                left_hand_pos,
             ],
             "right": [
                 list(self.right_arm.state().pos),
-                self.right_hand.read_active_joint_angles(),
+                right_hand_pos,
             ],
         }
 
@@ -457,11 +467,13 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
         # Send to hardware
         self.servo_joint_pos(self.left_arm, left_arm_joints)
-        self.left_hand.write_active_joint_angles(left_hand_joints)
+        if self.config.enable_hand:
+            self.left_hand.write_active_joint_angles(left_hand_joints)
         self.left_hand_joints = left_hand_joints.copy()
 
         self.servo_joint_pos(self.right_arm, right_arm_joints)
-        self.right_hand.write_active_joint_angles(right_hand_joints)
+        if self.config.enable_hand:
+            self.right_hand.write_active_joint_angles(right_hand_joints)
         self.right_hand_joints = right_hand_joints.copy()
 
         # Build action feedback dict
@@ -497,12 +509,14 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 self.left_arm.pvt(left_joints, velocities, effort)
             if not right_arrived:
                 self.right_arm.pvt(right_joints, velocities, effort)
-            self.left_hand.write_active_joint_angles(left_hand_reset)
-            self.right_hand.write_active_joint_angles(right_hand_reset)
+            if self.config.enable_hand:
+                self.left_hand.write_active_joint_angles(left_hand_reset)
+                self.right_hand.write_active_joint_angles(right_hand_reset)
             time.sleep(0.004)
 
-        self.left_hand.write_active_joint_angles(left_hand_reset)
-        self.right_hand.write_active_joint_angles(right_hand_reset)
+        if self.config.enable_hand:
+            self.left_hand.write_active_joint_angles(left_hand_reset)
+            self.right_hand.write_active_joint_angles(right_hand_reset)
         self.left_hand_joints = left_hand_reset
         self.right_hand_joints = right_hand_reset
 
@@ -522,8 +536,9 @@ class PicoFollowerDualArmAgibotO10(Robot):
         self.disable_motors()
         self.left_arm.uninit()
         self.right_arm.uninit()
-        self.left_hand.disconnect()
-        self.right_hand.disconnect()
+        if self.config.enable_hand:
+            self.left_hand.disconnect()
+            self.right_hand.disconnect()
         logger.info("Motors disabled and devices disconnected")
 
     def disconnect(self):
@@ -536,7 +551,8 @@ class PicoFollowerDualArmAgibotO10(Robot):
             self.disable_motors()
             self.left_arm.uninit()
             self.right_arm.uninit()
-            self.left_hand.disconnect()
-            self.right_hand.disconnect()
+            if self.config.enable_hand:
+                self.left_hand.disconnect()
+                self.right_hand.disconnect()
         self._is_connected = False
         logger.info(f"{self} safely disconnected.")

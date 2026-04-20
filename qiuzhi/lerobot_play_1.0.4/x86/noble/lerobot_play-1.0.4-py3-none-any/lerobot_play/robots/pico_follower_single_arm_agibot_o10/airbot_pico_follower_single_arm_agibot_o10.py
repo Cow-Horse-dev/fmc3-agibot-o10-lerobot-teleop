@@ -52,12 +52,16 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             ah.MotorType.NA,
         )
 
-        self.hand = AgibotO10Hand(
-            handedness=self.config.handedness,
-            channel_mode=self.config.channel_mode,
-            device_id=self.config.device_id,
-            canfd_id=self.config.canfd_id,
-            channel_id=self.config.channel_id,
+        self.hand = (
+            AgibotO10Hand(
+                handedness=self.config.handedness,
+                channel_mode=self.config.channel_mode,
+                device_id=self.config.device_id,
+                canfd_id=self.config.canfd_id,
+                channel_id=self.config.channel_id,
+            )
+            if self.config.enable_hand
+            else None
         )
         self.hand_joints = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
         self.arm_reset_store = PersistentJointTargetStore(
@@ -93,11 +97,14 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         if not self.arm.init(self.io_context, self.arm_port, 250):
             raise RuntimeError("Failed to initialize arm")
 
-        try:
-            self.hand.connect()
-        except Exception:
-            self.arm.uninit()
-            raise
+        if self.hand is not None:
+            try:
+                self.hand.connect()
+            except Exception:
+                self.arm.uninit()
+                raise
+        else:
+            logger.info("Agibot O10 hand follower disabled. Running in arm-only mode.")
 
         self.enable_motors()
         self.configure()
@@ -114,7 +121,12 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         self.arm.set_param("arm.control_mode", ah.MotorControlMode.PVT)
 
     def get_joint_pos(self) -> list[list[float]]:
-        return [list(self.arm.state().pos), self.hand.read_active_joint_angles()]
+        hand_joint_pos = (
+            self.hand.read_active_joint_angles()
+            if self.hand is not None
+            else self.hand_joints.copy()
+        )
+        return [list(self.arm.state().pos), hand_joint_pos]
 
     @staticmethod
     def _log_joint_pos(title: str, feature_names: tuple[str, ...], joint_pos: list[float]) -> None:
@@ -335,8 +347,9 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         formatted_action = self.convert_action_format(action)
 
         self.servo_joint_pos(formatted_action["joints"])
-        self.hand.write_active_joint_angles(formatted_action["hand_joints"])
         self.hand_joints = formatted_action["hand_joints"].copy()
+        if self.hand is not None:
+            self.hand.write_active_joint_angles(formatted_action["hand_joints"])
 
         return build_agibot_o10_joint_action_dict(
             [*formatted_action["joints"], *formatted_action["hand_joints"]]
@@ -357,10 +370,12 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             if arm_arrived:
                 break
             self.arm.pvt(joints, velocities, effort)
-            self.hand.write_active_joint_angles(reset_hand)
+            if self.hand is not None:
+                self.hand.write_active_joint_angles(reset_hand)
             time.sleep(0.004)
 
-        self.hand.write_active_joint_angles(reset_hand)
+        if self.hand is not None:
+            self.hand.write_active_joint_angles(reset_hand)
         self.hand_joints = reset_hand
 
     def reset_zero(self):
@@ -374,7 +389,8 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         logger.info("Starting safe shutdown procedure...")
         self.disable_motors()
         self.arm.uninit()
-        self.hand.disconnect()
+        if self.hand is not None:
+            self.hand.disconnect()
         logger.info("Motors disabled and devices disconnected")
 
     def disconnect(self):
@@ -386,6 +402,7 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             logger.error(f"Safe shutdown failed: {e}")
             self.disable_motors()
             self.arm.uninit()
-            self.hand.disconnect()
+            if self.hand is not None:
+                self.hand.disconnect()
         self._is_connected = False
         logger.info(f"{self} safely disconnected.")

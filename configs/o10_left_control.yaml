@@ -50,6 +50,11 @@ robot:
   # 机器人类型。
   type: pico_follower_single_arm_agibot_o10
 
+  # 是否启用 follower 手控制。
+  # control 模式下不会自动继承 teleop.enable_hand，
+  # 所以 arm-only 运行时这里也要显式关闭。
+  enable_hand: false
+
   # 机械臂 CAN 口。
   port: can1
 
