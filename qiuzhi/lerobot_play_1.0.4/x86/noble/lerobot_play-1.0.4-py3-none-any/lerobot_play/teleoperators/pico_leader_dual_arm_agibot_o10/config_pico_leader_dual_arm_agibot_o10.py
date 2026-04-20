@@ -11,6 +11,9 @@ class PicoLeaderDualArmAgibotO10Config(TeleoperatorConfig):
     vr_pose_port: int = 8000
     vr_ctrl_port: int = 8001
     vr_device: str = "pico_wrist"
+    eef_device: str = "AGIBOT_O10"
+    handedness: str = "right"
+    wrist_pose_source: str = "auto"
     enable_hand: bool = True
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
