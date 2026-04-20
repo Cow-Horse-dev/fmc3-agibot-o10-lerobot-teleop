@@ -1,0 +1,142 @@
+# O10 单臂控制配置（左臂）
+# 供脚本 `./scripts/control_o10_left.sh` 使用。
+#
+# 这份文件只负责"实时控制"，不负责录制数据。
+# 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
+
+teleop:
+  # 遥操作器类型。
+  # 当前 O10 左臂固定使用这个值。
+  type: pico_leader_single_arm_agibot_o10
+
+  # 遥操作器名字，仅用于日志显示。
+  id: pico_left
+
+  # 选择"哪只 leader 手"来做遥操作。
+  # 这决定 glove 数据按左手还是右手解释。
+  handedness: left
+
+  # Pico wrist 位姿流端口。
+  vr_pose_port: 8000
+
+  # Pico wrist 控制按键 / 扳机流端口。
+  vr_ctrl_port: 8001
+
+  # VR 设备来源。
+  # 当前这套只用：
+  # - pico_wrist
+  vr_device: pico_wrist
+
+  # 机械臂控制位姿来源。
+  # 可选值：
+  # - auto: 自动选择当前有效的 wrist pose，推荐
+  # - left: 强制只读左手腕
+  # - right: 强制只读右手腕
+  wrist_pose_source: left
+
+  # 是否启用手控制。
+  # 可选值：
+  # - true: 手 + 臂一起控制
+  # - false: 只控制机械臂
+  enable_hand: true
+
+  # 统一复位姿态 JSON 路径。
+  # 同时保存 arm + hand 的起始关节。
+  # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+
+robot:
+  # 机器人类型。
+  type: pico_follower_single_arm_agibot_o10
+
+  # 机械臂 CAN 口。
+  port: can1
+
+  # 机器人名字，仅用于日志显示。
+  id: o10_left
+
+  # 选择"哪只 follower 手/臂"接收控制。
+  handedness: left
+
+  # O10 手通道模式。
+  # 当前代码真正支持的只有：
+  # - multiChannel
+  channel_mode: multiChannel
+
+  # OmniHand device_id。
+  device_id: 1
+
+  # CANFD 适配器编号。
+  canfd_id: 0
+
+  # O10 channel_id。
+  # 保持 null 时会自动跟随 robot.handedness：
+  # - left  -> 0
+  # - right -> 1
+  channel_id: null
+
+  # 当前起始姿态会在 connect 时自动写回这里，后续所有 reset 都回到这组关节。
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+
+  cameras:
+    right:
+      # Control 配置里 RealSense 类型写 `intelrealsense`。
+      type: intelrealsense
+
+      # RealSense 序列号。
+      serial_number_or_name: "260322273018"
+
+      # 图像宽高与帧率。
+      width: 640
+      height: 480
+      fps: 30
+
+      # 是否采深度。
+      use_depth: false
+
+      # 彩色图通道顺序。
+      # 可选值：rgb / bgr
+      color_mode: rgb
+
+      # 图像旋转方式。
+      # 可选值：
+      # - NO_ROTATION
+      # - ROTATE_90
+      # - ROTATE_180
+      # - ROTATE_270
+      rotation: ROTATE_180
+
+    top:
+      # 顶部 USB 相机。
+      type: opencv
+
+      # 建议使用稳定的 /dev/v4l/by-id 路径。
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
+
+      width: 640
+      height: 480
+      fps: 30
+      rotation: NO_ROTATION
+
+    wrist:
+      # 新增 USB 相机，用于测试三相机 control。
+      type: opencv
+
+      # 建议使用稳定的 /dev/v4l/by-id 路径。
+      index_or_path: /dev/v4l/by-id/usb-JoyandAI_JYU2C-2083_JYU2C-2083-2603103-video-index0
+
+      width: 640
+      height: 480
+      fps: 30
+      rotation: NO_ROTATION
+
+# 控制循环频率，单位 Hz。
+fps: 30
+
+# 是否显示 control 阶段的可视化。
+# 可选值：
+# - true: 开启
+# - false: 关闭
+display_data: true

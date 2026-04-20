@@ -1,0 +1,173 @@
+# O10 单臂录制配置（左臂）
+# 供脚本 `./scripts/record_o10_left.sh` 使用。
+#
+# 这份文件负责把数据录成 LeRobot 数据集格式。
+# 当前已经配置成：
+# - 数据保存在 ~/workspace/dataset/Robot/agi_arm_bot 下面
+# - 目录名自动按"任务名 + 当天日期"生成
+# 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
+
+robot:
+  # 机器人类型。
+  type: pico_follower_single_arm_agibot_o10
+
+  # 机械臂 CAN 口。
+  port: can1
+
+  # 机器人名字，仅用于日志显示。
+  id: o10_left
+
+  # 选择"哪只 follower 手/臂"被录制并接收动作。
+  handedness: left
+
+  # O10 手通道模式。
+  # 当前代码真正支持的只有：
+  # - multiChannel
+  channel_mode: multiChannel
+
+  # OmniHand device_id。
+  device_id: 1
+
+  # CANFD 适配器编号。
+  canfd_id: 0
+
+  # O10 channel_id。
+  # 保持 null 时会自动跟随 robot.handedness：
+  # - left  -> 0
+  # - right -> 1
+  channel_id: null
+
+  # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+
+  cameras:
+    right:
+      # Record / infer 配置里 RealSense 类型写 `realsense`。
+      type: realsense
+      serial_number_or_name: "260322273018"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+
+      # 可选值：RGB / BGR
+      color_mode: RGB
+
+      # 可选值：
+      # - NO_ROTATION
+      # - ROTATE_90
+      # - ROTATE_180
+      # - ROTATE_270
+      rotation: ROTATE_180
+
+    top:
+      type: opencv
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
+      width: 640
+      height: 480
+      fps: 30
+      rotation: NO_ROTATION
+
+teleop:
+  # 遥操作器类型。
+  type: pico_leader_single_arm_agibot_o10
+
+  # 遥操作器名字，仅用于日志显示。
+  id: pico_left
+
+  # 选择"哪只 leader 手"来做遥操作录制。
+  # 这决定 glove 数据按左手还是右手解释。
+  handedness: left
+
+  # Pico wrist 位姿流端口。
+  vr_pose_port: 8000
+
+  # Pico wrist 控制按键 / 扳机流端口。
+  vr_ctrl_port: 8001
+
+  # VR 设备来源。
+  vr_device: pico_wrist
+
+  # 位姿控制来源。
+  # 可选值：auto / left / right
+  wrist_pose_source: left
+
+  # 是否启用手控制。
+  # - true: 手 + 臂一起录
+  # - false: 只录机械臂
+  enable_hand: true
+
+  # 统一复位姿态 JSON 路径。
+  # 同时保存 arm + hand 的起始关节。
+  # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
+  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+
+run:
+  # 录制频率，单位 Hz。
+  fps: 30
+
+  # 是否显示本地预览窗口。
+  # 如果你环境里 OpenCV GUI 不可用，建议改成 false。
+  display_data: false
+
+  # 一次运行最多录多少个 episode。
+  num_episodes: 1000
+
+  # 单个 episode 最长时长，单位秒。
+  episode_time_sec: 30
+
+  # 保留的 reset 时间字段。
+  reset_time_sec: 10
+
+  # 任务名。
+  # 自动数据集命名时会基于这个字段生成目录名。
+  # 例如：
+  # - pick and place -> pick_and_place_20260410
+  single_task: pick up the camera from the yellow paper into black box
+
+dataset:
+  # 是否自动按"任务名 + 日期"命名数据集目录。
+  # 可选值：
+  # - true: 自动生成，例如 pick_and_place_20260410
+  # - false: 使用下面手动填写的 repo_id
+  auto_name_from_task_date: true
+
+  # 自动命名时日期格式。
+  # 常用值：
+  # - "%Y%m%d"   -> 20260410
+  # - "%Y-%m-%d" -> 2026-04-10
+  date_format: "%Y%m%d"
+
+  # 手动目录名。
+  # 只有当 auto_name_from_task_date=false 时才会使用。
+  repo_id: manual_dataset_name
+
+  # 数据集根目录。
+  # 最终实际路径会是：
+  #   ~/workspace/dataset/Robot/agi_arm_bot/<任务名_日期>
+  root: ~/workspace/dataset/Robot/agi_arm_bot
+
+  # 是否录相机视频。
+  # - true: 录相机视频
+  # - false: 只录 state / action
+  video: true
+
+  # 是否用 MCAP 存相机流。
+  # 如果你想直接双击看视频，保持 false。
+  mcap: false
+
+  # 是否按 SSH 模式运行。
+  is_ssh: false
+
+  # 每路相机使用多少个图像写线程。
+  num_image_writer_threads_per_camera: 4
+
+  # 是否额外启用写入进程。
+  # 0 表示不开额外进程。
+  num_image_writer_processes: 0
+
+  # 攒多少个 episode 再批量编码视频。
+  # 1 表示每个 episode 录完就立刻编码。
+  video_encoding_batch_size: 1
