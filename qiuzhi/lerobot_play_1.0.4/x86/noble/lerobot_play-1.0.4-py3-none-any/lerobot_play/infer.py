@@ -624,16 +624,8 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
         _, events = init_keyboard_listener()
         init_rerun(session_name="inference")
 
-    # 连接机器人（connect 会用当前位置覆盖 reset pose，先保存再恢复）
-    saved_arm = robot.arm_reset_store.load()
-    saved_hand = robot.hand_reset_store.load()
+    # 连接机器人
     robot.connect()
-    if saved_arm is not None:
-        robot.reset_arm_joint_pos = saved_arm
-        robot.arm_reset_store.save(saved_arm)
-    if saved_hand is not None:
-        robot.reset_hand_joint_pos = saved_hand
-        robot.hand_reset_store.save(saved_hand)
 
     try:
         for episode_idx in range(args.num_episodes):

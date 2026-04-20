@@ -1,188 +1,116 @@
 # arm-hand-teleop
 
-这个项目用于 Agibot O10 单臂 + 灵巧手 + 相机的数据采集、遥操作控制、回放和推理。
+Agibot O10 单臂 + OmniHand 灵巧手 + RealSense 相机的遥操作、数据采集、回放和策略推理系统。
 
-当前主流程基于 `lerobot_play`，并接了宇叠手套、Pico 位姿输入和 O10 手控制。
+基于 `lerobot_play`，接入 Pico VR 头显 + 宇叠手套作为输入设备。
 
 ## 目录说明
 
-- `configs/`
-  存放控制、录制、推理、回放的 yaml 配置。
-- `scripts/`
-  常用启动脚本，日常基本直接跑这里的 `.sh` 就可以。
-- `qiuzhi/`
-  vendored 的 `lerobot_play` 代码和测试。
-- `yudie/`
-  手套、OmniHand、HDService、HDWeb 相关代码和 SDK。
-- `run_lerobot_play.py`
-  项目统一入口。
+- `configs/` — 控制、录制、推理、回放的 yaml/json 配置
+- `scripts/` — 日常启动脚本和工具
+- `qiuzhi/` — vendored 的 `lerobot_play` 代码和测试
+- `yudie/` — 手套、OmniHand、HDService、HDWeb 相关代码和 SDK
+- `run_lerobot_play.py` — 项目统一入口
 
 ## 环境说明
 
-- 日常启动脚本时，不需要手动 `conda activate`。
-- `scripts/*.sh` 现在会自动寻找 Python 解释器，优先顺序大致是：
+日常启动脚本时不需要手动 `conda activate`，`scripts/*.sh` 会自动寻找 Python 解释器：
 
-```bash
-ARM_HAND_TELEOP_PYTHON
-./.venv/bin/python
-~/miniconda3/envs/arm-hand-teleop/bin/python
-python3
+```
+ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > python3
 ```
 
-- 只在下面这些场景下，才需要你自己进虚拟环境：
+需要手动进虚拟环境的场景：手动跑 `python`、装包、跑测试。
 
 ```bash
 conda activate arm-hand-teleop
 ```
 
-- 你想手动跑 `python`
-- 你想装包
-- 你想跑测试
-
-如果你想显式指定解释器，可以这样：
+显式指定解释器：
 
 ```bash
 ARM_HAND_TELEOP_PYTHON=/your/python ./scripts/control_o10_right.sh
 ```
 
-## Docker 迁移
-
-如果你要把整套源码和运行环境打成 Docker 并迁移到另一台机器，直接看：
-
-- [DOCKER_MIGRATION.md](DOCKER_MIGRATION.md)
-
 ## 常用启动命令
-
-先进入项目目录：
 
 ```bash
 cd ~/workspace/arm-hand-teleop
-```
 
-启动手套服务：
-
-```bash
-./scripts/start_hdservice.sh
-```
-
-后台启动手套服务：
-
-```bash
-./scripts/start_hdservice.sh --background
-```
-
-启动 HDWeb：
-
-```bash
-./scripts/start_hdweb.sh
-```
-
-停止 HDService：
-
-```bash
+# 手套服务
+./scripts/start_hdservice.sh              # 前台启动
+./scripts/start_hdservice.sh --background # 后台启动
 ./scripts/stop_hdservice.sh
-```
-
-停止 HDWeb：
-
-```bash
-./scripts/stop_hdweb.sh
-```
-
-重启 HDService：
-
-```bash
 ./scripts/restart_hdservice.sh
+./scripts/start_hdweb.sh                  # HDWeb 仪表盘
+./scripts/stop_hdweb.sh
+
+# 机械臂 + 手控制
+./scripts/control_o10_right.sh            # 实时遥操作
+./scripts/record_o10_right.sh             # 数据录制
+./scripts/replay_o10_right.sh             # 轨迹回放
+./scripts/infer_o10_right.sh              # 策略推理（GPU）
+./scripts/infer_o10_right_cpu.sh          # 策略推理（CPU）
 ```
 
-启动右手实时控制：
+## 工具脚本
 
 ```bash
-./scripts/control_o10_right.sh
-```
+# 读取当前臂+手关节角度，保存为复位姿态 JSON
+python scripts/save_reset_pose.py
+python scripts/save_reset_pose.py --output configs/o10_right_reset_pose.json
 
-启动右手录制：
-
-```bash
-./scripts/record_o10_right.sh
-```
-
-启动右手回放：
-
-```bash
-./scripts/replay_o10_right.sh
-```
-
-启动右手推理：
-
-```bash
-./scripts/infer_o10_right.sh
+# 设置臂+手到指定关节角度，用于查看姿态
+python scripts/set_pose.py --from-json configs/o10_right_reset_pose.json
+python scripts/set_pose.py --arm 0 0 0 0 0 0
+python scripts/set_pose.py --read-only   # 只读取当前姿态
 ```
 
 ## 配置文件
 
-当前常用配置文件：
+常用配置：
 
-- [o10_right_control.yaml](configs/o10_right_control.yaml)
-- [o10_right_record.yaml](configs/o10_right_record.yaml)
-- [o10_right_infer.yaml](configs/o10_right_infer.yaml)
-- [o10_right_replay.yaml](configs/o10_right_replay.yaml)
-- [o10_right_reset_pose.json](configs/o10_right_reset_pose.json)
+- [o10_right_control.yaml](configs/o10_right_control.yaml) — 实时控制
+- [o10_right_record.yaml](configs/o10_right_record.yaml) — 数据录制
+- [o10_right_replay.yaml](configs/o10_right_replay.yaml) — 轨迹回放
+- [o10_right_infer.yaml](configs/o10_right_infer.yaml) — 策略推理
+- [o10_right_reset_pose.json](configs/o10_right_reset_pose.json) — 复位姿态
 
 策略专用推理配置：
 
 - [o10_right_infer_act_pick_blue_camera_into_black_tray.yaml](configs/policies/o10_right_infer_act_pick_blue_camera_into_black_tray.yaml)
 - [o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml](configs/policies/o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml)
+- [o10_right_infer_pi0_038393_pick_blue_camera_into_black_tray.yaml](configs/policies/o10_right_infer_pi0_038393_pick_blue_camera_into_black_tray.yaml)
 
-如果要切换左手或右手，优先改 yaml 里的这些字段：
+切换左右手时，改 yaml 里的：
 
-- `robot.handedness`
-- `teleop.handedness`
-- `robot.channel_id`
+- `robot.handedness` / `teleop.handedness`
+- `robot.channel_id`（`null` 表示自动跟随 handedness，left→0，right→1）
 
-说明：
+## 复位姿态
 
-- `channel_id: null` 表示自动跟随 `handedness`
-- `left -> 0`
-- `right -> 1`
+复位姿态固定保存在 [o10_right_reset_pose.json](configs/o10_right_reset_pose.json)，包含 arm 6 关节 + hand 10 关节。
 
-## 统一复位姿态
+- 所有模式（控制、录制、回放、推理）启动时从 JSON 加载复位目标
+- 按 `Y` 键复位时，臂和手一起回到 JSON 中的姿态
+- 运行过程中不会自动覆盖这个文件
+- 需要更新复位姿态时，用 `python scripts/save_reset_pose.py` 手动保存
 
-当前 arm + hand 的统一复位姿态保存在：
+## 控制逻辑
 
-- [o10_right_reset_pose.json](configs/o10_right_reset_pose.json)
+- 按住 Pico 扳机，臂和手才允许动
+- `Y` 键回复位姿态（臂+手一起回）
+- 数据流：Pico VR (WebRTC, 8000/8001) → 臂 IK；宇叠手套 (UDP, 7777) → 手关节映射
 
-当前逻辑：
+## 数据录制
 
-- 启动后会加载这个 json
-- 按 `Y` 回初始位时，机械臂和手都会一起回
-- 手回到的是当前保存的复位手型，不是固定写死在代码里的默认手型
+录制格式：LeRobot `v3.0`。默认目录：
 
-## 当前控制逻辑
-
-当前 O10 遥操作约定：
-
-- 按住左手柄扳机，手和臂才允许动
-- `Y` 用来回初始位
-- 回初始位时，臂和手一起回
-
-## 数据录制说明
-
-当前录制出的数据集是 LeRobot `v3.0` 格式。
-
-默认录制目录在：
-
-```bash
+```
 ~/workspace/dataset/Robot/agi_arm_bot
 ```
 
-录制时会在这个目录下面自动创建数据集子目录，例如：
-
-```bash
-~/workspace/dataset/Robot/agi_arm_bot/pick_and_place_20260411
-```
-
-如果你想手动指定目录，可以在命令行额外传参数，例如：
+手动指定目录：
 
 ```bash
 ./scripts/record_o10_right.sh \
@@ -190,84 +118,28 @@ cd ~/workspace/arm-hand-teleop
   --dataset.repo_id my_dataset
 ```
 
-## 当前录制内容
+录制内容：
 
-当前新录的数据语义如下：
+- `action`（16D）：臂 6 关节 + 手 10 关节
+- `observation.state`（23D）：臂 6 关节 + 手 10 关节 + 末端位姿 7D
+- `observation.images.right` / `observation.images.top`：相机图像
 
-- `action`
-  16 维，只包含真正可执行的命令
-- `observation.state`
-  23 维，包含臂关节、手关节、末端位姿
-- `observation.images.right`
-  右侧相机
-- `observation.images.top`
-  顶部相机
-
-`action` 当前包含：
-
-- 臂 6 个关节
-- 手 10 个关节
-
-`observation.state` 当前包含：
-
-- 臂 6 个关节
-- 手 10 个关节
-- 末端位姿 7 个量
-
-说明：
-
-- `action` 现在不再包含 `pose.x/y/z + quaternion`
-- 末端位姿保留在 observation 里，用于观测和训练辅助
-
-## 数据同步说明
-
-当前同步方式和 LeRobot 常见采集方式一致，属于软件级对齐，不是硬件级严格同步。
-
-当前特点：
-
-- 一条样本里会写入同一控制周期内的 `observation + action`
-- 机械臂状态和手状态是在同一轮 `get_observation()` 里读取
-- 相机取的是后台线程中的最新帧
-- 手套数据也是异步线程中的最新值
-
-如果后面要做特别精细的操作，建议继续关注：
-
-- 手套频率和录制 fps 是否一致
-- 相机、手、臂是否需要额外保存各自时间戳
+同步方式为软件级对齐：臂和手状态在同一轮 `get_observation()` 读取，相机和手套取后台线程最新值。
 
 ## 测试
 
-常用测试命令：
-
 ```bash
+env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/
 env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_agibot_o10.py
 ```
 
-```bash
-env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_runtime_helpers.py
-```
+## Docker 迁移
+
+见 [DOCKER_MIGRATION.md](DOCKER_MIGRATION.md)。
 
 ## 常见问题
 
-OpenCV 预览窗口报错：
-
-- 如果你在没有 GUI 的环境里录制，确认 yaml 里：
-- `run.display_data: false`
-
-录制目录已存在导致失败：
-
-- LeRobot 创建数据集目录时默认要求目标目录不存在
-- 换一个新的 `repo_id`
-- 或者删掉旧的空目录后再录
-
-手套连不上：
-
-- 先确认 `HDService` 已启动
-- 再确认 `HDWeb` 里能看到正确的手套配对
-- 再确认 yaml 里的 `handedness` 和实际手套左右一致
-
-## 备注
-
-这个仓库当前更偏向单机可用、直接启动的工程版本。
-
-很多脚本已经故意写成了简单直白的形式，例如直接使用 `~` 路径，方便以后整体迁移目录时一起搬走。
+- OpenCV 预览窗口报错 → 无 GUI 环境下设 `run.display_data: false`
+- 录制目录已存在 → 换 `repo_id` 或删掉旧空目录
+- 手套连不上 → 确认 HDService 已启动、HDWeb 能看到配对、yaml 里 handedness 正确
+- 手 CANFD 超时 → 检查手电源、USB-CANFD 线、重插 USB

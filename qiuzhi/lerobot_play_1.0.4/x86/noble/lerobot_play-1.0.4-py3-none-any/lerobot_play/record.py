@@ -833,16 +833,8 @@ def main():
         if bool(cfg["run"].get("display_data", False)):
             init_rerun(session_name="recording")
 
-        # Connect devices（connect 会用当前位置覆盖 reset pose，先保存再恢复）
-        saved_arm = robot.arm_reset_store.load() if hasattr(robot, "arm_reset_store") else None
-        saved_hand = robot.hand_reset_store.load() if hasattr(robot, "hand_reset_store") else None
+        # Connect devices
         robot.connect()
-        if saved_arm is not None:
-            robot.reset_arm_joint_pos = saved_arm
-            robot.arm_reset_store.save(saved_arm)
-        if saved_hand is not None:
-            robot.reset_hand_joint_pos = saved_hand
-            robot.hand_reset_store.save(saved_hand)
         teleop.connect()
 
         if robot.name == "airbot_play_follower":

@@ -101,7 +101,7 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
         self.enable_motors()
         self.configure()
-        self.capture_current_joint_pos_as_reset_target(persist=True)
+        self._load_reset_target_from_file()
         self._is_connected = True
 
     def enable_motors(self) -> None:
@@ -149,6 +149,18 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             hand_joint_pos,
         )
         return arm_joint_pos, hand_joint_pos
+
+    def _load_reset_target_from_file(self) -> None:
+        arm_loaded = self.arm_reset_store.load()
+        hand_loaded = self.hand_reset_store.load()
+        if arm_loaded is not None:
+            self.reset_arm_joint_pos = arm_loaded
+        if hand_loaded is not None:
+            self.reset_hand_joint_pos = hand_loaded
+            self.hand_joints = hand_loaded.copy()
+        logger.info("Loaded reset target from file (no overwrite)")
+        self._log_joint_pos("Reset arm target", AGIBOT_O10_ARM_FEATURE_NAMES, self.reset_arm_joint_pos)
+        self._log_joint_pos("Reset hand target", AGIBOT_O10_HAND_FEATURE_NAMES, self.reset_hand_joint_pos)
 
     @property
     def _motors_ft(self) -> dict[str, type]:

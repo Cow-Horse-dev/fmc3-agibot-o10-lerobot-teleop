@@ -77,11 +77,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             self.commanded_hand_joint_pos = joint_pos.copy()
 
     def _set_reset_arm_joint_pos(self, joint_pos: list[float], *, persist: bool) -> list[float]:
-        normalized_joint_pos = (
-            self.arm_reset_store.save(joint_pos)
-            if persist
-            else self.arm_reset_store.normalize(joint_pos)
-        )
+        normalized_joint_pos = self.arm_reset_store.normalize(joint_pos)
         self.reset_arm_joint_pos = normalized_joint_pos.copy()
         return normalized_joint_pos
 
@@ -99,11 +95,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         persist: bool,
         sync_commanded: bool,
     ) -> list[float]:
-        normalized_joint_pos = (
-            self.hand_reset_store.save(joint_pos)
-            if persist
-            else self.hand_reset_store.normalize(joint_pos)
-        )
+        normalized_joint_pos = self.hand_reset_store.normalize(joint_pos)
         with self.hand_state_lock:
             self.reset_hand_joint_pos = normalized_joint_pos.copy()
             if sync_commanded:
