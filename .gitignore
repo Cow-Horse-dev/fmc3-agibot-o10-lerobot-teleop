@@ -13,6 +13,14 @@ logs/
 outputs/
 output/
 
+# Large archives / tarballs
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# Backup directories
+*.bak-*/
+
 # Script caches
 scripts/__pycache__/
 
