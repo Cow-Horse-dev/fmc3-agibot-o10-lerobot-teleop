@@ -21,7 +21,8 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['dataset_repo_id','dataset_root'] if k in d}, indent=2\\)\\)\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{k}: {v}'\\) for k,v in d.items\\(\\) if 'dataset' in k.lower\\(\\) or 'data' in k.lower\\(\\) or 'repo' in k.lower\\(\\) or 'root' in k.lower\\(\\)]\")",
       "Bash(python3 -c ' *)",
-      "Bash(/home/phl/miniconda3/envs/arm-hand-teleop/bin/python -c ' *)"
+      "Bash(/home/phl/miniconda3/envs/arm-hand-teleop/bin/python -c ' *)",
+      "Bash(git remote *)"
     ]
   }
 }
