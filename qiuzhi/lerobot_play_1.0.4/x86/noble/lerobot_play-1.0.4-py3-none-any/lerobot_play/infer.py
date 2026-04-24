@@ -443,8 +443,14 @@ def _validate_args(args: argparse.Namespace) -> None:
 
 
 def _load_policy(policy_type: str, model_path: str, device: str):
-    """加载策略模型"""
-    log_say(f"Loading {policy_type} policy from {model_path}")
+    """加载策略模型并放到指定 device。
+
+    lerobot 上游 PreTrainedPolicy.from_pretrained 会按保存时的 config.device
+    做 policy.to(config.device)，yaml 里 infer.device 原本不起作用。这里显式
+    覆盖：from_pretrained 之后再把 policy 移到 device，并同步 config.device
+    让后续 make_pre_post_processors 的 device_processor 与实际一致。
+    """
+    log_say(f"Loading {policy_type} policy from {model_path} (target device: {device})")
     start_time = time.time()
 
     try:
@@ -463,8 +469,14 @@ def _load_policy(policy_type: str, model_path: str, device: str):
         else:
             raise ValueError(f"Unsupported policy type: {policy_type}")
 
+        if device:
+            policy.to(device)
+            policy.config.device = device
+
         load_time = time.time() - start_time
-        log_say(f"Policy loaded successfully in {load_time:.2f} seconds")
+        log_say(
+            f"Policy loaded successfully in {load_time:.2f} seconds on {policy.config.device}"
+        )
         return policy
 
     except Exception as e:
@@ -509,6 +521,17 @@ def _reset_to_training_start(robot, model_path: str) -> None:
     robot.reset_hand_joint_pos = hand_target
     log_say("Resetting to training dataset episode 0 start pose")
     robot.reset_zero()
+
+
+def _should_reset_to_training_start(robot) -> bool:
+    """Whether infer startup should override the configured reset pose.
+
+    Dual-arm Agibot O10 recording/inference is standardized around the configured
+    JSON reset pose. Its robot implementation consumes per-side reset targets
+    (`left_reset_*` / `right_reset_*`), so the generic single-arm dataset-based
+    override is not the correct startup path there.
+    """
+    return getattr(robot, "name", None) != "pico_follower_dual_arm_agibot_o10"
 
 
 def _create_robot_config(args: argparse.Namespace):
@@ -661,10 +684,20 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 连接机器人
     robot.connect()
-    _reset_to_training_start(robot, args.model_path)
+    if _should_reset_to_training_start(robot):
+        _reset_to_training_start(robot, args.model_path)
+    else:
+        log_say("Using configured reset pose for inference startup")
 
     try:
+        episodes_completed = 0
         for episode_idx in range(args.num_episodes):
+            if events.get("stop_recording"):
+                log_say(
+                    f"stop_recording set before episode {episode_idx + 1}; ending inference"
+                )
+                break
+
             log_say(
                 f"Running inference episode {episode_idx + 1} of {args.num_episodes}"
             )
@@ -688,26 +721,38 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
             # 保存数据
             dataset.save_episode()
+            episodes_completed += 1
 
             # 机器人归零
-            if episode_idx < args.num_episodes - 1:  # 不是最后一轮
+            is_last_episode = episode_idx >= args.num_episodes - 1
+            if events.get("stop_recording"):
+                log_say("stop_recording set; skipping post-episode reset and ending")
+                break
+            if not is_last_episode:
                 log_say("Resetting robot to zero position")
                 robot.return_zero()
 
         execution_time = time.time() - start_time
-        log_say(f"Synchronous inference completed in {execution_time:.2f} seconds")
+        log_say(
+            f"Synchronous inference completed in {execution_time:.2f} seconds "
+            f"({episodes_completed}/{args.num_episodes} episodes)"
+        )
+
+        avg_episode_time = (
+            execution_time / episodes_completed if episodes_completed else 0.0
+        )
 
         return {
             "status": "success",
             "policy": args.policy,
             "task": args.task_description,
-            "episodes_completed": args.num_episodes,
+            "episodes_completed": episodes_completed,
             "data_saved": args.save_data,
             "execution_time": execution_time,
             "save_path": save_path if args.save_data else None,
             "performance_stats": {
                 "total_time": execution_time,
-                "avg_episode_time": execution_time / args.num_episodes,
+                "avg_episode_time": avg_episode_time,
             },
         }
 
