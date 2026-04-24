@@ -40,10 +40,11 @@ def test_record_source_rehydrates_single_arm_teleop_when_episode_starts():
     )
     block = source[start:end]
 
-    zero_mode_index = block.index("_set_single_arm_zero_mode(teleop, False)")
+    enable_zero_mode_index = block.index("_set_single_arm_zero_mode(teleop, True)")
     sync_index = block.index("_sync_teleop_to_robot_reset(teleop)")
+    disable_zero_mode_index = block.index("_set_single_arm_zero_mode(teleop, False)")
 
-    assert sync_index > zero_mode_index
+    assert enable_zero_mode_index < sync_index < disable_zero_mode_index
 
 
 def test_record_source_rehydrates_dual_arm_teleop_when_episode_starts():
@@ -57,7 +58,8 @@ def test_record_source_rehydrates_dual_arm_teleop_when_episode_starts():
     end = source.index("            else:", start)
     block = source[start:end]
 
-    zero_mode_index = block.index("_set_dual_arm_zero_mode(teleop, False)")
+    enable_zero_mode_index = block.index("_set_dual_arm_zero_mode(teleop, True)")
     sync_index = block.index("_sync_teleop_to_robot_reset(teleop)")
+    disable_zero_mode_index = block.index("_set_dual_arm_zero_mode(teleop, False)")
 
-    assert sync_index > zero_mode_index
+    assert enable_zero_mode_index < sync_index < disable_zero_mode_index

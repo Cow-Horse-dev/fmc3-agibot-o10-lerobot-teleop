@@ -70,7 +70,7 @@ robot:
       fps: 30
       use_depth: false
       color_mode: rgb
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
     right_wrist:
       type: intelrealsense
       serial_number_or_name: "260322273018"
@@ -79,7 +79,7 @@ robot:
       fps: 30
       use_depth: false
       color_mode: rgb
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
 
 run:
   # 录制频率，单位 Hz。
@@ -94,7 +94,7 @@ run:
   num_episodes: 1000
 
   # 单个 episode 最长时长，单位秒。
-  episode_time_sec: 30
+  episode_time_sec: 60
 
   # 保留的 reset 时间字段。
   reset_time_sec: 10

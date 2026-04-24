@@ -1014,8 +1014,9 @@ def main():
                 print_green(
                     f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls the arm and hand."
                 )
-                _set_single_arm_zero_mode(teleop, False)
+                _set_single_arm_zero_mode(teleop, True)
                 _sync_teleop_to_robot_reset(teleop)
+                _set_single_arm_zero_mode(teleop, False)
             elif teleop.name == "pico_leader_dual_arm_agibot_o10":
                 if not use_ssh:
                     print_green(
@@ -1042,8 +1043,9 @@ def main():
                     f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls both arms and both hands."
                 )
                 print_green("Preparing dual-arm teleop zero/reset synchronization...")
-                _set_dual_arm_zero_mode(teleop, False)
+                _set_dual_arm_zero_mode(teleop, True)
                 _sync_teleop_to_robot_reset(teleop)
+                _set_dual_arm_zero_mode(teleop, False)
                 print_green("Dual-arm teleop is ready; entering record loop.")
 
             else:

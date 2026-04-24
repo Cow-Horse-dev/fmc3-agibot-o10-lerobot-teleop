@@ -130,7 +130,7 @@ robot:
       # - ROTATE_90
       # - ROTATE_180
       # - ROTATE_270
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
 
     top:
       # 顶部 USB 相机。
