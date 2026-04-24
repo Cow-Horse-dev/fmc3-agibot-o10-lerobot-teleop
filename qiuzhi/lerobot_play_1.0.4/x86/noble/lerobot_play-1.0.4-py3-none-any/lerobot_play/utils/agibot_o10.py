@@ -5,6 +5,8 @@ import importlib.util
 import math
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Sequence
 
@@ -32,6 +34,29 @@ AGIBOT_O10_POSE_FEATURE_NAMES = (
     "quaternion.qz",
     "quaternion.qw",
 )
+
+AGIBOT_O10_TRIGGER_GESTURES = {
+    "pinch": {
+        "right": {
+            "open": [0.03, -1.51, 0.5, 0, 0.5, 1.48, 0, 1.48, 0, 1.48],
+            "closed": [0.03, -1.51, 0.7, 0.0, 0.7, 1.48, 0, 1.48, 0, 1.48],
+        },
+        "left": {
+            "open": [-0.03, 1.51, -0.5, 0, 0.5, 1.48, 0, 1.48, 0, 1.48],
+            "closed": [-0.03, 1.51, -0.7, 0.0, 0.7, 1.48, 0, 1.48, 0, 1.48],
+        },
+    },
+    "tripod": {
+        "right": {
+            "open": [0.03, -1.51, 0.5, 0, 0.5, 0.5, 0, 1.48, 0, 1.48],
+            "closed": [0.03, -1.51, 0.7, 0.0, 0.7, 0.7, 0, 1.48, 0, 1.48],
+        },
+        "left": {
+            "open": [-0.03, 1.51, -0.5, 0, 0.5, 0.5, 0, 1.48, 0, 1.48],
+            "closed": [-0.03, 1.51, -0.7, 0.0, 0.7, 0.7, 0, 1.48, 0, 1.48],
+        },
+    },
+}
 
 _ROBOT_HAND_ANGLE_LIMITS = {
     "left": [-60, 100, -49, 12, 90, 90, -10, 90, -10, 90],
@@ -112,6 +137,36 @@ def normalize_handedness(handedness: str) -> str:
     if normalized not in {"left", "right"}:
         raise ValueError(f"Unsupported handedness: {handedness}")
     return normalized
+
+
+def normalize_trigger_gesture_name(gesture_name: str) -> str:
+    normalized = gesture_name.lower()
+    if normalized not in AGIBOT_O10_TRIGGER_GESTURES:
+        supported = ", ".join(sorted(AGIBOT_O10_TRIGGER_GESTURES))
+        raise ValueError(
+            f"Unsupported Agibot O10 trigger gesture: {gesture_name}. "
+            f"Supported gestures: {supported}"
+        )
+    return normalized
+
+
+def normalize_trigger_gesture_state(state: str) -> str:
+    normalized = state.lower()
+    if normalized not in {"open", "closed"}:
+        raise ValueError(f"Unsupported Agibot O10 trigger gesture state: {state}")
+    return normalized
+
+
+def get_agibot_o10_trigger_gesture_joint_angles(
+    gesture_name: str,
+    handedness: str,
+    state: str,
+) -> list[float]:
+    """Return a copy of a predefined trigger-gesture hand pose."""
+    gesture = AGIBOT_O10_TRIGGER_GESTURES[normalize_trigger_gesture_name(gesture_name)]
+    side = normalize_handedness(handedness)
+    state_key = normalize_trigger_gesture_state(state)
+    return gesture[side][state_key].copy()
 
 
 def default_channel_id_for_handedness(handedness: str) -> int:
@@ -281,6 +336,60 @@ class AgibotO10Hand:
         )
         self._sdk = None
         self._hand = None
+        self._tactile_cache_lock = threading.Lock()
+        self._tactile_avg_cache: list[float] | None = None
+        self._tactile_fingertip_cache: list[float] | None = None
+        self._tactile_full_cache: list[float] | None = None
+        self._tactile_last_update = 0.0
+
+    def _refresh_tactile_caches(self) -> None:
+        avg_result = []
+        fingertip_result = []
+        full_result = []
+
+        tactile_fingers = self._get_tactile_fingers(self._sdk)
+        for index, (_name, finger_enum) in enumerate(tactile_fingers):
+            data = self._hand.get_tactile_sensor_data(finger_enum)
+            values = [float(value) for value in data]
+            avg_result.append(sum(values) / len(values) if values else 0.0)
+            full_result.extend(values)
+            if index < 5:
+                fingertip_result.extend(values)
+
+        with self._tactile_cache_lock:
+            self._tactile_avg_cache = avg_result
+            self._tactile_fingertip_cache = fingertip_result
+            self._tactile_full_cache = full_result
+            self._tactile_last_update = time.monotonic()
+
+    def _read_tactile_with_cache(
+        self,
+        cache_name: str,
+        *,
+        max_cache_age_s: float = 0.2,
+    ) -> list[float]:
+        if self._hand is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+
+        now = time.monotonic()
+        with self._tactile_cache_lock:
+            cached = getattr(self, cache_name)
+            last_update = self._tactile_last_update
+            if cached is not None and now - last_update <= max_cache_age_s:
+                return cached.copy()
+
+        try:
+            self._refresh_tactile_caches()
+        except Exception:
+            with self._tactile_cache_lock:
+                cached = getattr(self, cache_name)
+                if cached is not None:
+                    return cached.copy()
+            raise
+
+        with self._tactile_cache_lock:
+            cached = getattr(self, cache_name)
+            return [] if cached is None else cached.copy()
 
     def connect(self) -> None:
         if self._hand is not None:
@@ -345,6 +454,65 @@ class AgibotO10Hand:
         if self._hand is None:
             raise RuntimeError("Agibot O10 hand is not connected")
         return [float(angle) for angle in self._hand.get_all_active_joint_angles()]
+
+    @staticmethod
+    def _get_tactile_fingers(sdk):
+        """返回 (name, EFinger) 列表，按固定顺序。"""
+        return [
+            ("thumb", sdk.EFinger.THUMB),
+            ("index", sdk.EFinger.INDEX),
+            ("middle", sdk.EFinger.MIDDLE),
+            ("ring", sdk.EFinger.RING),
+            ("little", sdk.EFinger.LITTLE),
+            ("palm", sdk.EFinger.PALM),
+            ("dorsum", sdk.EFinger.DORSUM),
+        ]
+
+    def read_tactile_avg(self) -> list[float]:
+        """读取 7 区域触觉均值，返回 7D（每区域 1 个均值）。"""
+        if self._hand is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+        result = []
+        for _name, finger_enum in self._get_tactile_fingers(self._sdk):
+            data = self._hand.get_tactile_sensor_data(finger_enum)
+            avg = sum(data) / len(data) if data else 0.0
+            result.append(float(avg))
+        return result
+
+    def read_tactile_avg_cached(self, *, max_cache_age_s: float = 0.2) -> list[float]:
+        return self._read_tactile_with_cache(
+            "_tactile_avg_cache", max_cache_age_s=max_cache_age_s
+        )
+
+    def read_tactile_fingertip(self) -> list[float]:
+        """读取 5 指尖触觉全量，返回 80D（5 指 × 16 点）。"""
+        if self._hand is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+        result = []
+        for _name, finger_enum in self._get_tactile_fingers(self._sdk)[:5]:
+            data = self._hand.get_tactile_sensor_data(finger_enum)
+            result.extend([float(v) for v in data])
+        return result
+
+    def read_tactile_fingertip_cached(self, *, max_cache_age_s: float = 0.2) -> list[float]:
+        return self._read_tactile_with_cache(
+            "_tactile_fingertip_cache", max_cache_age_s=max_cache_age_s
+        )
+
+    def read_tactile_full(self) -> list[float]:
+        """读取全手触觉，返回 130D（5 指 × 16 + 手掌 25 + 手背 25）。"""
+        if self._hand is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+        result = []
+        for _name, finger_enum in self._get_tactile_fingers(self._sdk):
+            data = self._hand.get_tactile_sensor_data(finger_enum)
+            result.extend([float(v) for v in data])
+        return result
+
+    def read_tactile_full_cached(self, *, max_cache_age_s: float = 0.2) -> list[float]:
+        return self._read_tactile_with_cache(
+            "_tactile_full_cache", max_cache_age_s=max_cache_age_s
+        )
 
     def disconnect(self) -> None:
         self._hand = None

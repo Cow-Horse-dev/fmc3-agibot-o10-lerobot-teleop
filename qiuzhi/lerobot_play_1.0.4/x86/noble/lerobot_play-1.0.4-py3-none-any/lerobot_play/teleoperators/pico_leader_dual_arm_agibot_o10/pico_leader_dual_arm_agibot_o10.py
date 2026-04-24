@@ -22,8 +22,9 @@ from lerobot_play.robots.pico_follower_dual_arm_agibot_o10.airbot_pico_follower_
 from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_ARM_FEATURE_NAMES,
     AGIBOT_O10_HAND_FEATURE_NAMES,
+    get_agibot_o10_trigger_gesture_joint_angles,
 )
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
 
 from .config_pico_leader_dual_arm_agibot_o10 import (
     PicoLeaderDualArmAgibotO10Config,
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 _NUM_ARM_JOINTS = len(AGIBOT_O10_ARM_FEATURE_NAMES)
 _NUM_HAND_JOINTS = len(AGIBOT_O10_HAND_FEATURE_NAMES)
 _SIDE_ACTION_DIM = _NUM_ARM_JOINTS + _NUM_HAND_JOINTS  # 16
+_DEFAULT_GRASP_GRIP_THRESHOLD = 0.2
 
 
 class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
@@ -106,28 +108,28 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
             else None
         )
 
-        # Reset stores
+        # Reset stores (path=None: normalize-only, no file I/O)
         self.left_arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=left_cfg.get("arm_reset_joints_path"),
+            path=None,
             label="left arm reset joint target",
             group_key="arm",
         )
         self.left_hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=left_cfg.get("hand_reset_joints_path"),
+            path=None,
             label="left hand reset joint target",
             group_key="hand",
         )
         self.right_arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=right_cfg.get("arm_reset_joints_path"),
+            path=None,
             label="right arm reset joint target",
             group_key="arm",
         )
         self.right_hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=right_cfg.get("hand_reset_joints_path"),
+            path=None,
             label="right hand reset joint target",
             group_key="hand",
         )
@@ -138,6 +140,47 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
         self.right_reset_arm_joint_pos = [0.0] * _NUM_ARM_JOINTS
         self.right_reset_hand_joint_pos = [0.0] * _NUM_HAND_JOINTS
         self.right_commanded_hand_joint_pos = self.right_reset_hand_joint_pos.copy()
+        if self._is_trigger_gesture_mode():
+            self._reset_trigger_gesture_hands_to_open()
+
+    def _update_pose_data(self, pose_msg):
+        try:
+            if "head_pose" in pose_msg:
+                head_data = pose_msg["head_pose"]
+                if len(head_data) == 7:
+                    self.head_info = head_data.copy()
+
+            if "left_pose" in pose_msg:
+                left_data = pose_msg["left_pose"]
+                if len(left_data) == 7:
+                    self.left_info = left_data.copy()
+
+            if "right_pose" in pose_msg:
+                right_data = pose_msg["right_pose"]
+                if len(right_data) == 7:
+                    self.right_info = right_data.copy()
+
+            if "tracking_state" in pose_msg:
+                state = pose_msg["tracking_state"]
+                self.ctrl.update(
+                    {
+                        "HBattery": float(state.get("head_battery", 0.0)),
+                        "LIsTracked": bool(state.get("left_tracked", False)),
+                        "LBattery": float(state.get("left_battery", 0.0)),
+                        "RIsTracked": bool(state.get("right_tracked", False)),
+                        "RBattery": float(state.get("right_battery", 0.0)),
+                        "LWristTracked": bool(state.get("left_wrist_tracked", False)),
+                        "LWristBattery": float(state.get("left_wrist_battery", 0.0)),
+                        "RWristTracked": bool(state.get("right_wrist_tracked", False)),
+                        "RWristBattery": float(state.get("right_wrist_battery", 0.0)),
+                    }
+                )
+
+            if self.active_pose_source != "dual":
+                print("当前使用双臂 wrist pose 作为控臂输入")
+                self.active_pose_source = "dual"
+        except Exception as e:
+            print(f"Error updating dual-arm pose data: {e}")
 
     # ------------------------------------------------------------------
     # Connection
@@ -146,25 +189,31 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
     def connect(self, calibrate: bool = True) -> None:
         self._start_events_thread()
 
-        for side, glove in (("left", self.left_hand_teleoperator),
-                            ("right", self.right_hand_teleoperator)):
-            if glove is None:
-                print(f"Agibot O10 {side} hand teleoperation disabled.")
-                continue
-            if not glove.init():
-                raise RuntimeError(
-                    f"Failed to initialize the UDE glove receiver for Agibot O10 {side} hand. "
-                    "Please make sure HDService/HandDriver is running."
-                )
-            glove.start_listening()
-            if not glove.wait_until_ready(timeout_s=2.0):
-                glove.stop()
-                raise RuntimeError(
-                    f"Failed to receive fresh UDE glove data for Agibot O10 {side} hand."
-                )
-            self._initialize_hand_reset_target(side)
+        hand_mode = getattr(self.config, "hand_mode", "glove")
+        if hand_mode == "trigger_gesture":
+            print("Trigger-gesture hand mode: skipping glove connection.")
+        else:
+            for side, glove in (("left", self.left_hand_teleoperator),
+                                ("right", self.right_hand_teleoperator)):
+                if glove is None:
+                    print(f"Agibot O10 {side} hand teleoperation disabled.")
+                    continue
+                if not glove.init():
+                    raise RuntimeError(
+                        f"Failed to initialize the UDE glove receiver for Agibot O10 {side} hand. "
+                        "Please make sure HDService/HandDriver is running."
+                    )
+                glove.start_listening()
+                if not glove.wait_until_ready(timeout_s=2.0):
+                    glove.stop()
+                    raise RuntimeError(
+                        f"Failed to receive fresh UDE glove data for Agibot O10 {side} hand."
+                    )
+                self._initialize_hand_reset_target(side)
 
         self._refresh_reset_targets_from_store()
+        if hand_mode == "trigger_gesture":
+            self._reset_trigger_gesture_hands_to_open()
         self._is_connected = True
     # ------------------------------------------------------------------
     # Action features
@@ -237,12 +286,17 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
         glove = getattr(self, f"{side}_hand_teleoperator")
         if glove is None:
             return
-        store = getattr(self, f"{side}_hand_reset_store")
-        try:
-            stored = store.load()
-        except Exception as exc:
-            print(f"Warning: failed to load persistent {side} hand reset target: {exc}")
-            stored = None
+
+        side_cfg = getattr(self.config, side)
+        reset_poses_path = side_cfg.get("reset_poses_path")
+        reset_gesture = side_cfg.get("reset_gesture")
+        stored = None
+        if reset_poses_path and reset_gesture:
+            try:
+                _, stored = load_reset_poses(reset_poses_path, side, reset_gesture)
+            except Exception as exc:
+                print(f"Warning: failed to load {side} reset poses for hand init: {exc}")
+                stored = None
 
         if stored is not None:
             stored = self._set_reset_hand_joint_pos(
@@ -277,19 +331,20 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
 
     def _refresh_reset_targets_from_store(self) -> None:
         for side in ("left", "right"):
-            arm_store = getattr(self, f"{side}_arm_reset_store")
-            hand_store = getattr(self, f"{side}_hand_reset_store")
+            side_cfg = getattr(self.config, side)
+            reset_poses_path = side_cfg.get("reset_poses_path")
+            reset_gesture = side_cfg.get("reset_gesture")
+
+            if not reset_poses_path or not reset_gesture:
+                continue
 
             try:
-                arm_loaded = arm_store.load()
+                arm_loaded, hand_loaded = load_reset_poses(
+                    reset_poses_path, side, reset_gesture,
+                )
             except Exception as exc:
-                print(f"Warning: failed to load {side} arm reset target: {exc}")
-                arm_loaded = None
-            try:
-                hand_loaded = hand_store.load()
-            except Exception as exc:
-                print(f"Warning: failed to load {side} hand reset target: {exc}")
-                hand_loaded = None
+                print(f"Warning: failed to load {side} reset poses: {exc}")
+                continue
 
             if arm_loaded is not None:
                 arm_loaded = self._set_reset_arm_joint_pos(side, arm_loaded)
@@ -305,6 +360,39 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
         for val in joint_pos:
             print(f"  {val:.4f}")
 
+    def _is_trigger_gesture_mode(self) -> bool:
+        return getattr(self.config, "hand_mode", "glove") == "trigger_gesture"
+
+    def _get_trigger_gesture_name(self, side: str) -> str:
+        side_cfg = getattr(self.config, side, {}) or {}
+        gesture_name = side_cfg.get(
+            "trigger_gesture",
+            getattr(self.config, "trigger_gesture", "pinch"),
+        )
+        return gesture_name
+
+    def _get_trigger_gesture_hand_pos(self, side: str, state_key: str) -> list[float]:
+        return get_agibot_o10_trigger_gesture_joint_angles(
+            self._get_trigger_gesture_name(side),
+            side,
+            state_key,
+        )
+
+    def _reset_trigger_gesture_hands_to_open(self) -> None:
+        for side in ("left", "right"):
+            hand_pos = self._get_trigger_gesture_hand_pos(side, "open")
+            self._set_reset_hand_joint_pos(
+                side, hand_pos, persist=False, sync_commanded=True,
+            )
+
+    def _is_trigger_gesture_grasp_pressed(self, side: str) -> bool:
+        button_key = "LG" if side == "left" else "RG"
+        grip_key = "leftGrip" if side == "left" else "rightGrip"
+        grip_threshold = float(
+            getattr(self.config, "grasp_grip_threshold", _DEFAULT_GRASP_GRIP_THRESHOLD)
+        )
+        return bool(self.ctrl[button_key]) or float(self.ctrl.get(grip_key, 0.0)) >= grip_threshold
+
     # ------------------------------------------------------------------
     # IK update (per-side)
     # ------------------------------------------------------------------
@@ -316,7 +404,12 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
 
         now = time.time()
         joint_pos = [lpfs[i].sample(now) for i in range(_NUM_ARM_JOINTS)]
-        result = arm_kdl.inverse_kinematics(np.array(pose, dtype=float), joint_pos)
+        # force_calculate=True: fall back to numerical solver near analytical
+        # singularities; otherwise IK returns 0 solutions and the arm freezes
+        # on common near-home targets (e.g. small wrist yaw from zero seed).
+        result = arm_kdl.inverse_kinematics(
+            np.array(pose, dtype=float), joint_pos, force_calculate=True,
+        )
 
         if len(result) == 0:
             print(f"IK failed for {side} arm. Pose: {pose}")
@@ -348,10 +441,21 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
     # ------------------------------------------------------------------
 
     def _is_hand_control_enabled(self, side: str) -> bool:
-        """Left hand enabled by RTr (right trigger), right hand by LTr."""
-        if side == "right":
-            return self.startflag and self.ctrl["LTr"]
-        return self.startflag and self.ctrl["RTr"]
+        return self._is_arm_control_enabled(side)
+
+    def _is_arm_control_enabled(self, side: str) -> bool:
+        trigger_mode = getattr(self.config, "arm_trigger_mode", "split").lower()
+        if trigger_mode == "left":
+            trigger_pressed = self.ctrl["LTr"]
+        elif trigger_mode == "right":
+            trigger_pressed = self.ctrl["RTr"]
+        elif trigger_mode == "both":
+            trigger_pressed = self.ctrl["LTr"] and self.ctrl["RTr"]
+        elif side == "left":
+            trigger_pressed = self.ctrl["LTr"]
+        else:
+            trigger_pressed = self.ctrl["RTr"]
+        return self.startflag and trigger_pressed
 
     # ------------------------------------------------------------------
     # Main control loop override
@@ -384,13 +488,7 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
             # Process each arm independently
             for side, pose_info in (("left", self.left_info),
                                     ("right", self.right_info)):
-                # Determine trigger for this side's arm
-                if side == "left":
-                    start_trigger = self.ctrl["RTr"]
-                else:
-                    start_trigger = self.ctrl["LTr"]
-
-                enable = self.startflag and start_trigger
+                enable = self._is_arm_control_enabled(side)
                 if enable:
                     self._control_arm_with_wrist(side, pose_info)
                 else:
@@ -443,6 +541,8 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
 
     def reset_pose(self):
         self._refresh_reset_targets_from_store()
+        if self._is_trigger_gesture_mode():
+            self._reset_trigger_gesture_hands_to_open()
 
         for side in ("left", "right"):
             arm_pos = self._get_reset_arm_joint_pos(side)
@@ -458,10 +558,11 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
             setattr(self, f"{side}_arm_init_pose", None)
             print(f"RESET {side} arm position")
 
-            self._set_commanded_hand_joint_pos(
-                side, self._get_reset_hand_joint_pos(side),
-            )
+            self._set_commanded_hand_joint_pos(side, self._get_reset_hand_joint_pos(side))
             print(f"RESET {side} hand position")
+
+    def return_init(self):
+        self.reset_pose()
 
     # ------------------------------------------------------------------
     # Joint position / action output
@@ -477,7 +578,19 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
         for i in range(_NUM_ARM_JOINTS):
             state[i] = lpfs[i].sample(now)
 
-        if (
+        hand_mode = getattr(self.config, "hand_mode", "glove")
+        if hand_mode == "trigger_gesture":
+            if self._is_hand_control_enabled(side):
+                state_key = (
+                    "closed"
+                    if self._is_trigger_gesture_grasp_pressed(side)
+                    else "open"
+                )
+                hand_data = self._get_trigger_gesture_hand_pos(side, state_key)
+                self._set_commanded_hand_joint_pos(side, hand_data)
+            else:
+                hand_data = self._get_commanded_hand_joint_pos(side)
+        elif (
             glove is not None
             and self._is_hand_control_enabled(side)
             and glove.has_hand_data(max_age_s=glove.max_data_age_s)

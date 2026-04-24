@@ -15,6 +15,9 @@ class PicoLeaderDualArmAgibotO10Config(TeleoperatorConfig):
     handedness: str = "right"
     wrist_pose_source: str = "auto"
     enable_hand: bool = True
+    arm_trigger_mode: str = "split"
+    hand_mode: str = "glove"
+    trigger_gesture: str = "pinch"
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
     disable_torque_on_disconnect: bool = True

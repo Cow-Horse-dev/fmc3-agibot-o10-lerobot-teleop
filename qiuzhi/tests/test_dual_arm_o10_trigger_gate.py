@@ -1,0 +1,296 @@
+import importlib.util
+import sys
+import types
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LEROBOT_PLAY_PACKAGE_ROOT = (
+    REPO_ROOT
+    / "lerobot_play_1.0.4"
+    / "x86"
+    / "noble"
+    / "lerobot_play-1.0.4-py3-none-any"
+)
+MODULE_PATH = (
+    LEROBOT_PLAY_PACKAGE_ROOT
+    / "lerobot_play"
+    / "teleoperators"
+    / "pico_leader_dual_arm_agibot_o10"
+    / "pico_leader_dual_arm_agibot_o10.py"
+)
+
+if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
+
+
+def _install_stub_module(monkeypatch, name: str, **attrs):
+    module = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(module, key, value)
+    monkeypatch.setitem(sys.modules, name, module)
+    return module
+
+
+def _load_dual_arm_module(monkeypatch):
+    class FakeArmKdlNumerical:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakePicoLeaderSingleArmEEF:
+        pass
+
+    class FakeOnlineVariableStepLPF:
+        def __init__(self, *args, **kwargs):
+            self.value = 0.0
+
+        def sample(self, now):
+            return self.value
+
+        def update(self, now, value):
+            self.value = value
+
+    class FakeAgibotO10GloveTeleoperator:
+        pass
+
+    class FakePersistentJointTargetStore:
+        pass
+
+    class FakePicoLeaderDualArmAgibotO10Config:
+        pass
+
+    _install_stub_module(
+        monkeypatch,
+        "mmk2_kdl_py",
+        ArmKdlNumerical=FakeArmKdlNumerical,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.teleoperators.pico_leader_single_arm_eef.pico_leader_single_arm_eef",
+        PicoLeaderSingleArmEEF=FakePicoLeaderSingleArmEEF,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.teleoperators.pico_leader_single_arm_eef.lpf",
+        OnlineVariableStepLPF=FakeOnlineVariableStepLPF,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.teleoperators.pico_leader_single_arm_agibot_o10.agibot_o10_hand",
+        AgibotO10GloveTeleoperator=FakeAgibotO10GloveTeleoperator,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.robots.pico_follower_dual_arm_agibot_o10.airbot_pico_follower_dual_arm_agibot_o10",
+        DUAL_ARM_ACTION_FEATURE_NAMES=tuple(f"action_{index}" for index in range(32)),
+    )
+    def _fake_load_reset_poses(path, side, gesture):
+        return [], []
+
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.utils.joint_target_store",
+        PersistentJointTargetStore=FakePersistentJointTargetStore,
+        load_reset_poses=_fake_load_reset_poses,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "test_dual_arm_config_module",
+        PicoLeaderDualArmAgibotO10Config=FakePicoLeaderDualArmAgibotO10Config,
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "test_dual_arm_o10_trigger_gate_module",
+        MODULE_PATH,
+        submodule_search_locations=[str(MODULE_PATH.parent)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = "test_dual_arm_o10_trigger_gate_module"
+    monkeypatch.setitem(
+        sys.modules,
+        "test_dual_arm_o10_trigger_gate_module.config_pico_leader_dual_arm_agibot_o10",
+        sys.modules["test_dual_arm_config_module"],
+    )
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_trigger_gesture_hand_requires_left_trigger_in_left_mode(monkeypatch, side):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="left",
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": False,
+        "RTr": False,
+        "LG": True,
+        "RG": True,
+        "leftGrip": 0.0,
+        "rightGrip": 0.0,
+    }
+    teleop.left_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.right_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.left_hand_teleoperator = None
+    teleop.right_hand_teleoperator = None
+    open_state = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        side,
+        "open",
+    )
+    setattr(teleop, f"{side}_commanded_hand_joint_pos", open_state.copy())
+    setattr(teleop, f"{side}_hand_state_lock", None)
+    teleop._get_commanded_hand_joint_pos = (
+        lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
+    )
+    teleop._set_commanded_hand_joint_pos = (
+        lambda requested_side, joint_pos: setattr(
+            teleop,
+            f"{requested_side}_commanded_hand_joint_pos",
+            joint_pos.copy(),
+        )
+    )
+
+    disabled_state = teleop._get_side_joint_pos(side)
+    assert disabled_state[6:] == pytest.approx(open_state)
+
+    teleop.ctrl["LTr"] = True
+    enabled_state = teleop._get_side_joint_pos(side)
+    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        side,
+        "closed",
+    )
+    assert enabled_state[6:] == pytest.approx(expected_closed)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_arm_control_still_requires_left_trigger_in_left_mode(monkeypatch, side):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="left",
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": False,
+        "RTr": True,
+    }
+
+    assert teleop._is_arm_control_enabled(side) is False
+
+    teleop.ctrl["LTr"] = True
+    assert teleop._is_arm_control_enabled(side) is True
+
+
+def test_split_mode_maps_left_trigger_to_left_arm_and_right_trigger_to_right_arm(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="split",
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": True,
+        "RTr": False,
+    }
+
+    assert teleop._is_arm_control_enabled("left") is True
+    assert teleop._is_arm_control_enabled("right") is False
+
+    teleop.ctrl = {
+        "LTr": False,
+        "RTr": True,
+    }
+    assert teleop._is_arm_control_enabled("left") is False
+    assert teleop._is_arm_control_enabled("right") is True
+
+
+@pytest.mark.parametrize(
+    ("left_trigger", "right_trigger", "expected"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (True, True, True),
+    ],
+)
+def test_both_mode_requires_both_triggers(monkeypatch, left_trigger, right_trigger, expected):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="both",
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": left_trigger,
+        "RTr": right_trigger,
+    }
+
+    assert teleop._is_arm_control_enabled("left") is expected
+    assert teleop._is_arm_control_enabled("right") is expected
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_trigger_gesture_grip_axis_can_close_without_waiting_for_button(monkeypatch, side):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="left",
+        grasp_grip_threshold=0.2,
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": True,
+        "RTr": False,
+        "LG": False,
+        "RG": False,
+        "leftGrip": 0.0,
+        "rightGrip": 0.0,
+    }
+    teleop.left_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.right_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.left_hand_teleoperator = None
+    teleop.right_hand_teleoperator = None
+    setattr(
+        teleop,
+        f"{side}_commanded_hand_joint_pos",
+        module.get_agibot_o10_trigger_gesture_joint_angles("pinch", side, "open"),
+    )
+    teleop._get_commanded_hand_joint_pos = (
+        lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
+    )
+    teleop._set_commanded_hand_joint_pos = (
+        lambda requested_side, joint_pos: setattr(
+            teleop,
+            f"{requested_side}_commanded_hand_joint_pos",
+            joint_pos.copy(),
+        )
+    )
+
+    grip_key = "leftGrip" if side == "left" else "rightGrip"
+    teleop.ctrl[grip_key] = 0.21
+
+    state = teleop._get_side_joint_pos(side)
+    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        side,
+        "closed",
+    )
+    assert state[6:] == pytest.approx(expected_closed)

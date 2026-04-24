@@ -23,9 +23,14 @@ CONFIG_MODULE_PATH = (
     / "pico_follower_single_arm_agibot_o10"
     / "config_pico_follower_single_arm_agibot_o10.py"
 )
+_CONFIG_CLASS = None
 
 
 def _load_config_class():
+    global _CONFIG_CLASS
+    if _CONFIG_CLASS is not None:
+        return _CONFIG_CLASS
+
     spec = importlib.util.spec_from_file_location(
         "test_single_arm_o10_robot_config_module",
         CONFIG_MODULE_PATH,
@@ -33,7 +38,8 @@ def _load_config_class():
     module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
     spec.loader.exec_module(module)
-    return module.PicoFollowerSingleArmAgibotO10Config
+    _CONFIG_CLASS = module.PicoFollowerSingleArmAgibotO10Config
+    return _CONFIG_CLASS
 
 
 def test_single_arm_robot_config_accepts_enable_hand_false():
@@ -45,3 +51,11 @@ def test_single_arm_robot_config_accepts_enable_hand_false():
     )
 
     assert config.enable_hand is False
+
+
+def test_single_arm_robot_config_defaults_keep_optional_state_compatibility():
+    config_class = _load_config_class()
+    config = config_class(port="can0")
+
+    assert config.include_eef_pose is True
+    assert config.tactile_mode == "none"

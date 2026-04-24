@@ -53,6 +53,14 @@ def test_resolve_dataset_target_expands_tilde_paths(monkeypatch, tmp_path):
     assert target.root == (tmp_path / "datasets" / "agi_arm_bot_20260410")
 
 
+def test_resolve_dataset_target_keeps_full_dataset_directory_as_root(tmp_path):
+    dataset_root = tmp_path / "datasets" / "agi_arm_bot_20260410"
+    target = resolve_dataset_target(path=dataset_root)
+
+    assert target.repo_id == "agi_arm_bot_20260410"
+    assert target.root == dataset_root
+
+
 def test_build_task_date_repo_id_uses_normalized_task_name():
     repo_id = build_task_date_repo_id("Pick And Place", date_format="%Y%m%d")
 
@@ -98,3 +106,15 @@ def test_decode_replay_action_for_agibot_o10_uses_joint_only_layout():
 def test_decode_replay_action_rejects_short_agibot_o10_actions():
     with pytest.raises(ValueError, match="at least 16 values"):
         decode_replay_action("pico_follower_single_arm_agibot_o10", list(range(12)))
+
+
+def test_decode_replay_action_for_dual_arm_agibot_o10_uses_named_joint_layout():
+    action = decode_replay_action(
+        "pico_follower_dual_arm_agibot_o10",
+        list(range(32)),
+    )
+
+    assert action["left.joint1.pos"] == 0.0
+    assert action["left.pinky_mp_pitch.pos"] == 15.0
+    assert action["right.joint1.pos"] == 16.0
+    assert action["right.pinky_mp_pitch.pos"] == 31.0

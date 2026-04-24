@@ -161,6 +161,18 @@ def _build_agibot_o10_joint_action(values: list[float]) -> dict[str, Any]:
     }
 
 
+def _build_dual_arm_agibot_o10_joint_action(values: list[float]) -> dict[str, Any]:
+    side_joint_count = len(AGIBOT_O10_ARM_FEATURE_NAMES) + len(AGIBOT_O10_HAND_FEATURE_NAMES)
+    action: dict[str, Any] = {}
+    for side_index, side in enumerate(("left", "right")):
+        side_values = values[side_index * side_joint_count : (side_index + 1) * side_joint_count]
+        for feature_index, feature_name in enumerate(
+            (*AGIBOT_O10_ARM_FEATURE_NAMES, *AGIBOT_O10_HAND_FEATURE_NAMES)
+        ):
+            action[f"{side}.{feature_name}"] = side_values[feature_index]
+    return action
+
+
 _REPLAY_ACTION_LAYOUTS: dict[str, ReplayActionLayout] = {
     "airbot_play_follower": ReplayActionLayout(7, _build_single_arm_action_with_eef),
     "airbot_PTK_follower": ReplayActionLayout(14, _build_dual_arm_action_with_eef),
@@ -171,6 +183,10 @@ _REPLAY_ACTION_LAYOUTS: dict[str, ReplayActionLayout] = {
     "pico_follower_single_arm_agibot_o10": ReplayActionLayout(
         len(AGIBOT_O10_ARM_FEATURE_NAMES) + len(AGIBOT_O10_HAND_FEATURE_NAMES),
         _build_agibot_o10_joint_action,
+    ),
+    "pico_follower_dual_arm_agibot_o10": ReplayActionLayout(
+        2 * (len(AGIBOT_O10_ARM_FEATURE_NAMES) + len(AGIBOT_O10_HAND_FEATURE_NAMES)),
+        _build_dual_arm_agibot_o10_joint_action,
     ),
 }
 

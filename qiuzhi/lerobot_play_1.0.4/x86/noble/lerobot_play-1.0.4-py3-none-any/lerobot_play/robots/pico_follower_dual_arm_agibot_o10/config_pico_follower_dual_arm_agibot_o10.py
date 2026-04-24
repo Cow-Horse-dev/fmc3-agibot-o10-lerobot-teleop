@@ -13,8 +13,8 @@ class DualArmSideConfig:
     device_id: int = 1
     canfd_id: int = 0
     channel_id: int | None = None
-    arm_reset_joints_path: str | None = None
-    hand_reset_joints_path: str | None = None
+    reset_poses_path: str | None = None
+    reset_gesture: str | None = None
 
 
 @RobotConfig.register_subclass("pico_follower_dual_arm_agibot_o10")
@@ -23,6 +23,8 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
     enable_hand: bool = True
+    include_eef_pose: bool = True
+    tactile_mode: str = "none"  # "none", "7d", "80d", "130d"
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])
     cameras: dict[str, CameraConfig] = field(default_factory=dict)

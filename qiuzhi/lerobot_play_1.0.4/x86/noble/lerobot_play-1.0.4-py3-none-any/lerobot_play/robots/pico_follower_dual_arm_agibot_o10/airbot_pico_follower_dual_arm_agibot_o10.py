@@ -17,13 +17,17 @@ from lerobot_play.utils.agibot_o10 import (
     AgibotO10Hand,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
 
 from .config_pico_follower_dual_arm_agibot_o10 import (
     PicoFollowerDualArmAgibotO10Config,
 )
 
 logger = logging.getLogger(__name__)
+
+_NUM_ARM_JOINTS = len(AGIBOT_O10_ARM_FEATURE_NAMES)
+_NUM_HAND_JOINTS = len(AGIBOT_O10_HAND_FEATURE_NAMES)
+_SIDE_ACTION_DIM = _NUM_ARM_JOINTS + _NUM_HAND_JOINTS  # 16
 
 # 32D action: left arm[6] + left hand[10] + right arm[6] + right hand[10]
 DUAL_ARM_ACTION_FEATURE_NAMES = tuple(
@@ -36,26 +40,72 @@ DUAL_ARM_ACTION_FEATURE_NAMES = tuple(
     f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
 )
 
-# 46D state: left arm[6] + left hand[10] + left pose[7]
-#          + right arm[6] + right hand[10] + right pose[7]
-DUAL_ARM_STATE_FEATURE_NAMES = tuple(
+DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES = tuple(
     f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
 ) + tuple(
     f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
 ) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
-) + tuple(
     f"right.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
 ) + tuple(
     f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
 )
 
-_NUM_ARM_JOINTS = len(AGIBOT_O10_ARM_FEATURE_NAMES)
-_NUM_HAND_JOINTS = len(AGIBOT_O10_HAND_FEATURE_NAMES)
-_SIDE_ACTION_DIM = _NUM_ARM_JOINTS + _NUM_HAND_JOINTS  # 16
+# 46D state: left arm[6] + left hand[10] + left pose[7]
+#          + right arm[6] + right hand[10] + right pose[7]
+DUAL_ARM_STATE_FEATURE_NAMES = (
+    DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES[:_SIDE_ACTION_DIM]
+    + tuple(
+        f"left.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
+    )
+    + DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES[_SIDE_ACTION_DIM:]
+    + tuple(
+        f"right.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
+    )
+)
 
+# 7D 触觉均值 feature names（每区域 1 个均值）
+TACTILE_REGION_NAMES = (
+    "tactile.thumb_avg",
+    "tactile.index_avg",
+    "tactile.middle_avg",
+    "tactile.ring_avg",
+    "tactile.little_avg",
+    "tactile.palm_avg",
+    "tactile.dorsum_avg",
+)
+
+# 80D 指尖触觉 feature names（5 指 × 16 点）
+TACTILE_FINGERTIP_NAMES = tuple(
+    f"tactile.{finger}_{i}"
+    for finger in ("thumb", "index", "middle", "ring", "little")
+    for i in range(16)
+)
+
+# 130D 全手触觉 feature names（5 指 × 16 + 手掌 25 + 手背 25）
+TACTILE_FULL_NAMES = TACTILE_FINGERTIP_NAMES + tuple(
+    f"tactile.palm_{i}" for i in range(25)
+) + tuple(
+    f"tactile.dorsum_{i}" for i in range(25)
+)
+
+# 双臂触觉 feature names（带 left./right. 前缀）
+DUAL_ARM_TACTILE_AVG_FEATURE_NAMES = tuple(
+    f"{side}.{name}"
+    for side in ("left", "right")
+    for name in TACTILE_REGION_NAMES
+)  # 14D
+
+DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES = tuple(
+    f"{side}.{name}"
+    for side in ("left", "right")
+    for name in TACTILE_FINGERTIP_NAMES
+)  # 160D
+
+DUAL_ARM_TACTILE_FULL_FEATURE_NAMES = tuple(
+    f"{side}.{name}"
+    for side in ("left", "right")
+    for name in TACTILE_FULL_NAMES
+)  # 260D
 
 def _make_arm() -> ah.Play:
     return ah.Play.create(
@@ -95,13 +145,13 @@ class PicoFollowerDualArmAgibotO10(Robot):
         self.left_hand_joints = [0.0] * _NUM_HAND_JOINTS
         self.left_arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=left_cfg.get("arm_reset_joints_path"),
+            path=None,
             label="left arm reset joint target",
             group_key="arm",
         )
         self.left_hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=left_cfg.get("hand_reset_joints_path"),
+            path=None,
             label="left hand reset joint target",
             group_key="hand",
         )
@@ -124,13 +174,13 @@ class PicoFollowerDualArmAgibotO10(Robot):
         self.right_hand_joints = [0.0] * _NUM_HAND_JOINTS
         self.right_arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=right_cfg.get("arm_reset_joints_path"),
+            path=None,
             label="right arm reset joint target",
             group_key="arm",
         )
         self.right_hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=right_cfg.get("hand_reset_joints_path"),
+            path=None,
             label="right hand reset joint target",
             group_key="hand",
         )
@@ -140,8 +190,6 @@ class PicoFollowerDualArmAgibotO10(Robot):
         # --- cameras ---
         resolve_auto_opencv_cameras(config.cameras)
         self.cameras = make_cameras_from_configs(config.cameras)
-        for cam in self.cameras.values():
-            cam.connect()
 
         self._is_connected = False
 
@@ -167,16 +215,51 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 self.left_arm.uninit()
                 raise
 
-        # Right arm (independent – left stays up even if right fails)
+        # Right arm (if it fails, also tear down left so caller doesn't inherit a live arm)
         if not self.right_arm.init(self.right_io_context, self.right_port, 250):
-            logger.error("Failed to initialize right arm; left arm already up")
+            logger.error("Failed to initialize right arm; tearing down left arm")
+            self.left_arm.uninit()
+            if self.config.enable_hand:
+                try:
+                    self.left_hand.disconnect()
+                except Exception:
+                    pass
             raise RuntimeError("Failed to initialize right arm")
         if self.config.enable_hand:
             try:
                 self.right_hand.connect()
             except Exception:
                 self.right_arm.uninit()
+                self.left_arm.uninit()
+                try:
+                    self.left_hand.disconnect()
+                except Exception:
+                    pass
                 raise
+
+        connected_cams: list = []
+        try:
+            for cam in self.cameras.values():
+                cam.connect()
+                connected_cams.append(cam)
+        except Exception:
+            for cam in connected_cams:
+                try:
+                    cam.disconnect()
+                except Exception:
+                    pass
+            if self.config.enable_hand:
+                try:
+                    self.left_hand.disconnect()
+                except Exception:
+                    pass
+                try:
+                    self.right_hand.disconnect()
+                except Exception:
+                    pass
+            self.left_arm.uninit()
+            self.right_arm.uninit()
+            raise
 
         self.enable_motors()
         self.configure()
@@ -249,11 +332,13 @@ class PicoFollowerDualArmAgibotO10(Robot):
             hand_store = getattr(self, f"{side}_hand_reset_store")
 
             if persist:
-                arm_pos = arm_store.save(arm_pos)
-                hand_pos = hand_store.save(hand_pos)
-            else:
-                arm_pos = arm_store.normalize(arm_pos)
-                hand_pos = hand_store.normalize(hand_pos)
+                logger.info(
+                    "Persist requested for %s reset target capture, "
+                    "but centralized reset_poses JSON is not modified at runtime.",
+                    side,
+                )
+            arm_pos = arm_store.normalize(arm_pos)
+            hand_pos = hand_store.normalize(hand_pos)
 
             setattr(self, f"{side}_reset_arm_joint_pos", arm_pos.copy())
             setattr(self, f"{side}_reset_hand_joint_pos", hand_pos.copy())
@@ -275,19 +360,20 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
     def _load_reset_target_from_file(self) -> None:
         for side in ("left", "right"):
-            arm_store = getattr(self, f"{side}_arm_reset_store")
-            hand_store = getattr(self, f"{side}_hand_reset_store")
+            side_cfg = getattr(self.config, side)
+            reset_poses_path = side_cfg.get("reset_poses_path")
+            reset_gesture = side_cfg.get("reset_gesture")
 
-            try:
-                arm_loaded = arm_store.load()
-            except Exception as exc:
-                logger.warning("Failed to load %s arm reset target: %s", side, exc)
-                arm_loaded = None
-            try:
-                hand_loaded = hand_store.load()
-            except Exception as exc:
-                logger.warning("Failed to load %s hand reset target: %s", side, exc)
-                hand_loaded = None
+            if reset_poses_path and reset_gesture:
+                try:
+                    arm_loaded, hand_loaded = load_reset_poses(
+                        reset_poses_path, side, reset_gesture,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to load %s reset poses: %s", side, exc)
+                    arm_loaded, hand_loaded = None, None
+            else:
+                arm_loaded, hand_loaded = None, None
 
             if arm_loaded is not None:
                 setattr(self, f"{side}_reset_arm_joint_pos", arm_loaded)
@@ -342,8 +428,21 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        state_ft = {name: float for name in DUAL_ARM_STATE_FEATURE_NAMES}
-        return {**state_ft, **self._cameras_ft}
+        state_feature_names = (
+            DUAL_ARM_STATE_FEATURE_NAMES
+            if self.config.include_eef_pose
+            else DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES
+        )
+        state_ft = {name: float for name in state_feature_names}
+        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        tactile_ft: dict[str, type] = {}
+        if tactile_mode == "7d":
+            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_AVG_FEATURE_NAMES}
+        elif tactile_mode == "80d":
+            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES}
+        elif tactile_mode == "130d":
+            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_FULL_FEATURE_NAMES}
+        return {**state_ft, **tactile_ft, **self._cameras_ft}
 
     def calibrate(self):
         pass
@@ -431,15 +530,33 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
         for side, arm_obj in (("left", self.left_arm), ("right", self.right_arm)):
             arm_pos, hand_pos = positions[side]
-            pose = self.homogeneous_matrix_to_pose(
-                self.arm_kdl.forward_kinematics(arm_pos[:_NUM_ARM_JOINTS])
-            )
             for idx, feat in enumerate(AGIBOT_O10_ARM_FEATURE_NAMES):
                 obs_dict[f"{side}.{feat}"] = arm_pos[idx]
             for idx, feat in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES):
                 obs_dict[f"{side}.{feat}"] = hand_pos[idx]
-            for idx, feat in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
-                obs_dict[f"{side}.{feat}"] = pose[idx]
+            if self.config.include_eef_pose:
+                pose = self.homogeneous_matrix_to_pose(
+                    self.arm_kdl.forward_kinematics(arm_pos[:_NUM_ARM_JOINTS])
+                )
+                for idx, feat in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
+                    obs_dict[f"{side}.{feat}"] = pose[idx]
+
+        # 触觉数据（按 tactile_mode 选择粒度）
+        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        if self.config.enable_hand and tactile_mode != "none":
+            for side, hand_obj in (("left", self.left_hand), ("right", self.right_hand)):
+                if tactile_mode == "7d":
+                    tactile_avg = hand_obj.read_tactile_avg_cached()
+                    for idx, name in enumerate(TACTILE_REGION_NAMES):
+                        obs_dict[f"{side}.{name}"] = tactile_avg[idx]
+                elif tactile_mode == "80d":
+                    tactile_fingertip = hand_obj.read_tactile_fingertip_cached()
+                    for idx, name in enumerate(TACTILE_FINGERTIP_NAMES):
+                        obs_dict[f"{side}.{name}"] = tactile_fingertip[idx]
+                elif tactile_mode == "130d":
+                    tactile_full = hand_obj.read_tactile_full_cached()
+                    for idx, name in enumerate(TACTILE_FULL_NAMES):
+                        obs_dict[f"{side}.{name}"] = tactile_full[idx]
 
         for cam_key, cam in self.cameras.items():
             if self._camera_uses_depth(self.config.cameras[cam_key]):
@@ -539,6 +656,11 @@ class PicoFollowerDualArmAgibotO10(Robot):
         if self.config.enable_hand:
             self.left_hand.disconnect()
             self.right_hand.disconnect()
+        for cam in getattr(self, "cameras", {}).values():
+            try:
+                cam.disconnect()
+            except Exception as cam_exc:
+                logger.error(f"Camera disconnect failed: {cam_exc}")
         logger.info("Motors disabled and devices disconnected")
 
     def disconnect(self):
@@ -548,11 +670,28 @@ class PicoFollowerDualArmAgibotO10(Robot):
             self._safe_shutdown()
         except Exception as e:
             logger.error(f"Safe shutdown failed: {e}")
-            self.disable_motors()
-            self.left_arm.uninit()
-            self.right_arm.uninit()
+            for step in (
+                lambda: self.disable_motors(),
+                lambda: self.left_arm.uninit(),
+                lambda: self.right_arm.uninit(),
+            ):
+                try:
+                    step()
+                except Exception as step_exc:
+                    logger.error(f"Teardown step failed: {step_exc}")
             if self.config.enable_hand:
-                self.left_hand.disconnect()
-                self.right_hand.disconnect()
+                for hand_disconnect in (
+                    lambda: self.left_hand.disconnect(),
+                    lambda: self.right_hand.disconnect(),
+                ):
+                    try:
+                        hand_disconnect()
+                    except Exception as hand_exc:
+                        logger.error(f"Hand disconnect failed: {hand_exc}")
+            for cam in getattr(self, "cameras", {}).values():
+                try:
+                    cam.disconnect()
+                except Exception as cam_exc:
+                    logger.error(f"Camera disconnect failed: {cam_exc}")
         self._is_connected = False
         logger.info(f"{self} safely disconnected.")

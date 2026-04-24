@@ -20,9 +20,7 @@ from typing import Dict, Any, Optional
 import yaml
 import shutil
 
-from lerobot.cameras.configs import ColorMode, Cv2Rotation
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.cameras.configs import Cv2Rotation
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.act.modeling_act import ACTPolicy
@@ -56,34 +54,12 @@ from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agi
 )
 from .robots.utils import make_robot_from_config
 from .utils.runtime_helpers import build_dataset_features
+from .utils.camera_config_parser import parse_camera_configs
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
     """解析相机配置，与 record.py 保持一致"""
-    parsed: dict = {}
-    for name, cfg in (cameras_obj or {}).items():
-        cam_type = cfg.get("type")
-        if cam_type == "opencv":
-            parsed[name] = OpenCVCameraConfig(
-                index_or_path=cfg.get("index_or_path", cfg.get("camera_index")),
-                fps=int(cfg.get("fps", 30)),
-                width=int(cfg.get("width", 640)),
-                height=int(cfg.get("height", 480)),
-                rotation=Cv2Rotation[cfg.get("rotation", "NO_ROTATION")],
-            )
-        elif cam_type == "realsense":
-            parsed[name] = RealSenseCameraConfig(
-                serial_number_or_name=str(cfg.get("serial_number_or_name", "")),
-                fps=int(cfg.get("fps", 30)),
-                width=int(cfg.get("width", 640)),
-                height=int(cfg.get("height", 480)),
-                color_mode=ColorMode[cfg.get("color_mode", "RGB")],
-                use_depth=bool(cfg.get("use_depth", False)),
-                rotation=Cv2Rotation[cfg.get("rotation", "NO_ROTATION")],
-            )
-        else:
-            raise ValueError(f"Unsupported camera type: {cam_type}")
-    return parsed
+    return parse_camera_configs(cameras_obj)
 
 
 def _validate_model_path(model_path: str) -> bool:
@@ -209,6 +185,7 @@ def _parse_cli_args() -> argparse.Namespace:
             "quest3_follower",
             "pico_follower",
             "pico_follower_single_arm_agibot_o10",
+            "pico_follower_dual_arm_agibot_o10",
         ],
         help="Robot type: airbot_play_follower (single arm) or airbot_PTK_follower (dual arm)",
     )
@@ -274,14 +251,14 @@ def _parse_cli_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument(
-        "--robot.arm_reset_joints_path",
-        dest="robot_arm_reset_joints_path",
+        "--robot.reset_poses_path",
+        dest="robot_reset_poses_path",
         type=str,
         default=None,
     )
     parser.add_argument(
-        "--robot.hand_reset_joints_path",
-        dest="robot_hand_reset_joints_path",
+        "--robot.reset_gesture",
+        dest="robot_reset_gesture",
         type=str,
         default=None,
     )
@@ -347,10 +324,10 @@ def _load_config(cli: argparse.Namespace) -> dict:
             robot_cfg["canfd_id"] = cli.robot_canfd_id
         if cli.robot_channel_id is not None:
             robot_cfg["channel_id"] = cli.robot_channel_id
-        if cli.robot_arm_reset_joints_path is not None:
-            robot_cfg["arm_reset_joints_path"] = cli.robot_arm_reset_joints_path
-        if cli.robot_hand_reset_joints_path is not None:
-            robot_cfg["hand_reset_joints_path"] = cli.robot_hand_reset_joints_path
+        if cli.robot_reset_poses_path is not None:
+            robot_cfg["reset_poses_path"] = cli.robot_reset_poses_path
+        if cli.robot_reset_gesture is not None:
+            robot_cfg["reset_gesture"] = cli.robot_reset_gesture
 
         return cfg
 
@@ -383,8 +360,8 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "device_id": cli.robot_device_id,
             "canfd_id": cli.robot_canfd_id,
             "channel_id": cli.robot_channel_id,
-            "arm_reset_joints_path": cli.robot_arm_reset_joints_path,
-            "hand_reset_joints_path": cli.robot_hand_reset_joints_path,
+            "reset_poses_path": cli.robot_reset_poses_path,
+            "reset_gesture": cli.robot_reset_gesture,
         },
     }
 
@@ -420,8 +397,13 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_device_id=robot_cfg.get("device_id"),
         robot_canfd_id=robot_cfg.get("canfd_id"),
         robot_channel_id=robot_cfg.get("channel_id"),
-        robot_arm_reset_joints_path=robot_cfg.get("arm_reset_joints_path"),
-        robot_hand_reset_joints_path=robot_cfg.get("hand_reset_joints_path"),
+        robot_reset_poses_path=robot_cfg.get("reset_poses_path"),
+        robot_reset_gesture=robot_cfg.get("reset_gesture"),
+        robot_left=robot_cfg.get("left", {}),
+        robot_right=robot_cfg.get("right", {}),
+        robot_enable_hand=robot_cfg.get("enable_hand", True),
+        robot_include_eef_pose=robot_cfg.get("include_eef_pose", True),
+        robot_tactile_mode=robot_cfg.get("tactile_mode", "none"),
     )
 
 
@@ -584,8 +566,18 @@ def _create_robot_config(args: argparse.Namespace):
             device_id=1 if args.robot_device_id is None else args.robot_device_id,
             canfd_id=0 if args.robot_canfd_id is None else args.robot_canfd_id,
             channel_id=args.robot_channel_id,
-            arm_reset_joints_path=args.robot_arm_reset_joints_path,
-            hand_reset_joints_path=args.robot_hand_reset_joints_path,
+            reset_poses_path=args.robot_reset_poses_path,
+            reset_gesture=args.robot_reset_gesture,
+            id=args.robot_id,
+            cameras=camera_config,
+        )
+    elif args.robot_type == "pico_follower_dual_arm_agibot_o10":
+        return PicoFollowerDualArmAgibotO10Config(
+            left=args.robot_left,
+            right=args.robot_right,
+            enable_hand=args.robot_enable_hand,
+            include_eef_pose=args.robot_include_eef_pose,
+            tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
         )

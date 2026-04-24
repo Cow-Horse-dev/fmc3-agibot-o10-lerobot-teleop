@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pprint import pformat
@@ -71,6 +72,7 @@ class TeleoperateConfig:
     fps: int = 60
     teleop_time_s: float | None = None
     display_data: bool = False
+    display_terminal: bool = True
     display_ip: str | None = None
     display_port: int | None = None
     display_compressed_images: bool = False
@@ -90,12 +92,16 @@ def teleop_loop(
         RobotObservation, RobotObservation
     ],
     display_data: bool = False,
+    display_terminal: bool = True,
     duration: float | None = None,
     display_compressed_images: bool = False,
 ):
     display_len = max(len(key) for key in robot.action_features)
     camera_keys = list(getattr(robot, "cameras", {}).keys())
     start = time.perf_counter()
+    supports_cursor_control = sys.stdout.isatty()
+    last_status_update = 0.0
+    status_refresh_interval_s = 1.0
 
     while True:
         loop_start = time.perf_counter()
@@ -115,17 +121,25 @@ def teleop_loop(
                 compress_images=display_compressed_images,
             )
 
-            print("\n" + "-" * (display_len + 10))
-            print(f"{'NAME':<{display_len}} | {'VALUE':>7}")
-            for motor, value in robot_action_to_send.items():
-                print(f"{motor:<{display_len}} | {value:>7.2f}")
-            move_cursor_up(len(robot_action_to_send) + 3)
-
         dt_s = time.perf_counter() - loop_start
         precise_sleep(max(1 / fps - dt_s, 0.0))
         loop_s = time.perf_counter() - loop_start
-        print(f"Teleop loop time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
-        move_cursor_up(1)
+        now = time.perf_counter()
+        if display_data and display_terminal and now - last_status_update >= status_refresh_interval_s:
+            status_lines = [
+                "",
+                f"Teleop loop time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)",
+                "-" * (display_len + 10),
+                f"{'NAME':<{display_len}} | {'VALUE':>7}",
+            ]
+            status_lines.extend(
+                f"{motor:<{display_len}} | {value:>7.2f}"
+                for motor, value in robot_action_to_send.items()
+            )
+            print("\n".join(status_lines))
+            if supports_cursor_control:
+                move_cursor_up(len(status_lines))
+            last_status_update = now
 
         if duration is not None and time.perf_counter() - start >= duration:
             return
@@ -167,6 +181,7 @@ def teleoperate(cfg: TeleoperateConfig):
             robot_action_processor=robot_action_processor,
             robot_observation_processor=robot_observation_processor,
             display_data=cfg.display_data,
+            display_terminal=cfg.display_terminal,
             duration=cfg.teleop_time_s,
             display_compressed_images=display_compressed_images,
         )

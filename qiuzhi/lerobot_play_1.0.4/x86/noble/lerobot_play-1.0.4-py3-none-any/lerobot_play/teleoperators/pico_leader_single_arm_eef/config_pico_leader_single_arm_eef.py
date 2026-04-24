@@ -22,6 +22,7 @@ class PicoLeaderSingleArmEEFConfig(TeleoperatorConfig):
     vr_device: str = "pico_wrist"  # pico_wrist
     eef_device: str = "G2"
     handedness: str = "left"  # 'left' or 'right'
+    controller_side: str = "left"  # 'left' or 'right'
     wrist_pose_source: str = "auto"  # auto, left, right
 
     # Safety: disable torque on disconnect

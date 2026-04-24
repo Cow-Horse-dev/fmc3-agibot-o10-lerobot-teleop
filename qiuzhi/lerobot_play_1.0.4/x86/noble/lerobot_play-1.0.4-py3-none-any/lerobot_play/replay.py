@@ -17,18 +17,6 @@ from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import log_say, init_logging
 
 from .utils.lerobot_dataset import LeRobotDataset
-from .robots.airbot_play_follower.config_play_follower import AirbotPlayFollowerConfig
-from .robots.airbot_ptk_follower.config_PTK_follower import AirbotPTKFollowerConfig
-from .robots.airbot_tok2_follower.config_TOK2_follower import AirbotTOK2FollowerConfig
-from .robots.airbot_tok4_follower.config_TOK4_follower import AirbotTOK4FollowerConfig
-from .robots.quest3_follower.config_quest3_follower import Quest3FollowerConfig
-from .robots.pico_follower.config_pico_follower import PicoFollowerConfig
-from .robots.pico_follower_single_arm_agibot_o10.config_pico_follower_single_arm_agibot_o10 import (
-    PicoFollowerSingleArmAgibotO10Config,
-)
-from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
-    PicoFollowerDualArmAgibotO10Config,
-)
 from .robots.utils import make_robot_from_config
 from .utils.runtime_helpers import decode_replay_action, resolve_dataset_target
 
@@ -84,6 +72,7 @@ def _parse_cli_args() -> argparse.Namespace:
             "quest3_follower",
             "pico_follower",
             "pico_follower_single_arm_agibot_o10",
+            "pico_follower_dual_arm_agibot_o10",
         ],
         help="Robot type: airbot_play_follower (single arm) or airbot_PTK_follower (dual arm)",
     )
@@ -141,6 +130,18 @@ def _parse_cli_args() -> argparse.Namespace:
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--robot.reset_poses_path",
+        dest="robot_reset_poses_path",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--robot.reset_gesture",
+        dest="robot_reset_gesture",
+        type=str,
+        default=None,
+    )
 
     return parser.parse_args()
 
@@ -188,6 +189,10 @@ def _load_config(cli: argparse.Namespace) -> dict:
             robot_cfg["canfd_id"] = cli.robot_canfd_id
         if cli.robot_channel_id is not None:
             robot_cfg["channel_id"] = cli.robot_channel_id
+        if cli.robot_reset_poses_path is not None:
+            robot_cfg["reset_poses_path"] = cli.robot_reset_poses_path
+        if cli.robot_reset_gesture is not None:
+            robot_cfg["reset_gesture"] = cli.robot_reset_gesture
 
         return cfg
 
@@ -236,8 +241,13 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_device_id=robot_cfg.get("device_id"),
         robot_canfd_id=robot_cfg.get("canfd_id"),
         robot_channel_id=robot_cfg.get("channel_id"),
-        robot_arm_reset_joints_path=robot_cfg.get("arm_reset_joints_path"),
-        robot_hand_reset_joints_path=robot_cfg.get("hand_reset_joints_path"),
+        robot_reset_poses_path=robot_cfg.get("reset_poses_path"),
+        robot_reset_gesture=robot_cfg.get("reset_gesture"),
+        robot_left=robot_cfg.get("left", {}),
+        robot_right=robot_cfg.get("right", {}),
+        robot_enable_hand=robot_cfg.get("enable_hand", True),
+        robot_include_eef_pose=robot_cfg.get("include_eef_pose", True),
+        robot_tactile_mode=robot_cfg.get("tactile_mode", "none"),
     )
 
 
@@ -272,41 +282,57 @@ def _validate_args(args: argparse.Namespace) -> None:
 def _create_robot_config(args: argparse.Namespace):
     """创建机器人配置"""
     if args.robot_type == "airbot_play_follower":
+        from .robots.airbot_play_follower.config_play_follower import AirbotPlayFollowerConfig
+
         return AirbotPlayFollowerConfig(
             can_port=args.robot_port,
             id=args.robot_id,
         )
     elif args.robot_type == "airbot_PTK_follower":
+        from .robots.airbot_ptk_follower.config_PTK_follower import AirbotPTKFollowerConfig
+
         return AirbotPTKFollowerConfig(
             left_arm_port=args.robot_left_arm_port,
             right_arm_port=args.robot_right_arm_port,
             id=args.robot_id,
         )
     elif args.robot_type == "airbot_TOK2_follower":
+        from .robots.airbot_tok2_follower.config_TOK2_follower import AirbotTOK2FollowerConfig
+
         return AirbotTOK2FollowerConfig(
             left_arm_port=args.robot_left_arm_port,
             right_arm_port=args.robot_right_arm_port,
             id=args.robot_id,
         )
     elif args.robot_type == "airbot_TOK4_follower":
+        from .robots.airbot_tok4_follower.config_TOK4_follower import AirbotTOK4FollowerConfig
+
         return AirbotTOK4FollowerConfig(
             left_arm_port=args.robot_left_arm_port,
             right_arm_port=args.robot_right_arm_port,
             id=args.robot_id,
         )
     elif args.robot_type == "quest3_follower":
+        from .robots.quest3_follower.config_quest3_follower import Quest3FollowerConfig
+
         return Quest3FollowerConfig(
             left_arm_port=args.robot_left_arm_port,
             right_arm_port=args.robot_right_arm_port,
             id=args.robot_id,
         )
     elif args.robot_type == "pico_follower":
+        from .robots.pico_follower.config_pico_follower import PicoFollowerConfig
+
         return PicoFollowerConfig(
             left_arm_port=args.robot_left_arm_port,
             right_arm_port=args.robot_right_arm_port,
             id=args.robot_id,
         )
     elif args.robot_type == "pico_follower_single_arm_agibot_o10":
+        from .robots.pico_follower_single_arm_agibot_o10.config_pico_follower_single_arm_agibot_o10 import (
+            PicoFollowerSingleArmAgibotO10Config,
+        )
+
         return PicoFollowerSingleArmAgibotO10Config(
             port=args.robot_port,
             handedness=args.robot_handedness or "right",
@@ -314,8 +340,21 @@ def _create_robot_config(args: argparse.Namespace):
             device_id=1 if args.robot_device_id is None else args.robot_device_id,
             canfd_id=0 if args.robot_canfd_id is None else args.robot_canfd_id,
             channel_id=args.robot_channel_id,
-            arm_reset_joints_path=args.robot_arm_reset_joints_path,
-            hand_reset_joints_path=args.robot_hand_reset_joints_path,
+            reset_poses_path=args.robot_reset_poses_path,
+            reset_gesture=args.robot_reset_gesture,
+            id=args.robot_id,
+        )
+    elif args.robot_type == "pico_follower_dual_arm_agibot_o10":
+        from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
+            PicoFollowerDualArmAgibotO10Config,
+        )
+
+        return PicoFollowerDualArmAgibotO10Config(
+            left=args.robot_left,
+            right=args.robot_right,
+            enable_hand=args.robot_enable_hand,
+            include_eef_pose=args.robot_include_eef_pose,
+            tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
         )
     else:
@@ -435,6 +474,8 @@ def main():
             elif robot.name == "pico_follower":
                 robot.reset_zero()
             elif robot.name == "pico_follower_single_arm_agibot_o10":
+                robot.reset_zero()
+            elif robot.name == "pico_follower_dual_arm_agibot_o10":
                 robot.reset_zero()
 
         # 输出结果

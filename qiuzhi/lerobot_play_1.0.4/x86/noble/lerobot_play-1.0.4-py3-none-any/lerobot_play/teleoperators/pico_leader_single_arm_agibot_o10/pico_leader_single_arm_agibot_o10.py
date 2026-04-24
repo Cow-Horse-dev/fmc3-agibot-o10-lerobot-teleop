@@ -9,8 +9,9 @@ from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_HAND_FEATURE_NAMES,
     agibot_o10_joint_action_feature_types,
     build_agibot_o10_joint_action_dict,
+    get_agibot_o10_trigger_gesture_joint_angles,
 )
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
 
 from .agibot_o10_hand import AgibotO10GloveTeleoperator
 from .config_pico_leader_single_arm_agibot_o10 import (
@@ -33,23 +34,28 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         self.hand_state_lock = threading.Lock()
         self.arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=config.arm_reset_joints_path,
+            path=None,
             label=f"{config.handedness} arm reset joint target",
             group_key="arm",
         )
         self.hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=config.hand_reset_joints_path,
+            path=None,
             label=f"{config.handedness} hand reset joint target",
             group_key="hand",
         )
         self.reset_arm_joint_pos = [0.0] * len(AGIBOT_O10_ARM_FEATURE_NAMES)
         self.reset_hand_joint_pos = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
         self.commanded_hand_joint_pos = self.reset_hand_joint_pos.copy()
+        if self._is_trigger_gesture_mode():
+            self._reset_trigger_gesture_hand_to_open()
 
     def connect(self, calibrate: bool = True) -> None:
         self._start_events_thread()
-        if self.hand_teleoperator is not None:
+        if self._is_trigger_gesture_mode():
+            print("Trigger-gesture hand mode: skipping glove connection.")
+            self._reset_trigger_gesture_hand_to_open()
+        elif self.hand_teleoperator is not None:
             if not self.hand_teleoperator.init():
                 raise RuntimeError(
                     "Failed to initialize the UDE glove receiver for Agibot O10. "
@@ -67,6 +73,8 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         else:
             print("Agibot O10 hand teleoperation disabled. Running in arm-only mode.")
         self._refresh_reset_targets_from_store()
+        if self._is_trigger_gesture_mode():
+            self._reset_trigger_gesture_hand_to_open()
         self._is_connected = True
 
     @property
@@ -136,15 +144,22 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         self.reset_arm_joint_pos = target_joint_pos.copy()
 
     def _refresh_reset_targets_from_store(self) -> None:
-        try:
-            stored_arm_joint_pos = self.arm_reset_store.load()
-        except Exception as exc:
-            print(f"Warning: failed to load persistent Agibot O10 arm reset target: {exc}")
-            stored_arm_joint_pos = None
+        reset_poses_path = getattr(self.config, "reset_poses_path", None)
+        reset_gesture = getattr(self.config, "reset_gesture", None)
+        if not reset_poses_path or not reset_gesture:
+            return
 
-        if stored_arm_joint_pos is not None:
+        try:
+            arm_loaded, hand_loaded = load_reset_poses(
+                reset_poses_path, self.config.handedness, reset_gesture,
+            )
+        except Exception as exc:
+            print(f"Warning: failed to load reset poses: {exc}")
+            return
+
+        if arm_loaded is not None:
             stored_arm_joint_pos = self._set_reset_arm_joint_pos(
-                stored_arm_joint_pos,
+                arm_loaded,
                 persist=False,
             )
             self._log_arm_joint_pos(
@@ -152,15 +167,9 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
                 stored_arm_joint_pos,
             )
 
-        try:
-            stored_hand_joint_pos = self.hand_reset_store.load()
-        except Exception as exc:
-            print(f"Warning: failed to load persistent Agibot O10 hand reset target: {exc}")
-            stored_hand_joint_pos = None
-
-        if stored_hand_joint_pos is not None:
+        if hand_loaded is not None:
             stored_hand_joint_pos = self._set_reset_hand_joint_pos(
-                stored_hand_joint_pos,
+                hand_loaded,
                 persist=False,
                 sync_commanded=False,
             )
@@ -173,11 +182,17 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         if self.hand_teleoperator is None:
             return
 
-        try:
-            stored_joint_pos = self.hand_reset_store.load()
-        except Exception as exc:
-            print(f"Warning: failed to load persistent Agibot O10 hand reset target: {exc}")
-            stored_joint_pos = None
+        reset_poses_path = getattr(self.config, "reset_poses_path", None)
+        reset_gesture = getattr(self.config, "reset_gesture", None)
+        stored_joint_pos = None
+        if reset_poses_path and reset_gesture:
+            try:
+                _, stored_joint_pos = load_reset_poses(
+                    reset_poses_path, self.config.handedness, reset_gesture,
+                )
+            except Exception as exc:
+                print(f"Warning: failed to load reset poses for hand init: {exc}")
+                stored_joint_pos = None
 
         if stored_joint_pos is not None:
             stored_joint_pos = self._set_reset_hand_joint_pos(
@@ -222,12 +237,37 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         return current_joint_pos
 
     def _is_hand_control_enabled(self) -> bool:
-        if self.handedness == "right":
-            return self.startflag and self.ctrl["LTr"]
-        return self.startflag and self.ctrl["RTr"]
+        if getattr(self, "controller_side", self.handedness) == "right":
+            return self.startflag and self.ctrl["RTr"]
+        return self.startflag and self.ctrl["LTr"]
+
+    def _is_trigger_gesture_mode(self) -> bool:
+        return getattr(self.config, "hand_mode", "glove") == "trigger_gesture"
+
+    def _get_trigger_gesture_hand_pos(self, state_key: str) -> list[float]:
+        return get_agibot_o10_trigger_gesture_joint_angles(
+            getattr(self.config, "trigger_gesture", "pinch"),
+            self.handedness,
+            state_key,
+        )
+
+    def _reset_trigger_gesture_hand_to_open(self) -> None:
+        self._set_reset_hand_joint_pos(
+            self._get_trigger_gesture_hand_pos("open"),
+            persist=False,
+            sync_commanded=True,
+        )
+
+    def _is_trigger_gesture_grasp_pressed(self) -> bool:
+        controller_side = getattr(self, "controller_side", self.handedness)
+        button_key = "RG" if controller_side == "right" else "LG"
+        grip_key = "rightGrip" if controller_side == "right" else "leftGrip"
+        return bool(self.ctrl[button_key]) or float(self.ctrl.get(grip_key, 0.0)) >= 0.2
 
     def reset_pose(self):
         self._refresh_reset_targets_from_store()
+        if self._is_trigger_gesture_mode():
+            self._reset_trigger_gesture_hand_to_open()
 
         arm_joint_pos = self._get_reset_arm_joint_pos()
         if not any(abs(joint_value) > 1e-9 for joint_value in arm_joint_pos):
@@ -254,7 +294,18 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         for index in range(len(AGIBOT_O10_ARM_FEATURE_NAMES)):
             state[index] = self.lpfs[index].sample(now)
 
-        if (
+        if self._is_trigger_gesture_mode():
+            if self._is_hand_control_enabled():
+                state_key = (
+                    "closed"
+                    if self._is_trigger_gesture_grasp_pressed()
+                    else "open"
+                )
+                hand_ctrl_data = self._get_trigger_gesture_hand_pos(state_key)
+                self._set_commanded_hand_joint_pos(hand_ctrl_data)
+            else:
+                hand_ctrl_data = self._get_commanded_hand_joint_pos()
+        elif (
             self.hand_teleoperator is not None
             and self._is_hand_control_enabled()
             and self.hand_teleoperator.has_hand_data(

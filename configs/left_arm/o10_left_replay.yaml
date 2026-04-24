@@ -1,5 +1,5 @@
 # O10 单臂回放配置（左臂）
-# 供脚本 `./scripts/replay_o10_left.sh` 使用。
+# 供脚本 `./scripts/o10/left_arm/replay_o10_left.sh` 使用。
 # 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
 #
 # 这份文件用于把已经录好的 LeRobot 数据集动作回放到 O10 左臂上。
@@ -28,7 +28,7 @@ robot:
   type: pico_follower_single_arm_agibot_o10
 
   # 机械臂 CAN 口。
-  port: can1
+  port: can0
 
   # 机器人名字，仅用于日志显示。
   id: o10_left
@@ -53,5 +53,5 @@ robot:
   # - right -> 1
   channel_id: null
 
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch

@@ -1,5 +1,5 @@
 # O10 单臂控制配置
-# 供脚本 `./scripts/control_o10_right.sh` 使用。
+# 供脚本 `./scripts/o10/right_arm/control_o10_right.sh` 使用。
 #
 # 这份文件只负责“实时控制”，不负责录制数据。
 # 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
@@ -12,48 +12,49 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_right
 
-  # 选择“哪只 leader 手”来做遥操作。
-  # 这决定 glove 数据按左手还是右手解释。
+  # 右臂模式仍然驱动右臂，但输入来自左侧控制器。
   handedness: right
+  controller_side: left
 
-  # Pico wrist 位姿流端口。
+  # Pico 位姿流端口。
   vr_pose_port: 8000
 
-  # Pico wrist 控制按键 / 扳机流端口。
+  # Pico 控制按键 / 扳机流端口。
   vr_ctrl_port: 8001
 
   # VR 设备来源。
-  # 当前这套只用：
-  # - pico_wrist
-  vr_device: pico_wrist
+  # 当前右臂控制使用 pico。
+  vr_device: pico
 
   # 机械臂控制位姿来源。
   # 可选值：
   # - auto: 自动选择当前有效的 wrist pose，推荐
   # - left: 强制只读左手腕
   # - right: 强制只读右手腕
-  wrist_pose_source: auto
+  wrist_pose_source: left
 
   # 是否启用手控制。
   # 可选值：
   # - true: 手 + 臂一起控制
   # - false: 只控制机械臂
   enable_hand: true
+  hand_mode: trigger_gesture  # glove, trigger_gesture
+  trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
   # 如果改成 left，建议一起改成：
   #   ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
   # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
 robot:
   # 机器人类型。
   type: pico_follower_single_arm_agibot_o10
 
   # 机械臂 CAN 口。
-  port: can0
+  port: can1
 
   # 机器人名字，仅用于日志显示。
   id: o10_right
@@ -79,8 +80,8 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续所有 reset 都回到这组关节。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
     right:
@@ -116,18 +117,6 @@ robot:
 
       # 建议使用稳定的 /dev/v4l/by-id 路径。
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-
-      width: 640
-      height: 480
-      fps: 30
-      rotation: NO_ROTATION
-
-    wrist:
-      # 新增 USB 相机，用于测试三相机 control。
-      type: opencv
-
-      # 建议使用稳定的 /dev/v4l/by-id 路径。
-      index_or_path: /dev/v4l/by-id/usb-JoyandAI_JYU2C-2083_JYU2C-2083-2603103-video-index0
 
       width: 640
       height: 480

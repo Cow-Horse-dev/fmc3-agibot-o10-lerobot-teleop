@@ -1,5 +1,5 @@
 # O10 双臂回放配置
-# 供脚本 `./scripts/replay_o10_dual.sh` 使用。
+# 供脚本 `./scripts/o10/dual_arm/replay_o10_dual.sh` 使用。
 #
 # 这份文件用于把已经录好的 LeRobot 数据集动作回放到 O10 双臂上。
 # 使用前最重要的是改 `dataset.root` 到你要回放的那个具体数据集目录。
@@ -9,11 +9,11 @@ dataset:
   repo_id: null
 
   # 要回放的具体数据集目录。
-  root: ~/workspace/dataset/Robot/agi_arm_bot/pick_up_the_blue_camera_from_the_yellow_paper_into_black_box_20260415_merged
+  root: ~/workspace/dataset/Robot/agi_arm_bot/right_hand_picks_up_the_camera_left_hand_picks_up_the_pen_then_left_hand_uses_the_pen_to_touch_20260423_2
 
 replay:
   # 回放第几个 episode，从 0 开始编号。
-  episode_index: 3
+  episode_index: 0
 
   # 回放频率，单位 Hz。
   fps: 30
@@ -21,21 +21,22 @@ replay:
 robot:
   type: pico_follower_dual_arm_agibot_o10
   id: o10_dual
+  enable_hand: true
   left:
-    port: can1
+    port: can0
     handedness: left
     channel_mode: multiChannel
     device_id: 1
     canfd_id: 0
     channel_id: null
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: pinch
   right:
-    port: can0
+    port: can1
     handedness: right
     channel_mode: multiChannel
     device_id: 1
     canfd_id: 0
     channel_id: null
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: pinch

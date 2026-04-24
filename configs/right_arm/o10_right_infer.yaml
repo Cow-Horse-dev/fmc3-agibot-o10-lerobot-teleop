@@ -1,5 +1,5 @@
 # O10 单臂推理配置
-# 供脚本 `./scripts/infer_o10_right.sh` 使用。
+# 供脚本 `./scripts/o10/right_arm/infer_o10_right.sh` 使用。
 #
 # 这份文件用于加载训练好的策略模型，让 O10 直接执行推理。
 # 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
@@ -7,6 +7,8 @@
 # - `model_path` 必须改成你自己的模型目录
 # - 如果 `save_data: true`，才会保存推理过程中产生的数据
 # - 不同模型的专用推理配置建议放在 `configs/policies/` 目录下
+# - infer 不读取 Pico/VR 实时位姿，所以这里没有 `teleop.vr_device`
+# - `vr_device: pico` 只对 control / record 这类实时遥操作配置生效
 
 infer:
   # 策略类型。
@@ -75,7 +77,7 @@ robot:
   type: pico_follower_single_arm_agibot_o10
 
   # 机械臂 CAN 口。
-  port: can0
+  port: can1
 
   # 机器人名字，仅用于日志显示。
   id: o10_right
@@ -101,8 +103,8 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
     right:

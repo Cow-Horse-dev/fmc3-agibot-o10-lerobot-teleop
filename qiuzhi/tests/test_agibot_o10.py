@@ -140,6 +140,22 @@ def test_build_agibot_o10_joint_action_dict_rejects_non_joint_lengths():
         agibot_o10.build_agibot_o10_joint_action_dict(range(23))
 
 
+def test_trigger_gesture_joint_angles_return_copies():
+    open_pose = agibot_o10.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        "left",
+        "open",
+    )
+    open_pose[0] = 999.0
+
+    fresh_open_pose = agibot_o10.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        "left",
+        "open",
+    )
+    assert fresh_open_pose[0] != 999.0
+
+
 def test_sdk_import_error_mentions_qiuzhi_omnihand_root(monkeypatch):
     monkeypatch.delenv("QIUZHI_OMNIHAND_ROOT", raising=False)
 

@@ -16,15 +16,15 @@ infer:
 
 robot:
   type: pico_follower_single_arm_agibot_o10
-  port: can0
+  port: can1
   id: o10_right
   handedness: right
   channel_mode: multiChannel
   device_id: 1
   canfd_id: 0
   channel_id: null
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
     right:

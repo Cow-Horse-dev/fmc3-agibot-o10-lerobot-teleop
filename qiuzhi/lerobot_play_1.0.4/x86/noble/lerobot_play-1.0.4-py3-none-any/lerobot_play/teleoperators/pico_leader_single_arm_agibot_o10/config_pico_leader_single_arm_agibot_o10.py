@@ -13,10 +13,13 @@ class PicoLeaderSingleArmAgibotO10Config(TeleoperatorConfig):
     vr_device: str = "pico_wrist"
     eef_device: str = "AGIBOT_O10"
     handedness: str = "right"
+    controller_side: str = "right"
     wrist_pose_source: str = "auto"
     enable_hand: bool = True
-    arm_reset_joints_path: str | None = None
-    hand_reset_joints_path: str | None = None
+    hand_mode: str = "glove"
+    trigger_gesture: str = "pinch"
+    reset_poses_path: str | None = None
+    reset_gesture: str | None = None
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])
     cameras: dict[str, CameraConfig] = field(default_factory=dict)

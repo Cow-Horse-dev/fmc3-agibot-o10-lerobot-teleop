@@ -60,6 +60,7 @@ lerobot-record \
 
 import logging
 import importlib
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -122,6 +123,8 @@ from lerobot_play._compat import Teleoperator
 from lerobot_play.robots.utils import make_robot_from_config
 from lerobot_play.teleoperators.utils import make_teleoperator_from_config
 from lerobot_play.utils.display_filter import filter_display_observation
+
+DEFAULT_RECORD_PREVIEW_FPS = 5.0
 
 
 def _get_multi_teleop_arm_types() -> tuple[type, ...]:
@@ -314,22 +317,14 @@ def _draw_tile_label(image: np.ndarray, label: str) -> np.ndarray:
     return tile
 
 
-def _show_record_preview(
+def _build_record_preview_canvas(
     observation: dict[str, Any],
     camera_keys: list[str],
     episode_index: int | None,
     total_episodes: int | None,
     frame_index: int,
     timestamp_s: float,
-) -> None:
-    global PREVIEW_WINDOW_ENABLED
-    global PREVIEW_WINDOW_WARNING_EMITTED
-
-    if not PREVIEW_WINDOW_ENABLED:
-        return
-
-    if is_headless():
-        return
+) -> np.ndarray | None:
 
     observation = filter_display_observation(observation, camera_keys)
 
@@ -341,7 +336,7 @@ def _show_record_preview(
             tiles.append(_draw_tile_label(_to_bgr_image(value), key))
 
     if not tiles:
-        return
+        return None
 
     target_height = min(360, min(tile.shape[0] for tile in tiles))
     resized_tiles = [_resize_keep_ratio(tile, target_height) for tile in tiles]
@@ -375,9 +370,21 @@ def _show_record_preview(
         cv2.LINE_AA,
     )
 
+    return canvas
+
+
+def _show_record_preview(canvas: np.ndarray) -> None:
+    global PREVIEW_WINDOW_ENABLED
+    global PREVIEW_WINDOW_WARNING_EMITTED
+
+    if not PREVIEW_WINDOW_ENABLED:
+        return
+
+    if is_headless():
+        return
+
     try:
         cv2.imshow(PREVIEW_WINDOW_NAME, canvas)
-        cv2.waitKey(1)
     except cv2.error as exc:
         PREVIEW_WINDOW_ENABLED = False
         if not PREVIEW_WINDOW_WARNING_EMITTED:
@@ -388,6 +395,167 @@ def _show_record_preview(
                 "Original error: %s",
                 exc,
             )
+
+
+def _pump_record_preview_events(events: dict[str, Any]) -> None:
+    global PREVIEW_WINDOW_ENABLED
+    global PREVIEW_WINDOW_WARNING_EMITTED
+
+    if not PREVIEW_WINDOW_ENABLED:
+        return
+
+    if is_headless():
+        return
+
+    try:
+        key = cv2.waitKey(1)
+        if key == 27:
+            if not events.get("keyboard_exit_requested", False):
+                print("Escape key pressed in preview window. Stopping data recording...")
+                events["keyboard_exit_requested"] = True
+                events["stop_recording"] = True
+                events["exit_early"] = True
+        elif key in (81, 2424832):
+            if events.get("start", False) and not events.get("keyboard_exit_requested", False):
+                print("Left arrow key pressed in preview window. Exiting loop and rerecord the last episode...")
+                events["keyboard_exit_requested"] = True
+                events["rerecord_episode"] = True
+                events["exit_early"] = True
+        elif key in (83, 2555904):
+            if events.get("start", False) and not events.get("keyboard_exit_requested", False):
+                print("Right arrow key pressed in preview window. Exiting loop...")
+                events["keyboard_exit_requested"] = True
+                events["exit_early"] = True
+    except cv2.error as exc:
+        PREVIEW_WINDOW_ENABLED = False
+        if not PREVIEW_WINDOW_WARNING_EMITTED:
+            PREVIEW_WINDOW_WARNING_EMITTED = True
+            logging.warning(
+                "OpenCV preview event pump failed. "
+                "Disabling local record preview and continuing recording. "
+                "Original error: %s",
+                exc,
+            )
+
+
+class _RecordPreviewWorker:
+    def __init__(self, preview_fps: float = DEFAULT_RECORD_PREVIEW_FPS):
+        self.preview_fps = preview_fps
+        self._lock = threading.Lock()
+        self._wake_event = threading.Event()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._latest_payload: dict[str, Any] | None = None
+        self._last_preview_timestamp_s: float | None = None
+        self._latest_canvas: np.ndarray | None = None
+
+    def start(self) -> None:
+        if self.preview_fps <= 0 or is_headless():
+            return
+
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="record-preview-worker",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def submit(
+        self,
+        observation: dict[str, Any],
+        camera_keys: list[str],
+        episode_index: int | None,
+        total_episodes: int | None,
+        frame_index: int,
+        timestamp_s: float,
+        action: RobotAction,
+    ) -> None:
+        if self._thread is None:
+            return
+
+        with self._lock:
+            self._latest_payload = {
+                "observation": observation,
+                "camera_keys": list(camera_keys),
+                "episode_index": episode_index,
+                "total_episodes": total_episodes,
+                "frame_index": frame_index,
+                "timestamp_s": timestamp_s,
+                "action": action,
+            }
+            self._wake_event.set()
+
+    def render_latest(self) -> None:
+        with self._lock:
+            canvas = self._latest_canvas
+            self._latest_canvas = None
+
+        if canvas is not None:
+            _show_record_preview(canvas)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._wake_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+        try:
+            cv2.destroyWindow(PREVIEW_WINDOW_NAME)
+        except cv2.error:
+            pass
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            self._wake_event.wait(timeout=0.1)
+            self._wake_event.clear()
+            if self._stop_event.is_set():
+                break
+
+            payload = self._consume_latest_payload()
+            if payload is None:
+                continue
+
+            timestamp_s = float(payload["timestamp_s"])
+            if not self._should_render(timestamp_s):
+                continue
+
+            log_rerun_data(
+                observation=payload["observation"],
+                action=payload["action"],
+            )
+            canvas = _build_record_preview_canvas(
+                observation=payload["observation"],
+                camera_keys=payload["camera_keys"],
+                episode_index=payload["episode_index"],
+                total_episodes=payload["total_episodes"],
+                frame_index=payload["frame_index"],
+                timestamp_s=timestamp_s,
+            )
+            if canvas is not None:
+                with self._lock:
+                    self._latest_canvas = canvas
+            self._last_preview_timestamp_s = timestamp_s
+
+    def _consume_latest_payload(self) -> dict[str, Any] | None:
+        with self._lock:
+            payload = self._latest_payload
+            self._latest_payload = None
+        return payload
+
+    def _should_render(self, timestamp_s: float) -> bool:
+        if self.preview_fps <= 0:
+            return False
+
+        if self._last_preview_timestamp_s is None:
+            return True
+
+        return (timestamp_s - self._last_preview_timestamp_s) >= (
+            1.0 / self.preview_fps
+        )
 
 
 @safe_stop_image_writer
@@ -475,113 +643,134 @@ def record_loop(
     timestamp = 0
     start_episode_t = time.perf_counter()
     camera_keys = list(getattr(robot, "cameras", {}).keys())
-    while timestamp < control_time_s:
-        start_loop_t = time.perf_counter()
+    preview_worker = _RecordPreviewWorker() if display_data else None
+    if preview_worker is not None:
+        preview_worker.start()
+    try:
+        while timestamp < control_time_s:
+            start_loop_t = time.perf_counter()
 
-        if events["exit_early"]:
-            events["exit_early"] = False
-            break
+            if events["exit_early"]:
+                events["exit_early"] = False
+                break
 
-        if events.get("reset_robot"):
-            logging.info("Reset event received. Moving robot to configured reset pose.")
-            robot.reset_zero()
-            events["reset_robot"] = False
-            if isinstance(teleop, Teleoperator) and hasattr(teleop, "reset_pose"):
-                teleop.reset_pose()
-            start_episode_t = time.perf_counter()
-            timestamp = 0
-            continue
+            if events.get("reset_robot"):
+                logging.info("Reset event received. Moving robot to configured reset pose.")
+                robot.reset_zero()
+                events["reset_robot"] = False
+                if isinstance(teleop, Teleoperator) and hasattr(teleop, "reset_pose"):
+                    teleop.reset_pose()
+                start_episode_t = time.perf_counter()
+                timestamp = 0
+                continue
 
-        # Get robot observation
-        obs = robot.get_observation()
+            # Get robot observation
+            try:
+                obs = robot.get_observation()
+            except Exception as exc:
+                logging.error(
+                    "Camera read failed during recording; stopping current episode without saving partial data: %s",
+                    exc,
+                )
+                if dataset is not None:
+                    dataset.clear_episode_buffer(restart_image_writer=True)
+                events["discard_episode"] = True
+                events["stop_recording"] = True
+                events["exit_early"] = True
+                break
 
-        # Applies a pipeline to the raw robot observation, default is IdentityProcessor
-        obs_processed = robot_observation_processor(obs)
+            # Applies a pipeline to the raw robot observation, default is IdentityProcessor
+            obs_processed = robot_observation_processor(obs)
 
-        if policy is not None or dataset is not None:
-            observation_frame = build_dataset_frame(
-                loop_dataset_features, obs_processed, prefix=OBS_STR
-            )
+            if policy is not None or dataset is not None:
+                observation_frame = build_dataset_frame(
+                    loop_dataset_features, obs_processed, prefix=OBS_STR
+                )
 
-        # Get action from either policy or teleop
-        if (
-            policy is not None
-            and preprocessor is not None
-            and postprocessor is not None
-        ):
-            action_values = predict_action(
-                observation=observation_frame,
-                policy=policy,
-                device=get_safe_torch_device(policy.config.device),
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                use_amp=policy.config.use_amp,
-                task=single_task,
-                robot_type=robot.robot_type,
-            )
+            # Get action from either policy or teleop
+            if (
+                policy is not None
+                and preprocessor is not None
+                and postprocessor is not None
+            ):
+                action_values = predict_action(
+                    observation=observation_frame,
+                    policy=policy,
+                    device=get_safe_torch_device(policy.config.device),
+                    preprocessor=preprocessor,
+                    postprocessor=postprocessor,
+                    use_amp=policy.config.use_amp,
+                    task=single_task,
+                    robot_type=robot.robot_type,
+                )
 
-            act_processed_policy: RobotAction = make_robot_action(
-                action_values, loop_dataset_features
-            )
+                act_processed_policy: RobotAction = make_robot_action(
+                    action_values, loop_dataset_features
+                )
 
-        elif policy is None and isinstance(teleop, Teleoperator):
-            act = teleop.get_action()
+            elif policy is None and isinstance(teleop, Teleoperator):
+                act = teleop.get_action()
 
-            # Applies a pipeline to the raw teleop action, default is IdentityProcessor
-            act_processed_teleop = teleop_action_processor((act, obs))
+                # Applies a pipeline to the raw teleop action, default is IdentityProcessor
+                act_processed_teleop = teleop_action_processor((act, obs))
 
-        elif policy is None and isinstance(teleop, list):
-            arm_action = teleop_arm.get_action()
-            arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
-            keyboard_action = teleop_keyboard.get_action()
-            base_action = robot._from_keyboard_to_base_action(keyboard_action)
-            act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
-            act_processed_teleop = teleop_action_processor((act, obs))
-        else:
-            logging.info(
-                "No policy or teleoperator provided, skipping action generation."
-                "This is likely to happen when resetting the environment without a teleop device."
-                "The robot won't be at its rest position at the start of the next episode."
-            )
-            continue
+            elif policy is None and isinstance(teleop, list):
+                arm_action = teleop_arm.get_action()
+                arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
+                keyboard_action = teleop_keyboard.get_action()
+                base_action = robot._from_keyboard_to_base_action(keyboard_action)
+                act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
+                act_processed_teleop = teleop_action_processor((act, obs))
+            else:
+                logging.info(
+                    "No policy or teleoperator provided, skipping action generation."
+                    "This is likely to happen when resetting the environment without a teleop device."
+                    "The robot won't be at its rest position at the start of the next episode."
+                )
+                continue
 
-        # Applies a pipeline to the action, default is IdentityProcessor
-        if policy is not None and act_processed_policy is not None:
-            robot_action_to_send = robot_action_processor((act_processed_policy, obs))
-        else:
-            robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
+            # Applies a pipeline to the action, default is IdentityProcessor
+            if policy is not None and act_processed_policy is not None:
+                robot_action_to_send = robot_action_processor((act_processed_policy, obs))
+            else:
+                robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
 
-        # Send action to robot
-        # Action can eventually be clipped using `max_relative_target`,
-        # so the robot return value is the source of truth for dataset logging.
-        # TODO(steven, pepijn, adil): we should use a pipeline step to clip the action, so the sent action is the action that we input to the robot.
-        sent_action = robot.send_action(robot_action_to_send)
+            # Send action to robot
+            # Action can eventually be clipped using `max_relative_target`,
+            # so the robot return value is the source of truth for dataset logging.
+            # TODO(steven, pepijn, adil): we should use a pipeline step to clip the action, so the sent action is the action that we input to the robot.
+            sent_action = robot.send_action(robot_action_to_send)
 
-        # Write to dataset
-        if dataset is not None:
-            action_frame = build_dataset_frame(
-                dataset.features, sent_action, prefix=ACTION
-            )
-            frame = {**observation_frame, **action_frame, "task": single_task}
-            dataset.add_frame(frame, use_mcap, online_encoding)
+            # Write to dataset
+            if dataset is not None:
+                action_frame = build_dataset_frame(
+                    dataset.features, sent_action, prefix=ACTION
+                )
+                frame = {**observation_frame, **action_frame, "task": single_task}
+                dataset.add_frame(frame, use_mcap, online_encoding)
 
-        if display_data:
-            display_observation = filter_display_observation(obs_processed, camera_keys)
-            log_rerun_data(observation=display_observation, action=sent_action)
-            _show_record_preview(
-                observation=display_observation,
-                camera_keys=camera_keys,
-                episode_index=episode_index,
-                total_episodes=total_episodes,
-                frame_index=frame_index,
-                timestamp_s=frame_index / fps,
-            )
+            if preview_worker is not None:
+                display_observation = filter_display_observation(obs_processed, camera_keys)
+                preview_worker.submit(
+                    observation=display_observation,
+                    camera_keys=camera_keys,
+                    episode_index=episode_index,
+                    total_episodes=total_episodes,
+                    frame_index=frame_index,
+                    timestamp_s=frame_index / fps,
+                    action=sent_action,
+                )
+                preview_worker.render_latest()
+                _pump_record_preview_events(events)
 
-        dt_s = time.perf_counter() - start_loop_t
-        precise_sleep(1 / fps - dt_s)
+            dt_s = time.perf_counter() - start_loop_t
+            precise_sleep(1 / fps - dt_s)
 
-        frame_index += 1
-        timestamp = time.perf_counter() - start_episode_t
+            frame_index += 1
+            timestamp = time.perf_counter() - start_episode_t
+    finally:
+        if preview_worker is not None:
+            preview_worker.stop()
 
 
 @parser.wrap()
@@ -723,6 +912,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 events["rerecord_episode"] = False
                 events["exit_early"] = False
                 dataset.clear_episode_buffer(restart_image_writer=True)
+                continue
+
+            if events.get("discard_episode"):
+                events["discard_episode"] = False
+                events["exit_early"] = False
                 continue
 
             dataset.save_episode()

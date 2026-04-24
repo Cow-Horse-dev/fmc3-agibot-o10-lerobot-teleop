@@ -83,3 +83,49 @@ class PersistentJointTargetStore:
             encoding="utf-8",
         )
         return normalized_joint_values
+
+
+def load_reset_poses(
+    path: str | Path,
+    side: str,
+    gesture: str,
+) -> tuple[list[float], list[float]]:
+    """Load arm + hand reset poses from centralized JSON.
+
+    Returns (arm_joint_values, hand_joint_values).
+    arm values come from json["arm"][side], hand values from json["gestures"][gesture][side]["open"].
+    Both are ordered by their respective feature_names arrays.
+    """
+    filepath = Path(path).expanduser()
+    data = json.loads(filepath.read_text(encoding="utf-8"))
+
+    # --- arm ---
+    arm_section = data.get("arm")
+    if arm_section is None:
+        raise ValueError(f"reset-poses JSON missing 'arm' section: {filepath}")
+    if side not in arm_section:
+        raise ValueError(
+            f"side '{side}' not found in arm section (available: "
+            f"{[k for k in arm_section if k != 'feature_names']})"
+        )
+    arm_feature_names: list[str] = arm_section["feature_names"]
+    arm_dict: dict[str, float] = arm_section[side]
+    arm_values = [float(arm_dict[name]) for name in arm_feature_names]
+
+    # --- hand (gesture) ---
+    gestures = data.get("gestures")
+    if gestures is None:
+        raise ValueError(f"reset-poses JSON missing 'gestures' section: {filepath}")
+    if gesture not in gestures:
+        raise ValueError(
+            f"gesture '{gesture}' not found (available: {list(gestures.keys())})"
+        )
+    gesture_section = gestures[gesture]
+    if side not in gesture_section:
+        raise ValueError(
+            f"side '{side}' not found in gesture '{gesture}' "
+            f"(available: {list(gesture_section.keys())})"
+        )
+    hand_values = [float(v) for v in gesture_section[side]["open"]]
+
+    return arm_values, hand_values

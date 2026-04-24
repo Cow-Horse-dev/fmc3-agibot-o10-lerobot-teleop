@@ -1,5 +1,5 @@
 # O10 单臂录制配置（左臂）
-# 供脚本 `./scripts/record_o10_left.sh` 使用。
+# 供脚本 `./scripts/o10/left_arm/record_o10_left.sh` 使用。
 #
 # 这份文件负责把数据录成 LeRobot 数据集格式。
 # 当前已经配置成：
@@ -12,13 +12,16 @@ robot:
   type: pico_follower_single_arm_agibot_o10
 
   # 机械臂 CAN 口。
-  port: can1
+  port: can0
 
   # 机器人名字，仅用于日志显示。
   id: o10_left
 
   # 选择"哪只 follower 手/臂"被录制并接收动作。
   handedness: left
+  enable_hand: true
+  include_eef_pose: false
+  tactile_mode: "none"
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：
@@ -38,14 +41,14 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
-    right:
+    left:
       # Record / infer 配置里 RealSense 类型写 `realsense`。
       type: realsense
-      serial_number_or_name: "260322273018"
+      serial_number_or_name: "260322276846"
       width: 640
       height: 480
       fps: 30
@@ -67,6 +70,7 @@ robot:
       width: 640
       height: 480
       fps: 30
+      fourcc: MJPG
       rotation: NO_ROTATION
 
 teleop:
@@ -76,9 +80,9 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_left
 
-  # 选择"哪只 leader 手"来做遥操作录制。
-  # 这决定 glove 数据按左手还是右手解释。
+  # 左臂录制时仍录左臂，但输入来自右侧控制器。
   handedness: left
+  controller_side: right
 
   # Pico wrist 位姿流端口。
   vr_pose_port: 8000
@@ -87,22 +91,24 @@ teleop:
   vr_ctrl_port: 8001
 
   # VR 设备来源。
-  vr_device: pico_wrist
+  vr_device: pico
 
   # 位姿控制来源。
   # 可选值：auto / left / right
-  wrist_pose_source: left
+  wrist_pose_source: right
 
   # 是否启用手控制。
   # - true: 手 + 臂一起录
   # - false: 只录机械臂
   enable_hand: true
+  hand_mode: trigger_gesture  # glove, trigger_gesture
+  trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
   # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
 run:
   # 录制频率，单位 Hz。

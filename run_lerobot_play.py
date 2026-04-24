@@ -27,6 +27,7 @@ COMMAND_MODULES = {
 SCRIPT_COMMANDS = {
     "set_pose": "scripts.set_pose",
     "save_reset_pose": "scripts.save_reset_pose",
+    "save_dual_reset_pose": "scripts.save_dual_reset_pose",
 }
 
 

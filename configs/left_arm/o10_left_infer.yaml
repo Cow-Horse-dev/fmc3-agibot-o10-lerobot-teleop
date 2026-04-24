@@ -1,5 +1,5 @@
 # O10 单臂推理配置（左臂）
-# 供脚本 `./scripts/infer_o10_left.sh` 使用。
+# 供脚本 `./scripts/o10/left_arm/infer_o10_left.sh` 使用。
 #
 # 这份文件用于加载训练好的策略模型，让 O10 左臂直接执行推理。
 # 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
@@ -75,7 +75,7 @@ robot:
   type: pico_follower_single_arm_agibot_o10
 
   # 机械臂 CAN 口。
-  port: can1
+  port: can0
 
   # 机器人名字，仅用于日志显示。
   id: o10_left
@@ -101,8 +101,8 @@ robot:
   channel_id: null
 
   # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
     right:
@@ -110,7 +110,7 @@ robot:
       type: realsense
 
       # RealSense 序列号。
-      serial_number_or_name: "260322273018"
+      serial_number_or_name: "260322276846"
 
       # 图像宽高与帧率。
       width: 640

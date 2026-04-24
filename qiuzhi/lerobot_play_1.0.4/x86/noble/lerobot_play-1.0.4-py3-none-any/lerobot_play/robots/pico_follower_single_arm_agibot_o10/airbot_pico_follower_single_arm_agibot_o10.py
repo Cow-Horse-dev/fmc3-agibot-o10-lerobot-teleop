@@ -20,13 +20,36 @@ from lerobot_play.utils.agibot_o10 import (
     build_agibot_o10_joint_action_dict,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
 
 from .config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
 )
 
 logger = logging.getLogger(__name__)
+
+
+TACTILE_REGION_NAMES = (
+    "tactile.thumb_avg",
+    "tactile.index_avg",
+    "tactile.middle_avg",
+    "tactile.ring_avg",
+    "tactile.little_avg",
+    "tactile.palm_avg",
+    "tactile.dorsum_avg",
+)
+
+TACTILE_FINGERTIP_NAMES = tuple(
+    f"tactile.{finger}_{index}"
+    for finger in ("thumb", "index", "middle", "ring", "little")
+    for index in range(16)
+)
+
+TACTILE_FULL_NAMES = TACTILE_FINGERTIP_NAMES + tuple(
+    f"tactile.palm_{index}" for index in range(25)
+) + tuple(
+    f"tactile.dorsum_{index}" for index in range(25)
+)
 
 
 class PicoFollowerSingleArmAgibotO10(Robot):
@@ -66,13 +89,13 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         self.hand_joints = [0.0] * len(AGIBOT_O10_HAND_FEATURE_NAMES)
         self.arm_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_ARM_FEATURE_NAMES,
-            path=self.config.arm_reset_joints_path,
+            path=None,
             label=f"{self.config.handedness} arm reset joint target",
             group_key="arm",
         )
         self.hand_reset_store = PersistentJointTargetStore(
             feature_names=AGIBOT_O10_HAND_FEATURE_NAMES,
-            path=self.config.hand_reset_joints_path,
+            path=None,
             label=f"{self.config.handedness} hand reset joint target",
             group_key="hand",
         )
@@ -139,16 +162,18 @@ class PicoFollowerSingleArmAgibotO10(Robot):
     ) -> tuple[list[float], list[float]]:
         arm_joint_pos, hand_joint_pos = self.get_joint_pos()
         arm_joint_pos = arm_joint_pos[: len(AGIBOT_O10_ARM_FEATURE_NAMES)]
-        if persist:
-            arm_joint_pos = self.arm_reset_store.save(arm_joint_pos)
-            hand_joint_pos = self.hand_reset_store.save(hand_joint_pos)
-        else:
-            arm_joint_pos = self.arm_reset_store.normalize(arm_joint_pos)
-            hand_joint_pos = self.hand_reset_store.normalize(hand_joint_pos)
+        arm_joint_pos = self.arm_reset_store.normalize(arm_joint_pos)
+        hand_joint_pos = self.hand_reset_store.normalize(hand_joint_pos)
 
         self.reset_arm_joint_pos = arm_joint_pos.copy()
         self.reset_hand_joint_pos = hand_joint_pos.copy()
         self.hand_joints = hand_joint_pos.copy()
+
+        if persist:
+            logger.info(
+                "Persist requested for reset target capture, "
+                "but centralized reset_poses JSON is not modified at runtime."
+            )
 
         self._log_joint_pos(
             "Captured Agibot O10 arm reset target:",
@@ -163,16 +188,19 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         return arm_joint_pos, hand_joint_pos
 
     def _load_reset_target_from_file(self) -> None:
-        try:
-            arm_loaded = self.arm_reset_store.load()
-        except Exception as exc:
-            logger.warning("Failed to load arm reset target: %s", exc)
-            arm_loaded = None
-        try:
-            hand_loaded = self.hand_reset_store.load()
-        except Exception as exc:
-            logger.warning("Failed to load hand reset target: %s", exc)
-            hand_loaded = None
+        reset_poses_path = getattr(self.config, "reset_poses_path", None)
+        reset_gesture = getattr(self.config, "reset_gesture", None)
+        if reset_poses_path and reset_gesture:
+            try:
+                arm_loaded, hand_loaded = load_reset_poses(
+                    reset_poses_path, self.config.handedness, reset_gesture,
+                )
+            except Exception as exc:
+                logger.warning("Failed to load reset poses: %s", exc)
+                arm_loaded, hand_loaded = None, None
+        else:
+            arm_loaded, hand_loaded = None, None
+
         if arm_loaded is not None:
             self.reset_arm_joint_pos = arm_loaded
         if hand_loaded is not None:
@@ -183,7 +211,9 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @property
     def _motors_ft(self) -> dict[str, type]:
-        return agibot_o10_action_feature_types()
+        if self.config.include_eef_pose:
+            return agibot_o10_action_feature_types()
+        return agibot_o10_joint_action_feature_types()
 
     @staticmethod
     def _camera_uses_depth(camera_config: Any) -> bool:
@@ -217,7 +247,15 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        return {**self._motors_ft, **self._cameras_ft}
+        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        tactile_ft: dict[str, type] = {}
+        if tactile_mode == "7d":
+            tactile_ft = {name: float for name in TACTILE_REGION_NAMES}
+        elif tactile_mode == "80d":
+            tactile_ft = {name: float for name in TACTILE_FINGERTIP_NAMES}
+        elif tactile_mode == "130d":
+            tactile_ft = {name: float for name in TACTILE_FULL_NAMES}
+        return {**self._motors_ft, **tactile_ft, **self._cameras_ft}
 
     def calibrate(self):
         pass
@@ -288,7 +326,6 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         arm_pos, hand_pos = self.get_joint_pos()
-        pose = self.homogeneous_matrix_to_pose(self.arm_kdl.forward_kinematics(arm_pos[:6]))
 
         obs_dict = {
             **{
@@ -299,11 +336,27 @@ class PicoFollowerSingleArmAgibotO10(Robot):
                 feature_name: hand_pos[index]
                 for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
             },
-            **{
-                feature_name: pose[index]
-                for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES)
-            },
         }
+
+        if self.config.include_eef_pose:
+            pose = self.homogeneous_matrix_to_pose(self.arm_kdl.forward_kinematics(arm_pos[:6]))
+            for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
+                obs_dict[feature_name] = pose[index]
+
+        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        if self.hand is not None and tactile_mode != "none":
+            if tactile_mode == "7d":
+                tactile_avg = self.hand.read_tactile_avg()
+                for index, feature_name in enumerate(TACTILE_REGION_NAMES):
+                    obs_dict[feature_name] = tactile_avg[index]
+            elif tactile_mode == "80d":
+                tactile_fingertip = self.hand.read_tactile_fingertip()
+                for index, feature_name in enumerate(TACTILE_FINGERTIP_NAMES):
+                    obs_dict[feature_name] = tactile_fingertip[index]
+            elif tactile_mode == "130d":
+                tactile_full = self.hand.read_tactile_full()
+                for index, feature_name in enumerate(TACTILE_FULL_NAMES):
+                    obs_dict[feature_name] = tactile_full[index]
 
         for cam_key, cam in self.cameras.items():
             if self._camera_uses_depth(self.config.cameras[cam_key]):

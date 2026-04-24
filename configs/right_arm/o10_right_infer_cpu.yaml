@@ -1,9 +1,10 @@
 # O10 单臂 CPU 推理配置
-# 供脚本 `./scripts/infer_o10_right_cpu.sh` 使用。
+# 供脚本 `./scripts/o10/right_arm/infer_o10_right_cpu.sh` 使用。
 #
 # 这份文件和 `configs/o10_right_infer.yaml` 基本一致，
 # 主要区别是把推理设备固定成 `cpu`，
 # 方便迁移到没有 NVIDIA GPU 的机器上直接使用。
+# 这类 infer 配置不读取 Pico/VR 实时位姿，所以这里没有 `teleop.vr_device`。
 
 infer:
   policy: act
@@ -23,15 +24,15 @@ infer:
 
 robot:
   type: pico_follower_single_arm_agibot_o10
-  port: can0
+  port: can1
   id: o10_right
   handedness: right
   channel_mode: multiChannel
   device_id: 1
   canfd_id: 0
   channel_id: null
-  arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-  hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  reset_gesture: pinch
 
   cameras:
     right:

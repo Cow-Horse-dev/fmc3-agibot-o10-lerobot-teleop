@@ -83,6 +83,7 @@ class PicoLeaderSingleArmEEF(Teleoperator):
             self.transform_pose = [0.12610013, 0.0, 0.21357222, 0.0, 0.0, 0.0, 1.0]
 
         self.handedness = config.handedness
+        self.controller_side = getattr(config, "controller_side", config.handedness)
         self.wrist_pose_source = getattr(config, "wrist_pose_source", "auto").lower()
         self.head_info = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
         self.left_info = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
@@ -90,6 +91,7 @@ class PicoLeaderSingleArmEEF(Teleoperator):
         self.active_pose_source = None
         self.startflag = False
         self.last_button_debug_state = None
+        self._last_default_pose_warning_time = 0.0
 
         self.pause_event = threading.Event()
         self.stop_event = threading.Event()
@@ -448,16 +450,10 @@ class PicoLeaderSingleArmEEF(Teleoperator):
             pose = self.left_info if requested_source == "left" else self.right_info
             return pose, requested_source
 
-        if self.config.vr_device == "pico_wrist":
-            if self.handedness == "right":
-                candidates = (("right", self.right_info), ("left", self.left_info))
-            else:
-                candidates = (("left", self.left_info), ("right", self.right_info))
+        if self.controller_side == "right":
+            candidates = (("right", self.right_info), ("left", self.left_info))
         else:
-            if self.handedness == "right":
-                candidates = (("right", self.right_info), ("left", self.left_info))
-            else:
-                candidates = (("left", self.left_info), ("right", self.right_info))
+            candidates = (("left", self.left_info), ("right", self.right_info))
 
         for source_name, pose in candidates:
             if not self._is_default_pose(pose):
@@ -505,9 +501,11 @@ class PicoLeaderSingleArmEEF(Teleoperator):
             self.ctrl["X"],
             self.ctrl["Y"],
             self.ctrl["LTr"],
+            self.ctrl["LG"],
             self.ctrl["A"],
             self.ctrl["B"],
             self.ctrl["RTr"],
+            self.ctrl["RG"],
         )
         if button_debug_state != self.last_button_debug_state:
             print(
@@ -515,9 +513,11 @@ class PicoLeaderSingleArmEEF(Teleoperator):
                 f"X={int(self.ctrl['X'])} "
                 f"Y={int(self.ctrl['Y'])} "
                 f"LTr={int(self.ctrl['LTr'])} "
+                f"LG={int(self.ctrl['LG'])} "
                 f"A={int(self.ctrl['A'])} "
                 f"B={int(self.ctrl['B'])} "
-                f"RTr={int(self.ctrl['RTr'])}"
+                f"RTr={int(self.ctrl['RTr'])} "
+                f"RG={int(self.ctrl['RG'])}"
             )
             self.last_button_debug_state = button_debug_state
 
@@ -644,14 +644,14 @@ class PicoLeaderSingleArmEEF(Teleoperator):
             if self.stop_event.is_set():
                 break
             if self.is_connected:
-                if self.handedness == "right":
-                    enable_button = self.ctrl["X"]
-                    reset_button = self.ctrl["Y"]
-                    start_trigger = self.ctrl["LTr"]
-                else:
+                if self.controller_side == "right":
                     enable_button = self.ctrl["A"]
                     reset_button = self.ctrl["B"]
                     start_trigger = self.ctrl["RTr"]
+                else:
+                    enable_button = self.ctrl["X"]
+                    reset_button = self.ctrl["Y"]
+                    start_trigger = self.ctrl["LTr"]
 
                 if enable_button and not self.startflag:
                     self.startflag = True
@@ -667,6 +667,13 @@ class PicoLeaderSingleArmEEF(Teleoperator):
                 if enable:
                     try:
                         if self._is_default_pose(self.pose):
+                            now = time.time()
+                            if now - self._last_default_pose_warning_time >= 2.0:
+                                print(
+                                    f"Waiting for valid {self.active_pose_source} wrist pose; "
+                                    "arm command stays at reset target."
+                                )
+                                self._last_default_pose_warning_time = now
                             self.arm_init = False
                             time.sleep(1 / 30)
                             continue

@@ -1,45 +1,58 @@
 # O10 双臂录制配置
-# 供脚本 `./scripts/record_o10_dual.sh` 使用。
+# 供脚本 `./scripts/o10/dual_arm/record_o10_dual.sh` 使用。
 
 teleop:
   type: pico_leader_dual_arm_agibot_o10
   id: pico_dual
   vr_pose_port: 8000
   vr_ctrl_port: 8001
-  vr_device: pico_wrist
+  vr_device: pico
   enable_hand: true
+  # 双臂控臂“使能扳机”模式，不是选择只控制哪一只臂：
+  # - left:  按住左扳机 LTr 时，双臂都允许跟随
+  # - right: 按住右扳机 RTr 时，双臂都允许跟随
+  # - both:  同时按住 LTr + RTr 时，双臂都允许跟随
+  # - split: 左臂看 LTr，右臂看 RTr
+  arm_trigger_mode: left
+  hand_mode: trigger_gesture  # glove, trigger_gesture
+  trigger_gesture: tripod  # pinch, tripod（仅 trigger_gesture 模式生效）
   left:
     handedness: left
     wrist_pose_source: left
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+    trigger_gesture: tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: tripod
   right:
     handedness: right
     wrist_pose_source: right
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+    trigger_gesture: pinch
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: pinch
 
 robot:
   type: pico_follower_dual_arm_agibot_o10
   id: o10_dual
+  enable_hand: true  # true, false
+  include_eef_pose: false
+  tactile_mode: "7d"  # none, 7d, 80d, 130d
   left:
-    port: can1
+    port: can0
     handedness: left
     channel_mode: multiChannel
     device_id: 1
     canfd_id: 0
     channel_id: null
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: pinch
   right:
-    port: can0
+    port: can1
     handedness: right
     channel_mode: multiChannel
     device_id: 1
     canfd_id: 0
     channel_id: null
-    arm_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
-    hand_reset_joints_path: ~/workspace/arm-hand-teleop/configs/o10_right_reset_pose.json
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+    reset_gesture: pinch
   cameras:
     top:
       type: opencv
@@ -47,16 +60,37 @@ robot:
       width: 640
       height: 480
       fps: 30
+      fourcc: MJPG
       rotation: NO_ROTATION
+    left_wrist:
+      type: intelrealsense
+      serial_number_or_name: "260322276846"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+      color_mode: rgb
+      rotation: ROTATE_180
+    right_wrist:
+      type: intelrealsense
+      serial_number_or_name: "260322273018"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+      color_mode: rgb
+      rotation: ROTATE_180
 
 run:
   # 录制频率，单位 Hz。
   fps: 30
 
   # 是否显示本地预览窗口。
+  # 双臂 + 三路相机录制时本地显示负载较高，默认关闭以保证空格开始后稳定进入录制循环。
   display_data: false
 
   # 一次运行最多录多少个 episode。
+  # 测试采集默认只录 1 条，避免自动进入下一条时打断写盘。
   num_episodes: 1000
 
   # 单个 episode 最长时长，单位秒。
@@ -66,7 +100,7 @@ run:
   reset_time_sec: 10
 
   # 任务名。
-  single_task: pick up the camera from the yellow paper into black box
+  single_task: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch
 
 dataset:
   # 是否自动按"任务名 + 日期"命名数据集目录。

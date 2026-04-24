@@ -6,9 +6,7 @@ import time
 
 import yaml
 
-from lerobot.cameras.configs import ColorMode, Cv2Rotation
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.cameras.configs import Cv2Rotation
 from .utils.lerobot_dataset import LeRobotDataset
 from .utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import init_logging
@@ -66,33 +64,11 @@ from .utils.runtime_helpers import (
     prepare_dataset_root_for_recording,
     resolve_record_dataset_target,
 )
+from .utils.camera_config_parser import parse_camera_configs
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
-    parsed: dict = {}
-    for name, cfg in (cameras_obj or {}).items():
-        cam_type = cfg.get("type")
-        if cam_type == "opencv":
-            parsed[name] = OpenCVCameraConfig(
-                index_or_path=cfg.get("index_or_path", cfg.get("camera_index")),
-                fps=int(cfg.get("fps", 30)),
-                width=int(cfg.get("width", 640)),
-                height=int(cfg.get("height", 480)),
-                rotation=Cv2Rotation[cfg.get("rotation", "NO_ROTATION")],
-            )
-        elif cam_type == "realsense":
-            parsed[name] = RealSenseCameraConfig(
-                serial_number_or_name=str(cfg.get("serial_number_or_name", "")),
-                fps=int(cfg.get("fps", 30)),
-                width=int(cfg.get("width", 640)),
-                height=int(cfg.get("height", 480)),
-                color_mode=ColorMode[cfg.get("color_mode", "RGB")],
-                use_depth=bool(cfg.get("use_depth", False)),
-                rotation=Cv2Rotation[cfg.get("rotation", "NO_ROTATION")],
-            )
-        else:
-            raise ValueError(f"Unsupported camera type: {cam_type}")
-    return parsed
+    return parse_camera_configs(cameras_obj)
 
 
 def _load_yaml(path: str) -> dict:
@@ -342,6 +318,23 @@ def _load_config(cli: argparse.Namespace) -> dict:
             robot_config["left_arm_port"] = cli.robot_left_arm_port
         if cli.robot_right_arm_port:
             robot_config["right_arm_port"] = cli.robot_right_arm_port
+    elif cli.robot_type == "pico_follower_dual_arm_agibot_o10":
+        robot_config["left"] = {
+            "port": cli.robot_left_arm_port or "can1",
+            "handedness": "left",
+            "channel_mode": cli.robot_channel_mode or "multiChannel",
+            "device_id": 1 if cli.robot_device_id is None else cli.robot_device_id,
+            "canfd_id": 0 if cli.robot_canfd_id is None else cli.robot_canfd_id,
+            "channel_id": cli.robot_channel_id,
+        }
+        robot_config["right"] = {
+            "port": cli.robot_right_arm_port or "can0",
+            "handedness": "right",
+            "channel_mode": cli.robot_channel_mode or "multiChannel",
+            "device_id": 1 if cli.robot_device_id is None else cli.robot_device_id,
+            "canfd_id": 0 if cli.robot_canfd_id is None else cli.robot_canfd_id,
+            "channel_id": cli.robot_channel_id,
+        }
 
     teleop_config = {
         "type": cli.teleop_type,
@@ -387,6 +380,15 @@ def _load_config(cli: argparse.Namespace) -> dict:
             teleop_config["vr_ctrl_port"] = cli.teleop_vr_ctrl_port
         if cli.teleop_vr_device is not None:
             teleop_config["vr_device"] = cli.teleop_vr_device
+    elif cli.teleop_type == "pico_leader_dual_arm_agibot_o10":
+        if cli.teleop_vr_pose_port is not None:
+            teleop_config["vr_pose_port"] = cli.teleop_vr_pose_port
+        if cli.teleop_vr_ctrl_port is not None:
+            teleop_config["vr_ctrl_port"] = cli.teleop_vr_ctrl_port
+        if cli.teleop_vr_device is not None:
+            teleop_config["vr_device"] = cli.teleop_vr_device
+        teleop_config["left"] = {"handedness": "left", "wrist_pose_source": "left"}
+        teleop_config["right"] = {"handedness": "right", "wrist_pose_source": "right"}
 
     return {
         "robot": robot_config,
@@ -438,6 +440,10 @@ def _validate_config(cfg: dict):
         for k in ["type", "left_arm_port", "right_arm_port", "id"]:
             if k not in r:
                 raise ValueError(f"robot.{k} is required")
+    elif r["type"] == "pico_follower_dual_arm_agibot_o10":
+        for k in ["type", "left", "right", "id"]:
+            if k not in r:
+                raise ValueError(f"robot.{k} is required")
 
     # Validate teleop config based on type
     if t["type"] == "airbot_replay":
@@ -448,8 +454,12 @@ def _validate_config(cfg: dict):
         t["type"] == "airbot_PTK_leader"
         or t["type"] == "airbot_TOK2_leader"
         or t["type"] == "airbot_TOK4_leader"
-    ):
+        ):
         for k in ["type", "left_arm_port", "right_arm_port", "id"]:
+            if k not in t:
+                raise ValueError(f"teleop.{k} is required")
+    elif t["type"] == "pico_leader_dual_arm_agibot_o10":
+        for k in ["type", "left", "right", "id"]:
             if k not in t:
                 raise ValueError(f"teleop.{k} is required")
 
@@ -462,7 +472,7 @@ def _validate_config(cfg: dict):
         if k not in run:
             raise ValueError(f"run.{k} is required")
 def _start_events_thread(
-    teleop, events, pause_event: threading.Event, stop_event: threading.Event
+    teleop, events, pause_event: threading.Event, stop_event: threading.Event,
 ):
     def quest3_event():
         while not stop_event.is_set():
@@ -594,6 +604,36 @@ def init_stdin_listener():
 
     return stdin_thread, events
 
+
+def _set_single_arm_zero_mode(teleop, enable: bool) -> None:
+    for lpf in teleop.lpfs:
+        lpf.set_zero_mode(enable)
+
+
+def _set_dual_arm_zero_mode(teleop, enable: bool) -> None:
+    for lpf in teleop.left_lpfs:
+        lpf.set_zero_mode(enable)
+    for lpf in teleop.right_lpfs:
+        lpf.set_zero_mode(enable)
+
+
+def _sync_teleop_to_robot_reset(teleop) -> None:
+    if hasattr(teleop, "return_init"):
+        teleop.return_init()
+    elif hasattr(teleop, "reset_pose"):
+        teleop.reset_pose()
+
+
+def _describe_dual_arm_trigger_mode(trigger_mode: str) -> str:
+    normalized = (trigger_mode or "split").lower()
+    if normalized == "left":
+        return "After recording starts, use VR controls: X starts arm control, hold LTr to move both arms, Y resets."
+    if normalized == "right":
+        return "After recording starts, use VR controls: X starts arm control, hold RTr to move both arms, Y resets."
+    if normalized == "both":
+        return "After recording starts, use VR controls: X starts arm control, hold both LTr and RTr to move both arms, Y resets."
+    return "After recording starts, use VR controls: X starts arm control, split mode uses LTr for left arm and RTr for right arm, Y resets."
+
 def main():
     init_logging()
     cli = _parse_cli_args()
@@ -662,8 +702,27 @@ def main():
             device_id=cfg["robot"].get("device_id", 1),
             canfd_id=cfg["robot"].get("canfd_id", 0),
             channel_id=cfg["robot"].get("channel_id"),
-            arm_reset_joints_path=cfg["robot"].get("arm_reset_joints_path"),
-            hand_reset_joints_path=cfg["robot"].get("hand_reset_joints_path"),
+            reset_poses_path=cfg["robot"].get("reset_poses_path"),
+            reset_gesture=cfg["robot"].get("reset_gesture"),
+            enable_hand=cfg["robot"].get(
+                "enable_hand",
+                cfg["teleop"].get("enable_hand", True),
+            ),
+            tactile_mode=cfg["robot"].get("tactile_mode", "none"),
+            include_eef_pose=cfg["robot"].get("include_eef_pose", True),
+            cameras=camera_cfgs,
+            id=cfg["robot"]["id"],
+        )
+    elif robot_type == "pico_follower_dual_arm_agibot_o10":
+        robot_cfg = PicoFollowerDualArmAgibotO10Config(
+            left=cfg["robot"]["left"],
+            right=cfg["robot"]["right"],
+            enable_hand=cfg["robot"].get(
+                "enable_hand",
+                cfg["teleop"].get("enable_hand", True),
+            ),
+            tactile_mode=cfg["robot"].get("tactile_mode", "none"),
+            include_eef_pose=cfg["robot"].get("include_eef_pose", True),
             cameras=camera_cfgs,
             id=cfg["robot"]["id"],
         )
@@ -724,6 +783,10 @@ def main():
             vr_device=cfg["teleop"].get("vr_device", "pico_wrist"),
             eef_device=cfg["teleop"].get("eef_device", "G2"),
             handedness=cfg["teleop"].get("handedness", "left"),
+            controller_side=cfg["teleop"].get(
+                "controller_side",
+                cfg["teleop"].get("handedness", "left"),
+            ),
             wrist_pose_source=cfg["teleop"].get("wrist_pose_source", "auto"),
             cameras=camera_cfgs,
             id=cfg["teleop"]["id"],
@@ -734,10 +797,30 @@ def main():
             vr_ctrl_port=cfg["teleop"].get("vr_ctrl_port", 8001),
             vr_device=cfg["teleop"].get("vr_device", "pico_wrist"),
             handedness=cfg["teleop"].get("handedness", "right"),
+            controller_side=cfg["teleop"].get(
+                "controller_side",
+                cfg["teleop"].get("handedness", "right"),
+            ),
             wrist_pose_source=cfg["teleop"].get("wrist_pose_source", "auto"),
             enable_hand=cfg["teleop"].get("enable_hand", True),
-            arm_reset_joints_path=cfg["teleop"].get("arm_reset_joints_path"),
-            hand_reset_joints_path=cfg["teleop"].get("hand_reset_joints_path"),
+            hand_mode=cfg["teleop"].get("hand_mode", "glove"),
+            trigger_gesture=cfg["teleop"].get("trigger_gesture", "pinch"),
+            reset_poses_path=cfg["teleop"].get("reset_poses_path"),
+            reset_gesture=cfg["teleop"].get("reset_gesture"),
+            cameras=camera_cfgs,
+            id=cfg["teleop"]["id"],
+        )
+    elif teleop_type == "pico_leader_dual_arm_agibot_o10":
+        teleop_cfg = PicoLeaderDualArmAgibotO10Config(
+            vr_pose_port=cfg["teleop"].get("vr_pose_port", 8000),
+            vr_ctrl_port=cfg["teleop"].get("vr_ctrl_port", 8001),
+            vr_device=cfg["teleop"].get("vr_device", "pico_wrist"),
+            enable_hand=cfg["teleop"].get("enable_hand", True),
+            arm_trigger_mode=cfg["teleop"].get("arm_trigger_mode", "split"),
+            hand_mode=cfg["teleop"].get("hand_mode", "glove"),
+            trigger_gesture=cfg["teleop"].get("trigger_gesture", "pinch"),
+            left=cfg["teleop"].get("left", {}),
+            right=cfg["teleop"].get("right", {}),
             cameras=camera_cfgs,
             id=cfg["teleop"]["id"],
         )
@@ -819,6 +902,7 @@ def main():
             events["exit_early"] = False
             events["rerecord_episode"] = False
             events["stop_recording"] = False
+            events["discard_episode"] = False
             events["reset_robot"] = False
 
             pause_flag_events = threading.Event()
@@ -863,6 +947,10 @@ def main():
             or robot.name == "pico_follower_single_arm_agibot_o10"
         ):
             robot.reset_zero()
+            _sync_teleop_to_robot_reset(teleop)
+        elif robot.name == "pico_follower_dual_arm_agibot_o10":
+            robot.reset_zero()
+            _sync_teleop_to_robot_reset(teleop)
 
         recorded = 0
 
@@ -895,9 +983,22 @@ def main():
                     print_green(
                         f"Recording episode {recorded + 1}, press space/enter to start recording or press ESC to exit"
                     )
-                    print_green(
-                        "After recording starts, use VR controls: X starts arm control, hold left trigger to move, Y resets."
+                    controller_side = getattr(
+                        teleop,
+                        "controller_side",
+                        getattr(teleop, "handedness", "right"),
                     )
+                    if controller_side == "right":
+                        control_hint = (
+                            "After recording starts, use VR controls: "
+                            "A starts arm control, hold right trigger to move, B resets."
+                        )
+                    else:
+                        control_hint = (
+                            "After recording starts, use VR controls: "
+                            "X starts arm control, hold left trigger to move, Y resets."
+                        )
+                    print_green(control_hint)
                 else:
                     print_green(
                         f"Recording episode {recorded + 1}, please press [enter] to start or input 'stop' to exit"
@@ -913,8 +1014,37 @@ def main():
                 print_green(
                     f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls the arm and hand."
                 )
-                for lpf in teleop.lpfs:
-                    lpf.set_zero_mode(False)
+                _set_single_arm_zero_mode(teleop, False)
+                _sync_teleop_to_robot_reset(teleop)
+            elif teleop.name == "pico_leader_dual_arm_agibot_o10":
+                if not use_ssh:
+                    print_green(
+                        f"Recording episode {recorded + 1}, press space/enter to start recording or press ESC to exit"
+                    )
+                    print_green(
+                        _describe_dual_arm_trigger_mode(
+                            cfg["teleop"].get("arm_trigger_mode", "split")
+                        )
+                    )
+                else:
+                    print_green(
+                        f"Recording episode {recorded + 1}, please press [enter] to start or input 'stop' to exit"
+                    )
+                while not events["start"]:
+                    time.sleep(0.1)
+                    if events["stop_recording"]:
+                        is_continue = True
+                        break
+                if is_continue:
+                    continue
+
+                print_green(
+                    f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls both arms and both hands."
+                )
+                print_green("Preparing dual-arm teleop zero/reset synchronization...")
+                _set_dual_arm_zero_mode(teleop, False)
+                _sync_teleop_to_robot_reset(teleop)
+                print_green("Dual-arm teleop is ready; entering record loop.")
 
             else:
                 if not use_ssh:
@@ -965,6 +1095,12 @@ def main():
                 robot.reset_zero()
                 continue
 
+            if events.get("discard_episode"):
+                print("Discarding current episode because a camera stream failed.")
+                events["discard_episode"] = False
+                events["exit_early"] = False
+                continue
+
             if robot.name == "airbot_play_follower":
                 robot.reset_zero()
                 if teleop.name == "airbot_play_with_E2_leader":
@@ -985,6 +1121,10 @@ def main():
                 or robot.name == "pico_follower_single_arm_agibot_o10"
             ):
                 robot.reset_zero()
+                _sync_teleop_to_robot_reset(teleop)
+            elif robot.name == "pico_follower_dual_arm_agibot_o10":
+                robot.reset_zero()
+                _sync_teleop_to_robot_reset(teleop)
 
             if teleop.name == "quest3_leader" or teleop.name == "pico_leader":
                 pause_flag_events.clear()
@@ -1003,14 +1143,19 @@ def main():
                 teleop.name == "pico_leader_single_arm_eef"
                 or teleop.name == "pico_leader_single_arm_agibot_o10"
             ):
-                # pause_flag_events.clear()
                 teleop.pause_event.clear()
                 events["start"] = False
                 events["exit_early"] = False
 
-                for lpf in teleop.lpfs:
-                    lpf.set_zero_mode(True)
-                teleop.return_init()
+                _set_single_arm_zero_mode(teleop, True)
+                _sync_teleop_to_robot_reset(teleop)
+            elif teleop.name == "pico_leader_dual_arm_agibot_o10":
+                teleop.pause_event.clear()
+                events["start"] = False
+                events["exit_early"] = False
+
+                _set_dual_arm_zero_mode(teleop, True)
+                _sync_teleop_to_robot_reset(teleop)
 
             if events["rerecord_episode"]:
                 print("Re-recording episode")
@@ -1048,6 +1193,9 @@ def main():
             ):
                 teleop.pause_event.set()
                 # pause_flag_events.set()
+                events["exit_early"] = False
+            elif teleop.name == "pico_leader_dual_arm_agibot_o10":
+                teleop.pause_event.set()
                 events["exit_early"] = False
 
     finally:
