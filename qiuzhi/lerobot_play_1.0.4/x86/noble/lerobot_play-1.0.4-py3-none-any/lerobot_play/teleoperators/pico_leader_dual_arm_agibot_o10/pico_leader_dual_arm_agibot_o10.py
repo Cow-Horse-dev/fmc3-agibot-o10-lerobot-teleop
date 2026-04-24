@@ -471,8 +471,7 @@ class PicoLeaderDualArmAgibotO10(PicoLeaderSingleArmEEF):
                 time.sleep(1 / 30)
                 continue
 
-            # Start/stop uses same buttons as single-arm right-hand mode:
-            # X to start, Y to stop+reset
+            # Dual-arm enable/reset is always owned by the left controller.
             enable_button = self.ctrl["X"]
             reset_button = self.ctrl["Y"]
 

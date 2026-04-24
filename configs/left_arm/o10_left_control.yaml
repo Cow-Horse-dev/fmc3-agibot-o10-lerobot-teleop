@@ -12,9 +12,9 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_left
 
-  # 左臂模式仍然驱动左臂，但输入来自右侧控制器。
+  # 左臂模式下，左手柄控制左臂和左手；右手柄 A/B/RTr 负责使能、复位和按住门控。
   handedness: left
-  controller_side: right
+  controller_side: left
 
   # Pico wrist 位姿流端口。
   vr_pose_port: 8000
@@ -32,7 +32,7 @@ teleop:
   # - auto: 自动选择当前有效的 wrist pose，推荐
   # - left: 强制只读左手腕
   # - right: 强制只读右手腕
-  wrist_pose_source: right
+  wrist_pose_source: left
 
   # 是否启用手控制。
   # 可选值：
@@ -87,55 +87,23 @@ robot:
   reset_gesture: pinch
 
   cameras:
-    right:
-      # Control 配置里 RealSense 类型写 `intelrealsense`。
-      type: intelrealsense
-
-      # RealSense 序列号。
-      serial_number_or_name: "260322276846"
-
-      # 图像宽高与帧率。
-      width: 640
-      height: 480
-      fps: 30
-
-      # 是否采深度。
-      use_depth: false
-
-      # 彩色图通道顺序。
-      # 可选值：rgb / bgr
-      color_mode: rgb
-
-      # 图像旋转方式。
-      # 可选值：
-      # - NO_ROTATION
-      # - ROTATE_90
-      # - ROTATE_180
-      # - ROTATE_270
-      rotation: NO_ROTATION
-
     top:
-      # 顶部 USB 相机。
       type: opencv
-
-      # 建议使用稳定的 /dev/v4l/by-id 路径。
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-
       width: 640
       height: 480
       fps: 30
+      fourcc: MJPG
       rotation: NO_ROTATION
 
-    wrist:
-      # 新增 USB 相机，用于测试三相机 control。
-      type: opencv
-
-      # 建议使用稳定的 /dev/v4l/by-id 路径。
-      index_or_path: /dev/v4l/by-id/usb-JoyandAI_JYU2C-2083_JYU2C-2083-2603103-video-index0
-
+    left_wrist:
+      type: intelrealsense
+      serial_number_or_name: "260322276846"
       width: 640
       height: 480
       fps: 30
+      use_depth: false
+      color_mode: rgb
       rotation: NO_ROTATION
 
 # 控制循环频率，单位 Hz。

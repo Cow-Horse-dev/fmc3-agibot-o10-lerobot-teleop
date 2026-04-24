@@ -294,3 +294,92 @@ def test_trigger_gesture_grip_axis_can_close_without_waiting_for_button(monkeypa
         "closed",
     )
     assert state[6:] == pytest.approx(expected_closed)
+
+
+class _OneLoopStopEvent:
+    def __init__(self):
+        self._checks = 0
+
+    def is_set(self):
+        self._checks += 1
+        return self._checks >= 3
+
+
+class _NoopPauseEvent:
+    def wait(self):
+        return None
+
+
+def _build_ctrl(**overrides):
+    ctrl = {
+        "A": False,
+        "B": False,
+        "X": False,
+        "Y": False,
+        "LTr": False,
+        "RTr": False,
+    }
+    ctrl.update(overrides)
+    return ctrl
+
+
+def _make_dual_arm_teleop(module, *, startflag: bool, ctrl: dict):
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.stop_event = _OneLoopStopEvent()
+    teleop.pause_event = _NoopPauseEvent()
+    teleop.is_connected = True
+    teleop.config = SimpleNamespace(arm_trigger_mode="left")
+    teleop.ctrl = ctrl
+    teleop.startflag = startflag
+    teleop.left_info = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    teleop.right_info = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    teleop.reset_pose = lambda: None
+    teleop._control_arm_with_wrist = lambda side, pose_info: None
+    return teleop
+
+
+def test_dual_arm_enable_reset_buttons_use_left_controller_xy(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+
+    start_teleop = _make_dual_arm_teleop(
+        module,
+        startflag=False,
+        ctrl=_build_ctrl(X=True, A=True),
+    )
+    start_teleop.handle_pose_data()
+    assert start_teleop.startflag is True
+
+    ignored_start_teleop = _make_dual_arm_teleop(
+        module,
+        startflag=False,
+        ctrl=_build_ctrl(A=True),
+    )
+    ignored_start_teleop.handle_pose_data()
+    assert ignored_start_teleop.startflag is False
+
+    reset_calls = {"count": 0}
+    reset_teleop = _make_dual_arm_teleop(
+        module,
+        startflag=True,
+        ctrl=_build_ctrl(Y=True, B=True),
+    )
+    reset_teleop.reset_pose = lambda: reset_calls.__setitem__(
+        "count", reset_calls["count"] + 1
+    )
+    reset_teleop.handle_pose_data()
+    assert reset_teleop.startflag is False
+    assert reset_calls["count"] == 1
+
+    ignored_reset_calls = {"count": 0}
+    ignored_reset_teleop = _make_dual_arm_teleop(
+        module,
+        startflag=True,
+        ctrl=_build_ctrl(B=True),
+    )
+    ignored_reset_teleop.reset_pose = lambda: ignored_reset_calls.__setitem__(
+        "count", ignored_reset_calls["count"] + 1
+    )
+    ignored_reset_teleop.handle_pose_data()
+    assert ignored_reset_teleop.startflag is True
+    assert ignored_reset_calls["count"] == 0

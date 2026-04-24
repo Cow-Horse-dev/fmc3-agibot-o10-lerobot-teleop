@@ -44,6 +44,19 @@ def _install_stub_module(monkeypatch, name: str, **attrs):
 
 
 def _install_common_robot_stubs(monkeypatch):
+    class FakeArm:
+        def init(self, *args, **kwargs):
+            return True
+
+        def uninit(self):
+            return None
+
+        def enable(self):
+            return None
+
+        def set_param(self, *args, **kwargs):
+            return None
+
     class FakeRobot:
         def __init__(self, config):
             self.config = config
@@ -75,7 +88,7 @@ def _install_common_robot_stubs(monkeypatch):
     _install_stub_module(
         monkeypatch,
         "airbot_hardware_py",
-        Play=types.SimpleNamespace(create=lambda *args, **kwargs: object()),
+        Play=types.SimpleNamespace(create=lambda *args, **kwargs: FakeArm()),
         MotorType=types.SimpleNamespace(OD=object(), DM=object(), NA=object()),
         EEFType=types.SimpleNamespace(NA=object()),
         MotorControlMode=types.SimpleNamespace(PVT=object()),
@@ -193,6 +206,20 @@ class _ColorCamera:
         return result
 
 
+class _ConnectCamera:
+    def __init__(self, exc: Exception | None = None):
+        self.exc = exc
+        self.connected = False
+
+    def connect(self):
+        if self.exc is not None:
+            raise self.exc
+        self.connected = True
+
+    def disconnect(self):
+        self.connected = False
+
+
 class _DepthCamera:
     def __init__(self, reads):
         self._reads = list(reads)
@@ -238,6 +265,37 @@ def test_single_arm_camera_timeout_reuses_cached_depth_frames_when_allowed(monke
     np.testing.assert_array_equal(first_obs["wrist_depth"], second_obs["wrist_depth"])
     assert second_obs["wrist_depth"].shape == (2, 3, 1)
     assert second_obs["wrist_depth"].dtype == np.uint16
+
+
+def test_single_arm_skips_camera_connect_failures_when_allowed(monkeypatch):
+    good_camera = _ConnectCamera()
+    bad_camera = _ConnectCamera(ConnectionError("missing wrist camera"))
+    module = _load_single_arm_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "make_cameras_from_configs",
+        lambda configs: {"top": good_camera, "wrist": bad_camera},
+    )
+
+    robot = module.PicoFollowerSingleArmAgibotO10(
+        SimpleNamespace(
+            port="can0",
+            handedness="left",
+            enable_hand=False,
+            allow_camera_read_failures=True,
+            channel_mode="multiChannel",
+            device_id=1,
+            canfd_id=0,
+            channel_id=None,
+            cameras={
+                "top": SimpleNamespace(height=2, width=3, use_depth=False),
+                "wrist": SimpleNamespace(height=2, width=3, use_depth=False),
+            },
+        )
+    )
+
+    assert robot.cameras == {"top": good_camera}
+    assert good_camera.connected is True
 
 
 def test_single_arm_camera_timeout_still_raises_when_fallback_is_disabled(monkeypatch):

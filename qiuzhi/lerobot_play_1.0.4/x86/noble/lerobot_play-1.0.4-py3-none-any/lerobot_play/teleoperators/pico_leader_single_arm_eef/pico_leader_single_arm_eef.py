@@ -638,20 +638,24 @@ class PicoLeaderSingleArmEEF(Teleoperator):
         quat = Rotation.from_matrix(rot_matrix).as_quat()
         return [position, quat]
 
+    def _get_enable_reset_button_keys(self) -> tuple[str, str]:
+        if self.controller_side == "left":
+            return "A", "B"
+        return "X", "Y"
+
+    def _get_control_trigger_key(self) -> str:
+        return "LTr" if self.controller_side == "right" else "RTr"
+
     def handle_pose_data(self):
         while not self.stop_event.is_set():
             self.pause_event.wait()
             if self.stop_event.is_set():
                 break
             if self.is_connected:
-                if self.controller_side == "right":
-                    enable_button = self.ctrl["A"]
-                    reset_button = self.ctrl["B"]
-                    start_trigger = self.ctrl["RTr"]
-                else:
-                    enable_button = self.ctrl["X"]
-                    reset_button = self.ctrl["Y"]
-                    start_trigger = self.ctrl["LTr"]
+                enable_key, reset_key = self._get_enable_reset_button_keys()
+                enable_button = self.ctrl[enable_key]
+                reset_button = self.ctrl[reset_key]
+                start_trigger = self.ctrl[self._get_control_trigger_key()]
 
                 if enable_button and not self.startflag:
                     self.startflag = True

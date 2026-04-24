@@ -238,8 +238,8 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
 
     def _is_hand_control_enabled(self) -> bool:
         if getattr(self, "controller_side", self.handedness) == "right":
-            return self.startflag and self.ctrl["RTr"]
-        return self.startflag and self.ctrl["LTr"]
+            return self.startflag and self.ctrl["LTr"]
+        return self.startflag and self.ctrl["RTr"]
 
     def _is_trigger_gesture_mode(self) -> bool:
         return getattr(self.config, "hand_mode", "glove") == "trigger_gesture"

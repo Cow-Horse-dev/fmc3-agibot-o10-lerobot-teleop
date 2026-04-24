@@ -270,11 +270,11 @@ def _make_single_arm_eef_teleop(
 @pytest.mark.parametrize(
     ("handedness", "controller_side", "matching_start_button", "opposite_start_button"),
     [
-        ("left", "right", "A", "X"),
-        ("right", "left", "X", "A"),
+        ("left", "left", "A", "X"),
+        ("right", "right", "X", "A"),
     ],
 )
-def test_single_arm_start_button_matches_controller_side(
+def test_single_arm_start_button_uses_opposite_controller(
     monkeypatch, handedness, controller_side, matching_start_button, opposite_start_button
 ):
     module = _load_single_arm_eef_module(monkeypatch)
@@ -304,11 +304,11 @@ def test_single_arm_start_button_matches_controller_side(
 @pytest.mark.parametrize(
     ("handedness", "controller_side", "matching_reset_button", "opposite_reset_button"),
     [
-        ("left", "right", "B", "Y"),
-        ("right", "left", "Y", "B"),
+        ("left", "left", "B", "Y"),
+        ("right", "right", "Y", "B"),
     ],
 )
-def test_single_arm_reset_button_matches_controller_side(
+def test_single_arm_reset_button_uses_opposite_controller(
     monkeypatch, handedness, controller_side, matching_reset_button, opposite_reset_button
 ):
     module = _load_single_arm_eef_module(monkeypatch)
@@ -348,11 +348,11 @@ def test_single_arm_reset_button_matches_controller_side(
 @pytest.mark.parametrize(
     ("handedness", "controller_side", "matching_trigger", "opposite_trigger"),
     [
-        ("left", "right", "RTr", "LTr"),
-        ("right", "left", "LTr", "RTr"),
+        ("left", "left", "RTr", "LTr"),
+        ("right", "right", "LTr", "RTr"),
     ],
 )
-def test_single_arm_arm_control_requires_matching_side_trigger(
+def test_single_arm_arm_control_requires_opposite_trigger_gate(
     monkeypatch, handedness, controller_side, matching_trigger, opposite_trigger
 ):
     module = _load_single_arm_eef_module(monkeypatch)
@@ -390,11 +390,11 @@ def test_single_arm_arm_control_requires_matching_side_trigger(
 @pytest.mark.parametrize(
     ("handedness", "controller_side", "matching_trigger", "opposite_trigger"),
     [
-        ("left", "right", "RTr", "LTr"),
-        ("right", "left", "LTr", "RTr"),
+        ("left", "left", "RTr", "LTr"),
+        ("right", "right", "LTr", "RTr"),
     ],
 )
-def test_single_arm_hand_control_requires_matching_side_trigger(
+def test_single_arm_hand_control_requires_opposite_trigger_gate(
     monkeypatch, handedness, controller_side, matching_trigger, opposite_trigger
 ):
     module = _load_single_arm_agibot_module(monkeypatch)

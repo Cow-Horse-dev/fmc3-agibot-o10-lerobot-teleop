@@ -106,8 +106,17 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         self.cameras = make_cameras_from_configs(config.cameras)
         self._camera_observation_cache: dict[str, tuple[np.ndarray, np.ndarray | None]] = {}
         self._camera_fallback_active: dict[str, bool] = {}
-        for cam in self.cameras.values():
-            cam.connect()
+        connected_cameras = {}
+        for camera_name, cam in self.cameras.items():
+            try:
+                cam.connect()
+            except Exception as exc:
+                if not getattr(self.config, "allow_camera_read_failures", False):
+                    raise
+                logger.warning("Skipping unavailable camera %s: %s", camera_name, exc)
+                continue
+            connected_cameras[camera_name] = cam
+        self.cameras = connected_cameras
 
         self._is_connected = False
 

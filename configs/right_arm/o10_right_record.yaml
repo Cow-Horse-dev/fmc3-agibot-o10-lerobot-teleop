@@ -82,7 +82,7 @@ teleop:
 
   # 右臂录制时仍录右臂，但输入来自左侧控制器。
   handedness: right
-  controller_side: left
+  controller_side: right
 
   # Pico 位姿流端口。
   vr_pose_port: 8000
@@ -95,7 +95,7 @@ teleop:
 
   # 位姿控制来源。
   # 可选值：auto / left / right
-  wrist_pose_source: left
+  wrist_pose_source: right
 
   # 是否启用手控制。
   # - true: 手 + 臂一起录
