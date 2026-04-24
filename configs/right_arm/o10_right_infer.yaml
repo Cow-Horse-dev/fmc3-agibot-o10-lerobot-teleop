@@ -4,7 +4,6 @@
 # - infer 只读 `infer:` 和 `robot:` 两个块
 # - `model_path` 必须指向本机真实存在的模型目录
 # - `robot.include_eef_pose` / `tactile_mode` 必须与训练数据集一致
-# - 不同已训练模型的专用推理配置放在 `configs/right_arm/policies/`
 
 infer:
   policy: diffusion  # act / diffusion / pi0 / pi05 / smolvla / groot

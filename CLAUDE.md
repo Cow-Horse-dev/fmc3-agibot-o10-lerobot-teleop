@@ -88,8 +88,7 @@ Independent daemon stack feeding the robots layer:
 Configs are the primary behavior knob — prefer editing YAML over code:
 
 - `left_arm/`, `right_arm/`, `dual_arm/` contain one YAML per mode
-  (`o10_*_control|record|replay|infer.yaml`), plus `right_arm/policies/` with
-  policy-specific inference configs (ACT / diffusion / pi0).
+  (`o10_*_control|record|replay|infer.yaml`).
 - `reset_poses/o10_dual_reset.json` is the canonical reset pose for both arms and
   all pre-set hand gestures. YAML references it via `reset_poses_path`; YAML's
   `reset_gesture` picks a gesture (e.g. `pinch`, `tripod`). Overwrite only via

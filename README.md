@@ -122,12 +122,6 @@ python scripts/tools/convert_lerobot_to_openpi.py --src <lerobot_dir> --dst <ope
 复位姿态：
 - [o10_dual_reset.json](configs/reset_poses/o10_dual_reset.json) — 左右两侧 + 多手势（`pinch`、`tripod` 等）统一保存，所有模式共用
 
-策略专用推理配置：
-
-- [o10_right_infer_act_pick_blue_camera_into_black_tray.yaml](configs/right_arm/policies/o10_right_infer_act_pick_blue_camera_into_black_tray.yaml)
-- [o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml](configs/right_arm/policies/o10_right_infer_diffusion_pick_blue_camera_into_black_tray.yaml)
-- [o10_right_infer_pi0_038393_pick_blue_camera_into_black_tray.yaml](configs/right_arm/policies/o10_right_infer_pi0_038393_pick_blue_camera_into_black_tray.yaml)
-
 切换左右手时，改 yaml 里的：
 
 - `robot.handedness` / `teleop.handedness`
