@@ -1,72 +1,31 @@
 # O10 双臂推理配置
 # 供脚本 `./scripts/o10/dual_arm/infer_o10_dual.sh` 使用。
 #
-# 这份文件用于加载训练好的策略模型，让 O10 双臂直接执行推理。
-# 注意：
-# - `model_path` 必须改成你自己的模型目录
-# - 如果 `save_data: true`，才会保存推理过程中产生的数据
-# - 不同模型的专用推理配置建议放在 `configs/policies/` 目录下
+# - infer 只读 `infer:` 和 `robot:` 两个块，不读 teleop
+# - `model_path` 必须指向本机真实存在的模型目录
+# - `robot.include_eef_pose` / `tactile_mode` 必须与训练数据集一致，否则
+#   observation.state 维度/语义都会跟模型对不上
 
 infer:
-  # 策略类型。
   policy: diffusion
-
-  # 任务描述。
   task_description: pick up blue camera into black box
-
-  # 模型目录路径。
   model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
-
-  # 是否保存推理过程中的数据。
   save_data: false
-
-  # 是否用 Rerun 可视化推理过程中的相机和动作。
   display_data: true
-
-  # 是否启用异步推理。
   async_infer: false
-
-  # 运行多少个 episode。
   num_episodes: 100
-
-  # 单个 episode 最长时长，单位秒。
   episode_time_sec: 100
-
-  # 推理频率，单位 Hz。
-  fps: 15
-
-  # 推理设备。
+  fps: 30
   device: cuda
-
-  # 异步推理服务地址。
-  server_address: localhost:8080
-
-  # 自定义推理数据保存路径。
+  server_address: localhost:8080  # 仅 async_infer: true 时用
   save_path: null
-
-teleop:
-  type: pico_leader_dual_arm_agibot_o10
-  id: pico_dual
-  vr_pose_port: 8000
-  vr_ctrl_port: 8001
-  vr_device: pico_wrist
-  enable_hand: true
-  left:
-    handedness: left
-    wrist_pose_source: left
-    trigger_gesture: tripod
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
-  right:
-    handedness: right
-    wrist_pose_source: right
-    trigger_gesture: pinch
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
 
 robot:
   type: pico_follower_dual_arm_agibot_o10
   id: o10_dual
+  enable_hand: true
+  include_eef_pose: false   # 与 o10_dual_record.yaml 保持一致
+  tactile_mode: "7d"        # 与 o10_dual_record.yaml 保持一致
   left:
     port: can0
     handedness: left
@@ -93,4 +52,22 @@ robot:
       height: 480
       fps: 30
       fourcc: MJPG
+      rotation: NO_ROTATION
+    left_wrist:
+      type: realsense
+      serial_number_or_name: "260322276846"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+      color_mode: RGB
+      rotation: NO_ROTATION
+    right_wrist:
+      type: realsense
+      serial_number_or_name: "260322273018"
+      width: 640
+      height: 480
+      fps: 30
+      use_depth: false
+      color_mode: RGB
       rotation: NO_ROTATION

@@ -1,154 +1,56 @@
-# O10 单臂推理配置
+# O10 单臂推理配置（右臂）
 # 供脚本 `./scripts/o10/right_arm/infer_o10_right.sh` 使用。
 #
-# 这份文件用于加载训练好的策略模型，让 O10 直接执行推理。
-# 虽然文件名里还叫 `right`，但现在可以直接靠 YAML 里的 handedness 切左右。
-# 注意：
-# - `model_path` 必须改成你自己的模型目录
-# - 如果 `save_data: true`，才会保存推理过程中产生的数据
-# - 不同模型的专用推理配置建议放在 `configs/policies/` 目录下
-# - infer 不读取 Pico/VR 实时位姿，所以这里没有 `teleop.vr_device`
-# - `vr_device: pico` 只对 control / record 这类实时遥操作配置生效
+# - infer 只读 `infer:` 和 `robot:` 两个块
+# - `model_path` 必须指向本机真实存在的模型目录
+# - `robot.include_eef_pose` / `tactile_mode` 必须与训练数据集一致
+# - 不同已训练模型的专用推理配置放在 `configs/right_arm/policies/`
 
 infer:
-  # 策略类型。
-  # 可选值：
-  # - act
-  # - diffusion
-  # - pi0
-  # - pi05
-  # - smolvla
-  # - groot
-  policy: diffusion
-
-  # 任务描述。
-  # 会作为推理时的 task 文本输入。
+  policy: diffusion  # act / diffusion / pi0 / pi05 / smolvla / groot
   task_description: pick up blue camera into black box
-
-  # 模型目录路径。
-  # 这里必须改成你本机真实存在的模型目录。
   model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
-
-  # 是否保存推理过程中的数据。
-  # 可选值：
-  # - true: 保存
-  # - false: 不保存
   save_data: false
-
-  # 是否用 Rerun 可视化推理过程中的相机和动作。
-  # 可选值：
-  # - true: 打开 Rerun 可视化
-  # - false: 不显示
   display_data: true
-
-  # 是否启用异步推理。
-  # 可选值：
-  # - false: 同步推理，推荐默认值
-  # - true: 异步推理
   async_infer: false
-
-  # 运行多少个 episode。
   num_episodes: 100
-
-  # 单个 episode 最长时长，单位秒。
   episode_time_sec: 100
-
-  # 推理频率，单位 Hz。
   fps: 15
-
-  # 推理设备。
-  # 常见值：
-  # - cuda
-  # - cpu
-  device: cuda
-
-  # 异步推理服务地址。
-  # 只有 async_infer=true 时才有意义。
-  server_address: localhost:8080
-
-  # 自定义推理数据保存路径。
-  # - null: 使用程序默认路径
-  # - /your/path: 保存到指定目录
+  device: cuda  # cuda / cpu
+  server_address: localhost:8080  # 仅 async_infer: true 时用
   save_path: null
 
 robot:
-  # 机器人类型。
-  # 当前 O10 右臂固定使用这个值。
   type: pico_follower_single_arm_agibot_o10
-
-  # 机械臂 CAN 口。
-  port: can1
-
-  # 机器人名字，仅用于日志显示。
   id: o10_right
-
-  # 选择“哪只 follower 手/臂”执行推理。
+  port: can1
   handedness: right
-
-  # O10 手通道模式。
-  # 当前代码真正支持的只有：
-  # - multiChannel
+  enable_hand: true
+  include_eef_pose: false   # 与 o10_right_record.yaml 保持一致
+  tactile_mode: "none"
   channel_mode: multiChannel
-
-  # OmniHand device_id。
   device_id: 1
-
-  # CANFD 适配器编号。
   canfd_id: 0
-
-  # O10 channel_id。
-  # 保持 null 时会自动跟随 robot.handedness：
-  # - left  -> 0
-  # - right -> 1
-  channel_id: null
-
-  # 当前起始姿态会在 connect 时自动写回这里，后续 return_zero / reset 都回到这组关节。
+  channel_id: null  # null 自动跟随 handedness: left->0, right->1
   reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
   reset_gesture: pinch
 
   cameras:
-    right:
-      # 右侧 RealSense 相机。
+    right:                         # 单右臂录制时腕相机 key 就叫 right，推理要一致
       type: realsense
-
-      # RealSense 序列号。
       serial_number_or_name: "260322273018"
-
-      # 图像宽高与帧率。
       width: 640
       height: 480
       fps: 30
-
-      # 是否采集深度图。
       use_depth: false
-
-      # 彩色图通道顺序。
-      # 可选值：RGB / BGR
       color_mode: RGB
-
-      # 图像旋转方式。
-      # 可选值：
-      # - NO_ROTATION
-      # - ROTATE_90
-      # - ROTATE_180
-      # - ROTATE_270
       rotation: NO_ROTATION
 
     top:
-      # 顶部 USB 相机。
       type: opencv
-
-      # 建议使用稳定的 /dev/v4l/by-id 路径。
       index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-
       width: 640
       height: 480
       fps: 30
-
-      # 图像旋转方式。
-      # 可选值：
-      # - NO_ROTATION
-      # - ROTATE_90
-      # - ROTATE_180
-      # - ROTATE_270
+      fourcc: MJPG
       rotation: NO_ROTATION

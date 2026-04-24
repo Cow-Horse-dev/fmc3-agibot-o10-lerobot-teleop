@@ -176,7 +176,7 @@ def test_single_arm_realsense_rotations_are_no_rotation():
 
     left_control_rotation = left_control_config["robot"]["cameras"]["right"]["rotation"]
     left_record_rotation = left_record_config["robot"]["cameras"]["left"]["rotation"]
-    left_infer_rotation = left_infer_config["robot"]["cameras"]["right"]["rotation"]
+    left_infer_rotation = left_infer_config["robot"]["cameras"]["left"]["rotation"]
     control_rotation = control_config["robot"]["cameras"]["right"]["rotation"]
     record_rotation = record_config["robot"]["cameras"]["right"]["rotation"]
     infer_rotation = infer_config["robot"]["cameras"]["right"]["rotation"]
