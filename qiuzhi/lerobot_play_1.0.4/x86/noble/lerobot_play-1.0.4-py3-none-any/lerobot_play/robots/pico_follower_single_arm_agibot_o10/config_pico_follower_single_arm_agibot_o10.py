@@ -11,6 +11,7 @@ class PicoFollowerSingleArmAgibotO10Config(RobotConfig):
     port: str
     handedness: str = "right"
     enable_hand: bool = True
+    allow_camera_read_failures: bool = False
     channel_mode: str = "multiChannel"
     device_id: int = 1
     canfd_id: int = 0

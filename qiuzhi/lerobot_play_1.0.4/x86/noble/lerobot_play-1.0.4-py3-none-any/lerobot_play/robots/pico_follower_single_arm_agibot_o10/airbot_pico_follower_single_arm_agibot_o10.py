@@ -104,6 +104,8 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
         resolve_auto_opencv_cameras(config.cameras)
         self.cameras = make_cameras_from_configs(config.cameras)
+        self._camera_observation_cache: dict[str, tuple[np.ndarray, np.ndarray | None]] = {}
+        self._camera_fallback_active: dict[str, bool] = {}
         for cam in self.cameras.values():
             cam.connect()
 
@@ -222,6 +224,71 @@ class PicoFollowerSingleArmAgibotO10(Robot):
     @staticmethod
     def _depth_observation_name(camera_name: str) -> str:
         return f"{camera_name}_depth"
+
+    def _get_camera_observation_cache(self) -> dict[str, tuple[np.ndarray, np.ndarray | None]]:
+        cache = getattr(self, "_camera_observation_cache", None)
+        if cache is None:
+            cache = {}
+            self._camera_observation_cache = cache
+        return cache
+
+    def _get_camera_fallback_active(self) -> dict[str, bool]:
+        fallback_active = getattr(self, "_camera_fallback_active", None)
+        if fallback_active is None:
+            fallback_active = {}
+            self._camera_fallback_active = fallback_active
+        return fallback_active
+
+    def _mark_camera_read_success(self, camera_name: str) -> None:
+        if self._get_camera_fallback_active().pop(camera_name, False):
+            logger.info("Camera %s recovered.", camera_name)
+
+    def _mark_camera_read_failure(
+        self, camera_name: str, exc: Exception, *, using_cached_frame: bool
+    ) -> None:
+        fallback_active = self._get_camera_fallback_active()
+        if fallback_active.get(camera_name):
+            return
+        fallback_active[camera_name] = True
+        fallback_mode = "reusing last frame" if using_cached_frame else "using zero frame"
+        logger.warning("Camera read failed for %s, %s: %s", camera_name, fallback_mode, exc)
+
+    def _zero_camera_color_frame(self, camera_name: str) -> np.ndarray:
+        camera_config = self.config.cameras[camera_name]
+        return np.zeros((camera_config.height, camera_config.width, 3), dtype=np.uint8)
+
+    def _zero_camera_depth_frame(self, camera_name: str) -> np.ndarray:
+        camera_config = self.config.cameras[camera_name]
+        return np.zeros((camera_config.height, camera_config.width), dtype=np.uint16)
+
+    def _read_camera_observation(self, camera_name: str, camera: Any) -> tuple[np.ndarray, np.ndarray | None]:
+        uses_depth = self._camera_uses_depth(self.config.cameras[camera_name])
+        cache = self._get_camera_observation_cache()
+        try:
+            if uses_depth:
+                color_frame, depth_frame = camera.async_read_color_and_depth()
+                cache[camera_name] = (color_frame, depth_frame)
+                self._mark_camera_read_success(camera_name)
+                return color_frame, depth_frame
+
+            color_frame = camera.async_read()
+            cache[camera_name] = (color_frame, None)
+            self._mark_camera_read_success(camera_name)
+            return color_frame, None
+        except Exception as exc:
+            if not getattr(self.config, "allow_camera_read_failures", False):
+                raise
+
+            cached_frames = cache.get(camera_name)
+            if cached_frames is not None:
+                self._mark_camera_read_failure(camera_name, exc, using_cached_frame=True)
+                return cached_frames
+
+            zero_color_frame = self._zero_camera_color_frame(camera_name)
+            zero_depth_frame = self._zero_camera_depth_frame(camera_name) if uses_depth else None
+            cache[camera_name] = (zero_color_frame, zero_depth_frame)
+            self._mark_camera_read_failure(camera_name, exc, using_cached_frame=False)
+            return zero_color_frame, zero_depth_frame
 
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
@@ -359,15 +426,12 @@ class PicoFollowerSingleArmAgibotO10(Robot):
                     obs_dict[feature_name] = tactile_full[index]
 
         for cam_key, cam in self.cameras.items():
-            if self._camera_uses_depth(self.config.cameras[cam_key]):
-                color_frame, depth_frame = cam.async_read_color_and_depth()
-                obs_dict[cam_key] = color_frame
+            color_frame, depth_frame = self._read_camera_observation(cam_key, cam)
+            obs_dict[cam_key] = color_frame
+            if depth_frame is not None:
                 obs_dict[self._depth_observation_name(cam_key)] = np.expand_dims(
                     depth_frame, axis=-1
                 )
-                continue
-
-            obs_dict[cam_key] = cam.async_read()
 
         return obs_dict
 

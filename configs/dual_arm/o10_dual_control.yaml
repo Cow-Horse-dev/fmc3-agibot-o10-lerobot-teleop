@@ -28,6 +28,7 @@ robot:
   type: pico_follower_dual_arm_agibot_o10
   id: o10_dual
   enable_hand: true  # true, false
+  allow_camera_read_failures: true
   left:
     port: can0  # CAN 口
     handedness: left
@@ -63,7 +64,7 @@ robot:
       fps: 30
       use_depth: false
       color_mode: rgb
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
     right_wrist:
       type: intelrealsense
       serial_number_or_name: "260322273018"
@@ -72,7 +73,7 @@ robot:
       fps: 30
       use_depth: false
       color_mode: rgb
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
 
 fps: 30
 display_data: true  # true, false

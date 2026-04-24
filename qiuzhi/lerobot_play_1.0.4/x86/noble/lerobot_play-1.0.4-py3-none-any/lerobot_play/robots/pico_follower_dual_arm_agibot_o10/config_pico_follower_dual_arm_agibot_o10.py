@@ -23,6 +23,7 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
     enable_hand: bool = True
+    allow_camera_read_failures: bool = False
     include_eef_pose: bool = True
     tactile_mode: str = "none"  # "none", "7d", "80d", "130d"
     disable_torque_on_disconnect: bool = True

@@ -52,6 +52,7 @@ teleop:
 robot:
   # 机器人类型。
   type: pico_follower_single_arm_agibot_o10
+  allow_camera_read_failures: true
 
   # 机械臂 CAN 口。
   port: can1
@@ -109,7 +110,7 @@ robot:
       # - ROTATE_90
       # - ROTATE_180
       # - ROTATE_270
-      rotation: ROTATE_180
+      rotation: NO_ROTATION
 
     top:
       # 顶部 USB 相机。

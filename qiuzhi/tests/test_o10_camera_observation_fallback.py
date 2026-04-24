@@ -1,0 +1,291 @@
+import importlib.util
+import sys
+import types
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LEROBOT_PLAY_PACKAGE_ROOT = (
+    REPO_ROOT
+    / "lerobot_play_1.0.4"
+    / "x86"
+    / "noble"
+    / "lerobot_play-1.0.4-py3-none-any"
+)
+SINGLE_MODULE_PATH = (
+    LEROBOT_PLAY_PACKAGE_ROOT
+    / "lerobot_play"
+    / "robots"
+    / "pico_follower_single_arm_agibot_o10"
+    / "airbot_pico_follower_single_arm_agibot_o10.py"
+)
+DUAL_MODULE_PATH = (
+    LEROBOT_PLAY_PACKAGE_ROOT
+    / "lerobot_play"
+    / "robots"
+    / "pico_follower_dual_arm_agibot_o10"
+    / "airbot_pico_follower_dual_arm_agibot_o10.py"
+)
+
+if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
+
+
+def _install_stub_module(monkeypatch, name: str, **attrs):
+    module = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(module, key, value)
+    monkeypatch.setitem(sys.modules, name, module)
+    return module
+
+
+def _install_common_robot_stubs(monkeypatch):
+    class FakeRobot:
+        def __init__(self, config):
+            self.config = config
+
+    class FakeArmKdlNumerical:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def forward_kinematics(self, joints):
+            return np.eye(4)
+
+    class FakePersistentJointTargetStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def normalize(self, joint_pos):
+            return list(joint_pos)
+
+    class FakeAgibotO10Hand:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    arm_feature_names = tuple(f"joint{index}.pos" for index in range(1, 7))
+    hand_feature_names = tuple(f"hand_joint_{index}.pos" for index in range(10))
+    pose_feature_names = tuple(
+        ("pose.x", "pose.y", "pose.z", "quaternion.qx", "quaternion.qy", "quaternion.qz", "quaternion.qw")
+    )
+
+    _install_stub_module(
+        monkeypatch,
+        "airbot_hardware_py",
+        Play=types.SimpleNamespace(create=lambda *args, **kwargs: object()),
+        MotorType=types.SimpleNamespace(OD=object(), DM=object(), NA=object()),
+        EEFType=types.SimpleNamespace(NA=object()),
+        MotorControlMode=types.SimpleNamespace(PVT=object()),
+        create_asio_executor=lambda *args, **kwargs: types.SimpleNamespace(
+            get_io_context=lambda: object()
+        ),
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot.cameras.utils",
+        make_cameras_from_configs=lambda configs: {},
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot.robots.robot",
+        Robot=FakeRobot,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot.utils.errors",
+        DeviceNotConnectedError=RuntimeError,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "mmk2_kdl_py",
+        ArmKdlNumerical=FakeArmKdlNumerical,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.utils.agibot_o10",
+        AGIBOT_O10_ARM_FEATURE_NAMES=arm_feature_names,
+        AGIBOT_O10_HAND_FEATURE_NAMES=hand_feature_names,
+        AGIBOT_O10_POSE_FEATURE_NAMES=pose_feature_names,
+        AgibotO10Hand=FakeAgibotO10Hand,
+        agibot_o10_action_feature_types=lambda: {
+            name: float for name in (*arm_feature_names, *hand_feature_names, *pose_feature_names)
+        },
+        agibot_o10_joint_action_feature_types=lambda: {
+            name: float for name in (*arm_feature_names, *hand_feature_names)
+        },
+        build_agibot_o10_joint_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*arm_feature_names, *hand_feature_names), values, strict=True)
+        },
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.utils.camera_autodetect",
+        resolve_auto_opencv_cameras=lambda *args, **kwargs: None,
+    )
+    _install_stub_module(
+        monkeypatch,
+        "lerobot_play.utils.joint_target_store",
+        PersistentJointTargetStore=FakePersistentJointTargetStore,
+        load_reset_poses=lambda *args, **kwargs: (None, None),
+    )
+
+
+def _load_single_arm_module(monkeypatch):
+    _install_common_robot_stubs(monkeypatch)
+
+    class FakePicoFollowerSingleArmAgibotO10Config:
+        pass
+
+    _install_stub_module(
+        monkeypatch,
+        "test_single_arm_robot_module.config_pico_follower_single_arm_agibot_o10",
+        PicoFollowerSingleArmAgibotO10Config=FakePicoFollowerSingleArmAgibotO10Config,
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "test_single_arm_robot_module",
+        SINGLE_MODULE_PATH,
+        submodule_search_locations=[str(SINGLE_MODULE_PATH.parent)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = "test_single_arm_robot_module"
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_dual_arm_module(monkeypatch):
+    _install_common_robot_stubs(monkeypatch)
+
+    class FakePicoFollowerDualArmAgibotO10Config:
+        pass
+
+    _install_stub_module(
+        monkeypatch,
+        "test_dual_arm_robot_module.config_pico_follower_dual_arm_agibot_o10",
+        PicoFollowerDualArmAgibotO10Config=FakePicoFollowerDualArmAgibotO10Config,
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "test_dual_arm_robot_module",
+        DUAL_MODULE_PATH,
+        submodule_search_locations=[str(DUAL_MODULE_PATH.parent)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = "test_dual_arm_robot_module"
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class _ColorCamera:
+    def __init__(self, reads):
+        self._reads = list(reads)
+
+    def async_read(self):
+        result = self._reads.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class _DepthCamera:
+    def __init__(self, reads):
+        self._reads = list(reads)
+
+    def async_read_color_and_depth(self):
+        result = self._reads.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_single_arm_camera_timeout_reuses_cached_depth_frames_when_allowed(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        allow_camera_read_failures=True,
+        cameras={"wrist": SimpleNamespace(height=2, width=3, use_depth=True)},
+    )
+    robot.hand = None
+    robot.cameras = {
+        "wrist": _DepthCamera(
+            [
+                (
+                    np.full((2, 3, 3), 7, dtype=np.uint8),
+                    np.arange(6, dtype=np.uint16).reshape(2, 3),
+                ),
+                TimeoutError("camera timeout"),
+            ]
+        )
+    }
+    robot.get_joint_pos = lambda: (
+        [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+        [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+    )
+
+    first_obs = robot.get_observation()
+    second_obs = robot.get_observation()
+
+    np.testing.assert_array_equal(first_obs["wrist"], second_obs["wrist"])
+    np.testing.assert_array_equal(first_obs["wrist_depth"], second_obs["wrist_depth"])
+    assert second_obs["wrist_depth"].shape == (2, 3, 1)
+    assert second_obs["wrist_depth"].dtype == np.uint16
+
+
+def test_single_arm_camera_timeout_still_raises_when_fallback_is_disabled(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        allow_camera_read_failures=False,
+        cameras={"top": SimpleNamespace(height=2, width=3, use_depth=False)},
+    )
+    robot.hand = None
+    robot.cameras = {"top": _ColorCamera([TimeoutError("camera timeout")])}
+    robot.get_joint_pos = lambda: (
+        [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+        [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+    )
+
+    with pytest.raises(TimeoutError, match="camera timeout"):
+        robot.get_observation()
+
+
+def test_dual_arm_camera_timeout_returns_zero_frame_when_allowed(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        enable_hand=False,
+        allow_camera_read_failures=True,
+        cameras={"top": SimpleNamespace(height=2, width=4, use_depth=False)},
+    )
+    robot.cameras = {"top": _ColorCamera([TimeoutError("camera timeout")])}
+    robot.get_joint_pos = lambda: {
+        "left": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+        "right": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+    }
+
+    obs = robot.get_observation()
+
+    assert obs["top"].shape == (2, 4, 3)
+    assert obs["top"].dtype == np.uint8
+    assert np.count_nonzero(obs["top"]) == 0

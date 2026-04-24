@@ -10,6 +10,7 @@ def test_dual_control_yaml_parses():
         config = yaml.safe_load(f)
     assert config["teleop"]["type"] == "pico_leader_dual_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["left"]["port"] == "can0"
     assert config["robot"]["right"]["port"] == "can1"
     assert config["teleop"]["left"]["handedness"] == "left"
@@ -21,6 +22,7 @@ def test_left_control_yaml_parses():
         config = yaml.safe_load(f)
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
+    assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["port"] == "can0"
     assert config["teleop"]["handedness"] == "left"
     assert config["teleop"]["controller_side"] == "right"
@@ -33,6 +35,7 @@ def test_right_control_yaml_parses():
         config = yaml.safe_load(f)
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
+    assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["port"] == "can1"
     assert config["teleop"]["handedness"] == "right"
     assert config["teleop"]["controller_side"] == "left"
@@ -85,7 +88,7 @@ def test_dual_record_yaml_keeps_left_trigger_mode_and_tripod_left_hand():
     assert config["teleop"]["right"]["trigger_gesture"] == "pinch"
 
 
-def test_dual_arm_wrist_camera_rotations_match_single_arm_reference():
+def test_dual_arm_wrist_camera_rotations_are_no_rotation():
     with open("configs/dual_arm/o10_dual_record.yaml") as f:
         dual_record = yaml.safe_load(f)
     with open("configs/dual_arm/o10_dual_control.yaml") as f:
@@ -99,15 +102,15 @@ def test_dual_arm_wrist_camera_rotations_match_single_arm_reference():
     assert (
         dual_record["robot"]["cameras"]["left_wrist"]["rotation"]
         == left_record["robot"]["cameras"]["left"]["rotation"]
-        == "ROTATE_180"
+        == "NO_ROTATION"
     )
     assert (
         dual_record["robot"]["cameras"]["right_wrist"]["rotation"]
         == right_record["robot"]["cameras"]["right"]["rotation"]
-        == "ROTATE_180"
+        == "NO_ROTATION"
     )
-    assert dual_control["robot"]["cameras"]["left_wrist"]["rotation"] == "ROTATE_180"
-    assert dual_control["robot"]["cameras"]["right_wrist"]["rotation"] == "ROTATE_180"
+    assert dual_control["robot"]["cameras"]["left_wrist"]["rotation"] == "NO_ROTATION"
+    assert dual_control["robot"]["cameras"]["right_wrist"]["rotation"] == "NO_ROTATION"
 
 
 def test_dual_replay_yaml_builds_o10_dual_robot_config():
@@ -157,7 +160,13 @@ def test_right_record_yaml_uses_joint_only_state_without_tactile():
     assert "right" in config["robot"]["cameras"]
 
 
-def test_right_control_realsense_rotation_matches_right_record_and_infer():
+def test_single_arm_realsense_rotations_are_no_rotation():
+    with open("configs/left_arm/o10_left_control.yaml") as f:
+        left_control_config = yaml.safe_load(f)
+    with open("configs/left_arm/o10_left_record.yaml") as f:
+        left_record_config = yaml.safe_load(f)
+    with open("configs/left_arm/o10_left_infer.yaml") as f:
+        left_infer_config = yaml.safe_load(f)
     with open("configs/right_arm/o10_right_control.yaml") as f:
         control_config = yaml.safe_load(f)
     with open("configs/right_arm/o10_right_record.yaml") as f:
@@ -165,8 +174,12 @@ def test_right_control_realsense_rotation_matches_right_record_and_infer():
     with open("configs/right_arm/o10_right_infer.yaml") as f:
         infer_config = yaml.safe_load(f)
 
+    left_control_rotation = left_control_config["robot"]["cameras"]["right"]["rotation"]
+    left_record_rotation = left_record_config["robot"]["cameras"]["left"]["rotation"]
+    left_infer_rotation = left_infer_config["robot"]["cameras"]["right"]["rotation"]
     control_rotation = control_config["robot"]["cameras"]["right"]["rotation"]
     record_rotation = record_config["robot"]["cameras"]["right"]["rotation"]
     infer_rotation = infer_config["robot"]["cameras"]["right"]["rotation"]
 
-    assert control_rotation == record_rotation == infer_rotation == "ROTATE_180"
+    assert left_control_rotation == left_record_rotation == left_infer_rotation == "NO_ROTATION"
+    assert control_rotation == record_rotation == infer_rotation == "NO_ROTATION"
