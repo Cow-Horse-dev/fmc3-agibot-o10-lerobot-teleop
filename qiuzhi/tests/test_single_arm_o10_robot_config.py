@@ -16,6 +16,10 @@ if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
 
 
+CONFIG_MODULE_NAME = (
+    "lerobot_play.robots.pico_follower_single_arm_agibot_o10."
+    "config_pico_follower_single_arm_agibot_o10"
+)
 CONFIG_MODULE_PATH = (
     LEROBOT_PLAY_PACKAGE_ROOT
     / "lerobot_play"
@@ -31,13 +35,16 @@ def _load_config_class():
     if _CONFIG_CLASS is not None:
         return _CONFIG_CLASS
 
-    spec = importlib.util.spec_from_file_location(
-        "test_single_arm_o10_robot_config_module",
-        CONFIG_MODULE_PATH,
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(module)
+    module = sys.modules.get(CONFIG_MODULE_NAME)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(
+            "test_single_arm_o10_robot_config_module",
+            CONFIG_MODULE_PATH,
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec is not None and spec.loader is not None
+        spec.loader.exec_module(module)
+
     _CONFIG_CLASS = module.PicoFollowerSingleArmAgibotO10Config
     return _CONFIG_CLASS
 

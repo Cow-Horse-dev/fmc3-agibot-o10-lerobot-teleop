@@ -15,7 +15,6 @@ import numpy as np
 from time import time_ns
 import asyncio
 import zmq
-import pkg_resources
 from scipy.spatial.transform import Rotation
 
 from lerobot.cameras.utils import make_cameras_from_configs

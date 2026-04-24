@@ -82,7 +82,9 @@
       "Read(//dev/v4l/by-id/**)",
       "Bash(ps -p 17161,17657 -o pid,cmd)",
       "Bash(fuser /dev/video12)",
-      "Bash(kill -9 17657)"
+      "Bash(kill -9 17657)",
+      "Bash(awk -F: '{sum+=$2} END {print \"total tests:\", sum}')",
+      "Bash(python run_lerobot_play.py help)"
     ]
   },
   "enabledPlugins": {

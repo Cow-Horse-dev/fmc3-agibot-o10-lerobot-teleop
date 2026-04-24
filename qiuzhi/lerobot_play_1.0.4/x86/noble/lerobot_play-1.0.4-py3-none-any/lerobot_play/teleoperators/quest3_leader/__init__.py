@@ -1,13 +1,27 @@
-# quest3_leader/__init__.py
-try:
-    from .webrtc_base import WebRTCServerBase
-    from .quest_webrtc import QuestWebrtcVRTeleop
-    from .quest3_leader import Quest3Leader
-    from .config_quest3_leader import Quest3LeaderConfig
-except ImportError as e:
-    # 在直接运行时可能会失败，但作为包导入时应该工作
-    import warnings
+"""Quest3 leader teleoperator package exports.
 
-    warnings.warn(f"导入模块失败: {e}")
+Keep imports lazy so config-only imports do not require optional WebRTC,
+ROS, or hardware dependencies.
+"""
 
-__all__ = ["WebRTCServerBase", "QuestWebrtcVRTeleop", "Quest3Leader"]
+__all__ = ["WebRTCServerBase", "QuestWebrtcVRTeleop", "Quest3Leader", "Quest3LeaderConfig"]
+
+
+def __getattr__(name):
+    if name == "WebRTCServerBase":
+        from .webrtc_base import WebRTCServerBase
+
+        return WebRTCServerBase
+    if name == "QuestWebrtcVRTeleop":
+        from .quest_webrtc import QuestWebrtcVRTeleop
+
+        return QuestWebrtcVRTeleop
+    if name == "Quest3Leader":
+        from .quest3_leader import Quest3Leader
+
+        return Quest3Leader
+    if name == "Quest3LeaderConfig":
+        from .config_quest3_leader import Quest3LeaderConfig
+
+        return Quest3LeaderConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

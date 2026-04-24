@@ -1,4 +1,5 @@
 from pathlib import Path
+import importlib.util
 import sys
 import types
 from types import SimpleNamespace
@@ -28,7 +29,17 @@ sys.modules.setdefault("mcap.writer", fake_mcap_writer)
 sys.modules.setdefault("mcap.reader", fake_mcap_reader)
 
 try:
-    from lerobot_play.utils.lerobot_dataset import LeRobotDataset
+    spec = importlib.util.spec_from_file_location(
+        "test_rerecord_lerobot_dataset_module",
+        LEROBOT_PLAY_PACKAGE_ROOT
+        / "lerobot_play"
+        / "utils"
+        / "lerobot_dataset.py",
+    )
+    dataset_module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(dataset_module)
+    LeRobotDataset = dataset_module.LeRobotDataset
 except ImportError as exc:
     LeRobotDataset = None
     _IMPORT_ERROR = exc
@@ -54,7 +65,17 @@ class _FakeWriter:
 
 
 def test_clear_episode_buffer_rerecord_handles_scalar_episode_index(tmp_path):
-    dataset = LeRobotDataset.__new__(LeRobotDataset)
+    class FakeDataset:
+        clear_episode_buffer = LeRobotDataset.clear_episode_buffer
+        create_episode_buffer = LeRobotDataset.create_episode_buffer
+        _get_image_file_path = LeRobotDataset._get_image_file_path
+        _get_image_file_dir = LeRobotDataset._get_image_file_dir
+        _get_mcap_file_path = LeRobotDataset._get_mcap_file_path
+        _restart_image_writer = LeRobotDataset._restart_image_writer
+        stop_image_writer = LeRobotDataset.stop_image_writer
+        _wait_image_writer = LeRobotDataset._wait_image_writer
+
+    dataset = FakeDataset()
     dataset.root = tmp_path
     dataset.meta = SimpleNamespace(
         total_episodes=0,

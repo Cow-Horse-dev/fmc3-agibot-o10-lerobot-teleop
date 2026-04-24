@@ -1,197 +1,219 @@
 # arm-hand-teleop
 
-Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense 相机的遥操作、数据采集、回放和策略推理系统。
+Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense/USB 相机的遥操作、数据采集、回放和策略推理系统。
 
-基于 `lerobot_play`，接入 Pico VR 头显 + 宇叠手套作为输入设备。手模式支持宇叠手套（`glove`）与 VR 扳机手势（`trigger_gesture`，通过 yaml 中 `teleop.hand_mode` 切换）。
+项目基于 vendored `lerobot_play`，主要输入设备是 Pico VR 手柄/腕部位姿，手部输入可使用宇叠手套（`glove`）或 VR 扳机手势（`trigger_gesture`）。
 
 ## 目录说明
 
-- `configs/` — 控制、录制、推理、回放的 yaml/json 配置
-- `scripts/` — 日常启动脚本和工具
-- `qiuzhi/` — vendored 的 `lerobot_play` 代码和测试
-- `yudie/` — 手套、OmniHand、HDService、HDWeb 相关代码和 SDK
-- `run_lerobot_play.py` — 项目统一入口
+- `configs/`：控制、录制、推理、回放配置，以及复位姿态 JSON。
+- `scripts/`：日常启动脚本、HDService/HDWeb 服务脚本和工具脚本。
+- `qiuzhi/`：vendored `lerobot_play` 代码和 Python 回归测试。
+- `yudie/`：宇叠手套、OmniHand、HDService、HDWeb 相关代码和 SDK。
+- `run_lerobot_play.py`：项目统一入口，所有 O10 脚本都包装它。
 
-## 环境说明
+## 环境与解释器
 
-日常启动脚本时不需要手动 `conda activate`，`scripts/o10/` 和 `scripts/services/` 下的 `.sh` 会自动寻找 Python 解释器：
+日常使用脚本时通常不需要手动 `conda activate`。`scripts/o10/` 和 `scripts/services/` 下的 shell 脚本会按以下顺序寻找 Python：
 
-```
+```text
 ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > python3
 ```
 
-需要手动进虚拟环境的场景：手动跑 `python`、装包、跑测试。
+需要手动运行 Python、装包或跑测试时再进入环境：
 
 ```bash
 conda activate arm-hand-teleop
 ```
 
-显式指定解释器：
+也可以显式指定解释器：
 
 ```bash
 ARM_HAND_TELEOP_PYTHON=/your/python ./scripts/o10/right_arm/control_o10_right.sh
 ```
 
-测试依赖 `pytest`，不在 env 默认安装：
+测试依赖 `pytest`，如环境里没有可安装：
 
 ```bash
 conda activate arm-hand-teleop
 pip install pytest
 ```
 
-## 直接调用统一入口
+## 统一入口
 
-所有 `.sh` 都是对 `run_lerobot_play.py` 的包装，也可以直接调：
+推荐日常使用 `scripts/o10/.../*.sh`。需要直接调用入口时注意参数名不同：
 
 ```bash
-python run_lerobot_play.py help                                            # 列子命令
-python run_lerobot_play.py {control|record|replay|infer|train} --config_path <yaml>
-python run_lerobot_play.py {set_pose|save_reset_pose|save_dual_reset_pose} [args]
+python run_lerobot_play.py help
+
+# control 使用 --config_path
+python run_lerobot_play.py control --config_path configs/right_arm/o10_right_control.yaml
+
+# record / replay / infer 使用 --yaml
+python run_lerobot_play.py record --yaml configs/right_arm/o10_right_record.yaml
+python run_lerobot_play.py replay --yaml configs/right_arm/o10_right_replay.yaml
+python run_lerobot_play.py infer  --yaml configs/right_arm/o10_right_infer.yaml
+
+# 其他工具入口
+python run_lerobot_play.py set_pose [args]
+python run_lerobot_play.py save_reset_pose [args]
+python run_lerobot_play.py save_dual_reset_pose [args]
 ```
 
 ## 常用启动命令
 
+先进入项目根目录：
+
 ```bash
 cd ~/workspace/arm-hand-teleop
+```
 
-# 手套服务
+### 手套服务
+
+`hand_mode: glove` 需要先启动 HDService；`trigger_gesture` 不需要手套服务。
+
+```bash
 ./scripts/services/start_hdservice.sh              # 前台启动
 ./scripts/services/start_hdservice.sh --background # 后台启动
 ./scripts/services/stop_hdservice.sh
 ./scripts/services/restart_hdservice.sh
+
 ./scripts/services/start_hdweb.sh                  # HDWeb 仪表盘
 ./scripts/services/stop_hdweb.sh
-
-# 右臂（单臂）
-./scripts/o10/right_arm/control_o10_right.sh            # 实时遥操作
-./scripts/o10/right_arm/record_o10_right.sh             # 数据录制
-./scripts/o10/right_arm/replay_o10_right.sh             # 轨迹回放
-./scripts/o10/right_arm/infer_o10_right.sh              # 策略推理（GPU）
-./scripts/o10/right_arm/infer_o10_right_cpu.sh          # 策略推理（CPU）
-
-# 左臂（单臂）
-./scripts/o10/left_arm/control_o10_left.sh              # 实时遥操作
-./scripts/o10/left_arm/record_o10_left.sh               # 数据录制
-./scripts/o10/left_arm/replay_o10_left.sh               # 轨迹回放
-./scripts/o10/left_arm/infer_o10_left.sh                # 策略推理
-
-# 双臂
-./scripts/o10/dual_arm/control_o10_dual.sh              # 实时遥操作
-./scripts/o10/dual_arm/record_o10_dual.sh               # 数据录制
-./scripts/o10/dual_arm/replay_o10_dual.sh               # 轨迹回放
-./scripts/o10/dual_arm/infer_o10_dual.sh                # 策略推理
 ```
 
-## 工具脚本
+### 单右臂
 
 ```bash
-# 读取当前臂+手关节角度，保存为复位姿态 JSON
-python scripts/tools/save_reset_pose.py                          # 单臂
-python scripts/tools/save_reset_pose.py --output configs/reset_poses/o10_dual_reset.json
-python scripts/tools/save_dual_reset_pose.py                     # 双臂（左右同时抓取）
-python scripts/tools/save_gesture_reset_poses.py                 # 依次保存 pinch/tripod/... 多组手势
-
-# 设置臂+手到指定关节角度，用于查看姿态
-python scripts/tools/set_pose.py --from-json configs/reset_poses/o10_dual_reset.json
-python scripts/tools/set_pose.py --arm 0 0 0 0 0 0
-python scripts/tools/set_pose.py --read-only   # 只读取当前姿态
-
-# 从录制好的 LeRobot 数据集检查触觉通道是否正确采到数据
-python scripts/tools/check_tactile_success.py --dataset.root <dir>
-
-# 把 LeRobot v3.0 数据集转成 openpi 训练格式
-python scripts/tools/convert_lerobot_to_openpi.py --src <lerobot_dir> --dst <openpi_dir>
+./scripts/o10/right_arm/control_o10_right.sh       # 实时遥操作
+./scripts/o10/right_arm/record_o10_right.sh        # 数据录制
+./scripts/o10/right_arm/replay_o10_right.sh        # 轨迹回放
+./scripts/o10/right_arm/infer_o10_right.sh         # GPU 策略推理
+./scripts/o10/right_arm/infer_o10_right_cpu.sh     # CPU 策略推理示例
 ```
+
+### 单左臂
+
+```bash
+./scripts/o10/left_arm/control_o10_left.sh         # 实时遥操作
+./scripts/o10/left_arm/record_o10_left.sh          # 数据录制
+./scripts/o10/left_arm/replay_o10_left.sh          # 轨迹回放
+./scripts/o10/left_arm/infer_o10_left.sh           # 策略推理
+```
+
+### 双臂
+
+```bash
+./scripts/o10/dual_arm/control_o10_dual.sh         # 实时遥操作
+./scripts/o10/dual_arm/record_o10_dual.sh          # 数据录制
+./scripts/o10/dual_arm/replay_o10_dual.sh          # 轨迹回放
+./scripts/o10/dual_arm/infer_o10_dual.sh           # 策略推理
+```
+
+## Pico 控制逻辑
+
+当前配置和代码对齐如下。
+
+| 模式 | 运动输入 | 使能 | 停止 + 复位 | 按住门控 |
+|---|---|---|---|---|
+| 左臂单臂 | 左手柄控制左臂/左手 | 右手柄 `A` | 右手柄 `B` | 右手柄 `RTr` |
+| 右臂单臂 | 右手柄控制右臂/右手 | 左手柄 `X` | 左手柄 `Y` | 左手柄 `LTr` |
+| 双臂 | 左手柄控制左臂/左手，右手柄控制右臂/右手 | 左手柄 `X` | 左手柄 `Y` | 左手柄 `LTr` |
+
+说明：
+
+- 先按“使能”进入 teleop 状态；只有同时按住“门控扳机”时，臂 IK 和手控制才会输出跟随。
+- 单臂模式中，工作手柄只负责对应臂/手的运动输入；对侧手柄负责使能、复位和门控。
+- 双臂配置中 `teleop.arm_trigger_mode: left`，因此双臂双手统一由左手柄 `X/Y/LTr` 门控。
+- 双臂 `arm_trigger_mode` 其他可选值：
+  - `left`：按住 `LTr`，双臂一起跟随（当前默认）。
+  - `right`：按住 `RTr`，双臂一起跟随。
+  - `both`：同时按住 `LTr + RTr`，双臂才跟随。
+  - `split`：左臂看 `LTr`，右臂看 `RTr`。
+
+## 手部模式
+
+通过各配置里的 `teleop.hand_mode` 切换：
+
+- `glove`：使用 HDService + 宇叠手套，手指关节实时跟随；需要先启动 HDService。
+- `trigger_gesture`：不使用手套，手只有 `open/closed` 两类姿态。
+  - 默认 `open`。
+  - 闭合条件：工作侧手柄的 grip 按键（左臂看 `LG`，右臂看 `RG`）按下，或 grip 轴值超过阈值。
+    - 单臂：阈值硬编码为 `0.2`，不可通过配置修改。
+    - 双臂：每侧独立判断（左手看 `LG`/`leftGrip`，右手看 `RG`/`rightGrip`），阈值可用 `teleop.grasp_grip_threshold` 覆盖，默认 `0.2`。
+  - `teleop.trigger_gesture` 选择闭合姿态形状，常用 `pinch` / `tripod`。
+  - 双臂可在 `teleop.left.trigger_gesture` / `teleop.right.trigger_gesture` 里为左右手分别指定不同手势。
 
 ## 配置文件
 
-常用配置：
+### 左臂
 
-右臂：
-- [o10_right_control.yaml](configs/right_arm/o10_right_control.yaml) — 实时控制
-- [o10_right_record.yaml](configs/right_arm/o10_right_record.yaml) — 数据录制
-- [o10_right_replay.yaml](configs/right_arm/o10_right_replay.yaml) — 轨迹回放
-- [o10_right_infer.yaml](configs/right_arm/o10_right_infer.yaml) — 策略推理
+- `configs/left_arm/o10_left_control.yaml`：实时控制。`controller_side: left`，`wrist_pose_source: left`，相机 `top + left_wrist`。
+- `configs/left_arm/o10_left_record.yaml`：数据录制。`controller_side: left`，`wrist_pose_source: left`，相机 `top + left`。
+- `configs/left_arm/o10_left_replay.yaml`：轨迹回放。
+- `configs/left_arm/o10_left_infer.yaml`：策略推理。相机 key 与左臂录制 schema 保持一致：`top + left`。
 
-左臂：
-- [o10_left_control.yaml](configs/left_arm/o10_left_control.yaml) / [record](configs/left_arm/o10_left_record.yaml) / [replay](configs/left_arm/o10_left_replay.yaml) / [infer](configs/left_arm/o10_left_infer.yaml)
+### 右臂
 
-双臂：
-- [o10_dual_control.yaml](configs/dual_arm/o10_dual_control.yaml) / [record](configs/dual_arm/o10_dual_record.yaml) / [replay](configs/dual_arm/o10_dual_replay.yaml) / [infer](configs/dual_arm/o10_dual_infer.yaml)
+- `configs/right_arm/o10_right_control.yaml`：实时控制。`controller_side: right`，`wrist_pose_source: right`，相机 `top + right_wrist`。
+- `configs/right_arm/o10_right_record.yaml`：数据录制。`controller_side: right`，`wrist_pose_source: right`，相机 `top + right`。
+- `configs/right_arm/o10_right_replay.yaml`：轨迹回放。
+- `configs/right_arm/o10_right_infer.yaml`：GPU 策略推理。相机 key 与右臂录制 schema 保持一致：`top + right`。
+- `configs/right_arm/o10_right_infer_cpu.yaml`：CPU 推理示例，默认 `policy: act`。
 
-复位姿态：
-- [o10_dual_reset.json](configs/reset_poses/o10_dual_reset.json) — 左右两侧 + 多手势（`pinch`、`tripod` 等）统一保存，所有模式共用
+### 双臂
 
-切换左右手时，改 yaml 里的：
+- `configs/dual_arm/o10_dual_control.yaml`：实时控制。`arm_trigger_mode: left`，左右 wrist pose 分别来自 `left/right`。
+- `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "7d"`。
+- `configs/dual_arm/o10_dual_replay.yaml`：轨迹回放。
+- `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose: false`，`tactile_mode: "7d"`，相机 `top + left_wrist + right_wrist`。
 
-- `robot.handedness` / `teleop.handedness`
-- `robot.channel_id`（`null` 表示自动跟随 handedness，left→0，right→1）
-- `teleop.controller_side` — 哪只手柄驱动手臂（单臂时对侧手柄做 gate 按钮，见下）
-- `teleop.wrist_pose_source` — `auto`/`left`/`right`，IK 位姿来源
+### 复位姿态
 
-## 可靠性 / 容错
+- `configs/reset_poses/o10_dual_reset.json`：统一复位姿态文件，结构如下（所有 O10 控制、录制、回放、推理配置默认共用）：
+  - `arm.left` / `arm.right`：左右臂 6 个关节的目标角度。
+  - `hand.feature_names`：手部关节顺序（10 维）。
+  - `gestures.<name>.<side>.open|closed`：每个手势（默认已提供 `pinch`、`tripod`）左右手的 10 维 `open` / `closed` 关节值。YAML 的 `reset_gesture` 字段用来指定 `<name>`。
+- 运行时只读不写，不会被自动覆盖。需要更新时手动编辑此 JSON（下文 "工具脚本" 里的 `save_*` 只输出辅助 JSON，不直接写回这份文件）。
 
-- `robot.allow_camera_read_failures` (bool, 默认 `false`) —
-  设为 `true` 时，`cam.async_read()` 抛异常不会炸 teleop 循环：
-  有缓存帧就复用上一帧，没缓存就返回全零帧。适合实时 `control`
-  场景下 USB 相机掉帧；`record` 模式建议保持默认 `false` 以免
-  误把残缺数据录进数据集。`configs/{left,right,dual}_arm/o10_*_control.yaml`
-  默认已开。
+## 数据流和硬件通道
 
-## 复位姿态
+- Pico WebRTC 进程发布：
+  - 位姿：`tcp://localhost:8000`
+  - 按键/扳机：`tcp://localhost:8001`
+- 宇叠手套：UDP `0.0.0.0:7777`，仅 `hand_mode: glove` 使用。
+- 臂 CAN：左臂默认 `can0`，右臂默认 `can1`，以各 YAML 的 `robot.port` 或 `robot.left/right.port` 为准。
+- 手 CANFD：`channel_mode: multiChannel`，`channel_id: null` 时自动按 handedness 选择，`left -> 0`，`right -> 1`。
 
-复位姿态固定保存在 [o10_dual_reset.json](configs/reset_poses/o10_dual_reset.json)，包含 arm 6 关节 + hand 10 关节。
+## 相机配置
 
-- 所有模式（控制、录制、回放、推理）启动时从 JSON 加载复位目标
-- 按 `Y` 键复位时，臂和手一起回到 JSON 中的姿态
-- 运行过程中不会自动覆盖这个文件
-- 需要更新复位姿态时，用 `python scripts/tools/save_reset_pose.py` 手动保存
-
-## 控制逻辑
-
-### 按键（Pico VR）
-
-启动 / 停止按钮在左右手柄上对应同一侧的"字母键"，扳机是"对侧" gate：
-
-| 模式 | 启动 | 停止 + 复位 | 臂 gate |
-|---|---|---|---|
-| 单右臂 (`handedness: right`) | X | Y | LTr（左扳机） |
-| 单左臂 (`handedness: left`) | A | B | RTr（右扳机） |
-| 双臂 | X | Y | 取决于 `teleop.arm_trigger_mode`（见下） |
-
-- 只有按下启动键后进入 teleop 模式，按住 gate 扳机时 IK 才开始跟随。
-- 手（`hand_mode: glove`）不需要手动 gate，启动后一直跟随手套。
-
-### 双臂 `arm_trigger_mode`
-
-- `left`（默认推荐）—— 按住 **LTr** 双臂一起跟随
-- `right` —— 按住 **RTr** 双臂一起跟随
-- `both` —— 同时按住 **LTr + RTr** 双臂才跟随
-- `split` —— 左臂看 LTr、右臂看 RTr，分别独立
-
-### 手模式 `hand_mode`
-
-- `glove` —— 接 HDService + 宇叠手套，手指关节实时跟随。需要先 `start_hdservice.sh`。
-- `trigger_gesture` —— 手套关掉的简化模式，手只有两个状态：
-  - 默认 `open`（放开）
-  - 手柄 grip 按下（`LG`/`RG`）或 grip 力 ≥ `teleop.grasp_grip_threshold`（默认 0.2） → `closed`（抓）
-  - `trigger_gesture: pinch` / `tripod` 选具体手势（两种闭合姿态）。
-
-### 数据流
-
-- Pico VR WebRTC → `tcp://localhost:8000` (pose) + `tcp://localhost:8001` (buttons) → 臂 IK
-- 宇叠手套 → UDP `0.0.0.0:7777` → 手关节映射（`hand_mode: glove` 才走）
-- 手 CANFD 走 `multiChannel`（channel 0 = 左，1 = 右）；臂 CAN 见各 yaml 的 `port`（本机 can0/can1 的实际映射用单臂脚本验证）
+- 单臂 control 使用双臂配置里的 wrist 相机命名：
+  - 左臂：`top + left_wrist`
+  - 右臂：`top + right_wrist`
+- 单臂 record/infer 使用数据集 schema 命名：
+  - 左臂：`top + left`
+  - 右臂：`top + right`
+- 双臂 control/record/infer 使用：`top + left_wrist + right_wrist`。
+- 顶部 USB 相机默认使用 `fourcc: MJPG`，避免 OpenCV 自动协商到不稳定格式。
+- `robot.allow_camera_read_failures: true` 适合 control/infer 场景：相机启动失败会跳过该相机，读帧失败时有缓存用缓存、无缓存用全零帧。record 建议保持 `false`，避免录进残缺数据。
 
 ## 数据录制
 
-录制格式：LeRobot `v3.0`。默认目录：
+录制格式是 LeRobot `v3.0`。默认数据集根目录：
 
-```
+```text
 ~/workspace/dataset/Robot/agi_arm_bot
 ```
 
-手动指定目录：
+常用录制：
+
+```bash
+./scripts/o10/right_arm/record_o10_right.sh
+./scripts/o10/left_arm/record_o10_left.sh
+./scripts/o10/dual_arm/record_o10_dual.sh
+```
+
+覆盖数据集目录/名称：
 
 ```bash
 ./scripts/o10/right_arm/record_o10_right.sh \
@@ -199,51 +221,129 @@ python scripts/tools/convert_lerobot_to_openpi.py --src <lerobot_dir> --dst <ope
   --dataset.repo_id my_dataset
 ```
 
-录制内容：
-
-`action` 固定只含关节指令（臂 + 手），不随选项变化：
+`action` 固定只含关节指令：
 
 | 模式 | action 维度 | 组成 |
-|---|---|---|
+|---|---:|---|
 | 单臂 | 16D | 臂 6 + 手 10 |
 | 双臂 | 32D | `left.*` 16D + `right.*` 16D |
 
-`observation.state` 随 `robot.include_eef_pose` 和 `robot.tactile_mode` 组合变化：
+`observation.state` 由 `robot.include_eef_pose` 和 `robot.tactile_mode` 决定：
 
 | include_eef_pose | tactile_mode | 单臂 state | 双臂 state |
-|---|---|---|---|
-| false | none | 16D | 32D |
-| true  | none | 23D（+7D pose） | 46D（+2×7D pose） |
-| false | 7d   | 23D（+7D 触觉均值） | **46D（+2×7D 触觉均值，当前 record 默认）** |
-| true  | 7d   | 30D | 60D |
-| false | 80d  | 96D（+80D 指尖） | 192D |
-| false | 130d | 146D（+130D 全手） | 292D |
+|---|---|---:|---:|
+| `false` | `none` | 16D（当前单臂 record 默认） | 32D |
+| `true` | `none` | 23D | 46D |
+| `false` | `7d` | 23D | 46D（当前双臂 record 默认） |
+| `true` | `7d` | 30D | 60D |
+| `false` | `80d` | 96D | 192D |
+| `false` | `130d` | 146D | 292D |
 
-相机：
-- 单臂：`observation.images.{top,right}`（右臂配置，左臂类似）
-- 双臂：`observation.images.{top,left_wrist,right_wrist}`
+## 推理
 
-同步方式为软件级对齐：臂和手状态在同一轮 `get_observation()` 读取，相机和手套取后台线程最新值。
+支持策略：
 
-## 测试
+- `act`
+- `diffusion`
+- `pi0`
+- `pi05`
+- `smolvla`
+- `groot`
 
-先装 `pytest`（见"环境说明"），然后：
+常用命令：
 
 ```bash
-env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/
-env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_agibot_o10.py
-
-# 整套一起跑时，draccus 子类注册可能因 test stub 与正式模块同名冲突
-# 报 "Cannot register ... because ... is already registered"，单文件跑就没事。
+./scripts/o10/left_arm/infer_o10_left.sh
+./scripts/o10/right_arm/infer_o10_right.sh
+./scripts/o10/right_arm/infer_o10_right_cpu.sh
+./scripts/o10/dual_arm/infer_o10_dual.sh
 ```
+
+推理前检查：
+
+- `infer.model_path` 必须存在，且目录内必须有 `config.json`；权重通常是 `model.safetensors` 或 `pytorch_model.bin`。
+- `infer.policy` 必须和模型类型一致。
+- `infer.device` 可用 `cuda` 或 `cpu`；CPU 只适合小模型/调试。
+- `robot.include_eef_pose`、`robot.tactile_mode`、相机 key 必须与训练数据集一致，否则策略输入 schema 会不匹配。
+- `infer.save_data: true` 时推理过程会保存为 LeRobot 数据集；`save_path` 为空时自动写到 `~/.cache/huggingface/lerobot/...`。
+
+## 回放
+
+回放使用各自 replay YAML 里的 `dataset.root` 指向已有数据集：
+
+```bash
+./scripts/o10/left_arm/replay_o10_left.sh
+./scripts/o10/right_arm/replay_o10_right.sh
+./scripts/o10/dual_arm/replay_o10_dual.sh
+```
+
+更换回放数据集时修改对应 YAML 的 `dataset.root` / `dataset.repo_id`。
+
+## 工具脚本
+
+这些脚本可以直接跑，也可以通过入口调用（仅前 3 个走 `run_lerobot_play.py`）：
+
+```bash
+python run_lerobot_play.py set_pose [args]              # = scripts/tools/set_pose.py
+python run_lerobot_play.py save_reset_pose [args]       # = scripts/tools/save_reset_pose.py
+python run_lerobot_play.py save_dual_reset_pose [args]  # = scripts/tools/save_dual_reset_pose.py
+```
+
+常用操作：
+
+```bash
+# 读取单臂当前臂+手关节并导出 legacy 格式 JSON（诊断用，不是集中式复位文件）
+python scripts/tools/save_reset_pose.py --port can1 --handedness right \
+    --output configs/o10_right_reset_pose.json
+
+# 读取双臂当前关节并导出两份 legacy 格式 JSON（左右分开）
+python scripts/tools/save_dual_reset_pose.py \
+    --left-port can0 --right-port can1 \
+    --left-output configs/o10_left_reset_pose.json \
+    --right-output configs/o10_right_reset_pose.json
+
+# 依次为每种手势导出 per-side per-gesture 的 reset 文件（默认 pinch + tripod）
+python scripts/tools/save_gesture_reset_poses.py
+python scripts/tools/save_gesture_reset_poses.py --gesture pinch
+
+# 设置臂/手到集中式 JSON 中的姿态，或只读当前姿态
+python scripts/tools/set_pose.py --from-json configs/reset_poses/o10_dual_reset.json
+python scripts/tools/set_pose.py --arm 0 0 0 0 0 0
+python scripts/tools/set_pose.py --read-only
+
+# 检查录制数据集触觉通道是否采到数据
+python scripts/tools/check_tactile_success.py --dataset.root <dataset_dir>
+
+# 转换 LeRobot 数据集到 openpi 训练格式
+python scripts/tools/convert_lerobot_to_openpi.py --src <lerobot_dir> --dst <openpi_dir>
+```
+
+> `save_reset_pose.py` / `save_dual_reset_pose.py` / `save_gesture_reset_poses.py` 输出的是 legacy `groups.arm / groups.hand` 格式，**不能**直接覆盖 `configs/reset_poses/o10_dual_reset.json`。新的关节值请手动合并到集中式 JSON 的 `arm.<side>` / `gestures.<name>.<side>.open|closed` 字段里。
+
+## 测试和检查
+
+```bash
+# 全量 Python 回归
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests -q
+
+# 常用聚焦检查
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_config.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_infer_save_path.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_single_arm_o10_trigger_gate.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_o10_trigger_gate.py -q
+```
+
+当前全量回归应为 `103 passed, 1 skipped`。`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` 用于避免 ROS/外部 pytest 插件污染。
 
 ## 常见问题
 
-- OpenCV 预览窗口报错 → 无 GUI 环境下设 `run.display_data: false`
-- 录制目录已存在 → 换 `repo_id` 或删掉旧空目录
-- 手套连不上 → 确认 HDService 已启动、HDWeb 能看到配对、yaml 里 handedness 正确
-- 顶部 USB 相机（LRCP 500W 等）`Error reading frame` 刷屏 → yaml 里该相机加 `fourcc: MJPG`，让 OpenCV 跳过 YUYV 自动协商
-- USB 相机掉帧就退出 → 在 `control` 场景下把 `robot.allow_camera_read_failures: true` 打开（默认 yaml 已开）
-- 双臂"左手柄控制了右臂" → 先排除**视觉错觉**：你面对机器人时，机器人自身的左臂在你视觉的**右**侧。单左/单右脚本各跑一次确认 `port: can0` / `can1` 真正对应哪只硬件臂；确实接反了才改 yaml 里的 `left.port` / `right.port`
-- 手 CANFD 超时 → 检查手电源、USB-CANFD 线、重插 USB
-- `record` 里按 Y 复位后双臂 IK 参考位姿没跟上 → 本分支已在 `record.py` 加 `_prepare_teleop_waiting_state_after_reset`，如果还遇到，检查 `teleop.pause_event` 是否被别的逻辑挂住
+- OpenCV 预览窗口报错：无 GUI 环境下把 `display_data` 或 `run.display_data` 设为 `false`。
+- `model_path` 报不存在：检查 infer YAML 中 `infer.model_path`，必须指向 `.../pretrained_model` 目录。
+- 推理输入维度不匹配：确认 infer YAML 的 `include_eef_pose`、`tactile_mode`、相机 key 与训练时 record YAML 一致。
+- 顶部 USB 相机读帧不稳定：确认相机配置里有 `fourcc: MJPG`。
+- control/infer 中某路相机不存在：可打开 `robot.allow_camera_read_failures: true`，程序会跳过启动失败的相机。
+- record 中相机失败：不建议容错，修相机后重新录，避免数据集混入全零/旧帧。
+- 手套连不上：确认 HDService 已启动、HDWeb 能看到配对、YAML `handedness` 正确。
+- 手 CANFD 超时：检查手电源、USB-CANFD 线和 `channel_id`。
+- 双臂视觉左右混淆：你面对机器人时，机器人自身左臂在视觉右侧；用单左/单右脚本分别确认 `can0/can1` 与硬件臂对应关系。
+- 录制目录已存在：换 `dataset.repo_id` 或删除旧空目录。

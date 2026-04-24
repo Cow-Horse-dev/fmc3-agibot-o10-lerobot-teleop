@@ -57,6 +57,9 @@ from .utils.runtime_helpers import build_dataset_features
 from .utils.camera_config_parser import parse_camera_configs
 
 
+SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
+
+
 def _parse_cameras(cameras_obj: dict) -> dict:
     """解析相机配置，与 record.py 保持一致"""
     return parse_camera_configs(cameras_obj)
@@ -118,7 +121,7 @@ def _parse_cli_args() -> argparse.Namespace:
         "--policy",
         type=str,
         required=False,
-        choices=["act", "diffusion", "pi0", "pi05", "smolvla", "groot"],
+        choices=SUPPORTED_POLICIES,
         help="Policy type",
     )
     parser.add_argument(
@@ -402,6 +405,7 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_left=robot_cfg.get("left", {}),
         robot_right=robot_cfg.get("right", {}),
         robot_enable_hand=robot_cfg.get("enable_hand", True),
+        robot_allow_camera_read_failures=robot_cfg.get("allow_camera_read_failures", False),
         robot_include_eef_pose=robot_cfg.get("include_eef_pose", True),
         robot_tactile_mode=robot_cfg.get("tactile_mode", "none"),
     )
@@ -411,23 +415,24 @@ def _validate_args(args: argparse.Namespace) -> None:
     """验证命令行参数"""
     if not args.policy:
         raise ValueError("infer.policy is required")
+    if args.policy not in SUPPORTED_POLICIES:
+        raise ValueError(f"Unsupported policy type: {args.policy}")
     if not args.task_description:
         raise ValueError("infer.task_description is required")
     if not args.model_path:
         raise ValueError("infer.model_path is required")
+    if args.num_episodes <= 0:
+        raise ValueError("infer.num_episodes must be positive")
+    if args.episode_time_sec <= 0:
+        raise ValueError("infer.episode_time_sec must be positive")
+    if args.fps <= 0:
+        raise ValueError("infer.fps must be positive")
     args.model_path = os.path.expanduser(args.model_path)
     if args.save_path:
         args.save_path = os.path.expanduser(args.save_path)
 
     # 验证异步推理支持
-    if args.async_infer and args.policy not in [
-        "act",
-        "diffusion",
-        "smolvla",
-        "pi0",
-        "pi05",
-        "groot",
-    ]:
+    if args.async_infer and args.policy not in SUPPORTED_POLICIES:
         raise ValueError(f"Async inference not supported for policy: {args.policy}")
 
     # 验证模型路径
@@ -591,6 +596,10 @@ def _create_robot_config(args: argparse.Namespace):
             channel_id=args.robot_channel_id,
             reset_poses_path=args.robot_reset_poses_path,
             reset_gesture=args.robot_reset_gesture,
+            enable_hand=args.robot_enable_hand,
+            allow_camera_read_failures=args.robot_allow_camera_read_failures,
+            include_eef_pose=args.robot_include_eef_pose,
+            tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
         )
@@ -599,6 +608,7 @@ def _create_robot_config(args: argparse.Namespace):
             left=args.robot_left,
             right=args.robot_right,
             enable_hand=args.robot_enable_hand,
+            allow_camera_read_failures=args.robot_allow_camera_read_failures,
             include_eef_pose=args.robot_include_eef_pose,
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
