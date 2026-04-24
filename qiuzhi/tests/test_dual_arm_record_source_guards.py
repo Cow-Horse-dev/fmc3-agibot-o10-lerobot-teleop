@@ -40,11 +40,7 @@ def test_record_source_rehydrates_single_arm_teleop_when_episode_starts():
     )
     block = source[start:end]
 
-    enable_zero_mode_index = block.index("_set_single_arm_zero_mode(teleop, True)")
-    sync_index = block.index("_sync_teleop_to_robot_reset(teleop)")
-    disable_zero_mode_index = block.index("_set_single_arm_zero_mode(teleop, False)")
-
-    assert enable_zero_mode_index < sync_index < disable_zero_mode_index
+    assert "_release_teleop_waiting_state_for_recording(teleop)" in block
 
 
 def test_record_source_rehydrates_dual_arm_teleop_when_episode_starts():
@@ -58,8 +54,34 @@ def test_record_source_rehydrates_dual_arm_teleop_when_episode_starts():
     end = source.index("            else:", start)
     block = source[start:end]
 
-    enable_zero_mode_index = block.index("_set_dual_arm_zero_mode(teleop, True)")
-    sync_index = block.index("_sync_teleop_to_robot_reset(teleop)")
-    disable_zero_mode_index = block.index("_set_dual_arm_zero_mode(teleop, False)")
+    assert "_release_teleop_waiting_state_for_recording(teleop)" in block
 
-    assert enable_zero_mode_index < sync_index < disable_zero_mode_index
+
+def test_record_source_prepares_o10_teleop_waiting_state_after_initial_reset():
+    source = RECORD_SRC.read_text(encoding="utf-8")
+
+    start = source.index(
+        '        elif (\n'
+        '            robot.name == "pico_follower_single_arm_eef"\n'
+        '            or robot.name == "pico_follower_single_arm_agibot_o10"\n'
+        "        ):"
+    )
+    end = source.index('        recorded = 0', start)
+    block = source[start:end]
+
+    assert "_prepare_teleop_waiting_state_after_reset(teleop)" in block
+    assert 'robot.name == "pico_follower_dual_arm_agibot_o10"' in block
+
+
+def test_record_source_uses_gentle_waiting_reset_for_mid_episode_and_post_episode_resets():
+    source = RECORD_SRC.read_text(encoding="utf-8")
+
+    y_reset_start = source.index('            if events.get("reset_robot"):')
+    y_reset_end = source.index('            if events.get("discard_episode"):', y_reset_start)
+    y_reset_block = source[y_reset_start:y_reset_end]
+    assert "_prepare_teleop_waiting_state_after_reset(teleop)" in y_reset_block
+
+    post_episode_start = source.index('            if robot.name == "airbot_play_follower":')
+    post_episode_end = source.index('            if events["rerecord_episode"]:', post_episode_start)
+    post_episode_block = source[post_episode_start:post_episode_end]
+    assert "_prepare_teleop_waiting_state_after_reset(teleop" in post_episode_block

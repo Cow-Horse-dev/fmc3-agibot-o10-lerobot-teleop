@@ -624,6 +624,43 @@ def _sync_teleop_to_robot_reset(teleop) -> None:
         teleop.reset_pose()
 
 
+def _is_o10_single_arm_teleop(teleop) -> bool:
+    return teleop.name in (
+        "pico_leader_single_arm_eef",
+        "pico_leader_single_arm_agibot_o10",
+    )
+
+
+def _is_o10_dual_arm_teleop(teleop) -> bool:
+    return teleop.name == "pico_leader_dual_arm_agibot_o10"
+
+
+def _is_o10_teleop(teleop) -> bool:
+    return _is_o10_single_arm_teleop(teleop) or _is_o10_dual_arm_teleop(teleop)
+
+
+def _prepare_teleop_waiting_state_after_reset(teleop) -> None:
+    if _is_o10_single_arm_teleop(teleop):
+        teleop.pause_event.clear()
+        _set_single_arm_zero_mode(teleop, True)
+        _sync_teleop_to_robot_reset(teleop)
+    elif _is_o10_dual_arm_teleop(teleop):
+        teleop.pause_event.clear()
+        _set_dual_arm_zero_mode(teleop, True)
+        _sync_teleop_to_robot_reset(teleop)
+
+
+def _release_teleop_waiting_state_for_recording(teleop) -> None:
+    if _is_o10_single_arm_teleop(teleop):
+        _set_single_arm_zero_mode(teleop, True)
+        _sync_teleop_to_robot_reset(teleop)
+        _set_single_arm_zero_mode(teleop, False)
+    elif _is_o10_dual_arm_teleop(teleop):
+        _set_dual_arm_zero_mode(teleop, True)
+        _sync_teleop_to_robot_reset(teleop)
+        _set_dual_arm_zero_mode(teleop, False)
+
+
 def _describe_dual_arm_trigger_mode(trigger_mode: str) -> str:
     normalized = (trigger_mode or "split").lower()
     if normalized == "left":
@@ -947,10 +984,10 @@ def main():
             or robot.name == "pico_follower_single_arm_agibot_o10"
         ):
             robot.reset_zero()
-            _sync_teleop_to_robot_reset(teleop)
+            _prepare_teleop_waiting_state_after_reset(teleop)
         elif robot.name == "pico_follower_dual_arm_agibot_o10":
             robot.reset_zero()
-            _sync_teleop_to_robot_reset(teleop)
+            _prepare_teleop_waiting_state_after_reset(teleop)
 
         recorded = 0
 
@@ -1014,9 +1051,7 @@ def main():
                 print_green(
                     f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls the arm and hand."
                 )
-                _set_single_arm_zero_mode(teleop, True)
-                _sync_teleop_to_robot_reset(teleop)
-                _set_single_arm_zero_mode(teleop, False)
+                _release_teleop_waiting_state_for_recording(teleop)
             elif teleop.name == "pico_leader_dual_arm_agibot_o10":
                 if not use_ssh:
                     print_green(
@@ -1043,9 +1078,7 @@ def main():
                     f"Episode {recorded + 1} started. Keyboard controls the recording flow; VR controls both arms and both hands."
                 )
                 print_green("Preparing dual-arm teleop zero/reset synchronization...")
-                _set_dual_arm_zero_mode(teleop, True)
-                _sync_teleop_to_robot_reset(teleop)
-                _set_dual_arm_zero_mode(teleop, False)
+                _release_teleop_waiting_state_for_recording(teleop)
                 print_green("Dual-arm teleop is ready; entering record loop.")
 
             else:
@@ -1095,6 +1128,7 @@ def main():
                 events["exit_early"] = False
                 dataset.clear_episode_buffer()
                 robot.reset_zero()
+                _prepare_teleop_waiting_state_after_reset(teleop)
                 continue
 
             if events.get("discard_episode"):
@@ -1123,10 +1157,10 @@ def main():
                 or robot.name == "pico_follower_single_arm_agibot_o10"
             ):
                 robot.reset_zero()
-                _sync_teleop_to_robot_reset(teleop)
+                _prepare_teleop_waiting_state_after_reset(teleop)
             elif robot.name == "pico_follower_dual_arm_agibot_o10":
                 robot.reset_zero()
-                _sync_teleop_to_robot_reset(teleop)
+                _prepare_teleop_waiting_state_after_reset(teleop)
 
             if teleop.name == "quest3_leader" or teleop.name == "pico_leader":
                 pause_flag_events.clear()
@@ -1145,19 +1179,13 @@ def main():
                 teleop.name == "pico_leader_single_arm_eef"
                 or teleop.name == "pico_leader_single_arm_agibot_o10"
             ):
-                teleop.pause_event.clear()
                 events["start"] = False
                 events["exit_early"] = False
-
-                _set_single_arm_zero_mode(teleop, True)
-                _sync_teleop_to_robot_reset(teleop)
+                _prepare_teleop_waiting_state_after_reset(teleop)
             elif teleop.name == "pico_leader_dual_arm_agibot_o10":
-                teleop.pause_event.clear()
                 events["start"] = False
                 events["exit_early"] = False
-
-                _set_dual_arm_zero_mode(teleop, True)
-                _sync_teleop_to_robot_reset(teleop)
+                _prepare_teleop_waiting_state_after_reset(teleop)
 
             if events["rerecord_episode"]:
                 print("Re-recording episode")
@@ -1236,6 +1264,12 @@ def main():
                 or robot.name == "pico_follower_single_arm_agibot_o10"
             ):
                 robot.reset_zero()
+                if teleop is not None:
+                    _prepare_teleop_waiting_state_after_reset(teleop)
+            elif robot.name == "pico_follower_dual_arm_agibot_o10":
+                robot.reset_zero()
+                if teleop is not None:
+                    _prepare_teleop_waiting_state_after_reset(teleop)
         except Exception as e:
             print(f"Warning: robot reset failed: {e}")
 
