@@ -5,7 +5,8 @@ from typing import List
 class Agibot_HandO12:
 
     def __init__(self, hand_type='left'):
-        if(hand_type=='left'):
+        self.hand_type = 'left' if hand_type == 'left' else 'right'
+        if(self.hand_type=='left'):
             self.hand = AgibotHandO12(hand_type=EHandType.LEFT)
         else:
             self.hand = AgibotHandO12(hand_type=EHandType.RIGHT)
@@ -18,25 +19,26 @@ class Agibot_HandO12:
         print("Get Device Info:")
         print(device_info)
 
-        aim_positions = [2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000]
-        self.hand.set_all_joint_positions(aim_positions)
+        self.aim_positions = [2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000]
+        self.hand.set_all_joint_positions(self.aim_positions)
         time.sleep(1)
         print("Reset Finished.")
 
     def reset_positions(self):
         self.hand.set_all_joint_positions(self.aim_positions)
 
-    def set_positions(self, list):
-        self.hand.set_all_joint_positions(list)
+    def set_positions(self, positions):
+        self.hand.set_all_joint_positions(positions)
 
     def get_angles(self):
         active_angles = self.hand.get_all_active_joint_angles()
         print("Active Joint Angels:", active_angles)
     
-    def set_angles(self, list):
-        list = self.get_finger_data_for_AgibotHandO12hand_Angles(list)
-        self.hand.set_all_active_joint_angles(list)
+    def set_angles(self, positions):
+        angles = self.get_finger_data_for_AgibotHandO12hand_Angles(self.hand_type, positions)
+        self.hand.set_all_active_joint_angles(angles)
 
+    @staticmethod
     def get_finger_data_for_AgibotHandO12hand_Angles(hand: str, hand_data: List) -> List[float]:
         """
         Get specific hand data and transfer into the 12 freedom form for OmniHand pro 2025.

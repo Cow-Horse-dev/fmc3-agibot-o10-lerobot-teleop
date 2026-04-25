@@ -5,6 +5,24 @@ from omnihand_2025 import AgibotHandO10, EFinger, EControlMode, EHandType #omnih
 from typing import List
 import math
 
+O10_THUMB_DEADBAND_RAD = math.radians(3.0)
+O10_THUMB_JOINT_INDICES = (0, 1, 2)
+_last_o10_joint_positions_by_hand_id = {}
+
+
+def _apply_thumb_deadband(hand: AgibotHandO10, positions: List[float]) -> List[float]:
+    previous_positions = _last_o10_joint_positions_by_hand_id.get(id(hand))
+    filtered_positions = list(positions)
+
+    if previous_positions is not None:
+        for joint_index in O10_THUMB_JOINT_INDICES:
+            if abs(filtered_positions[joint_index] - previous_positions[joint_index]) < O10_THUMB_DEADBAND_RAD:
+                filtered_positions[joint_index] = previous_positions[joint_index]
+
+    _last_o10_joint_positions_by_hand_id[id(hand)] = filtered_positions.copy()
+    return filtered_positions
+
+
 def init_hand_OmnimultiChannel(hand_type: str):
     """
     初始化手 多口CANFD
@@ -44,6 +62,7 @@ def set_hand_position(hand: AgibotHandO10, positions: list, hand_type: str):
         return
 
     positions = get_finger_data_for_AgibotHandO10hand_Angles(hand_type, positions)
+    positions = _apply_thumb_deadband(hand, positions)
     hand.set_all_active_joint_angles(positions)
 
 def is_hand_ready(hand: AgibotHandO10) -> bool:

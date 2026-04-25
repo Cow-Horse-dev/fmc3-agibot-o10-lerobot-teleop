@@ -220,6 +220,18 @@ class _ConnectCamera:
         self.connected = False
 
 
+class _ShutdownArm:
+    def __init__(self):
+        self.disabled = False
+        self.uninitialized = False
+
+    def disable(self):
+        self.disabled = True
+
+    def uninit(self):
+        self.uninitialized = True
+
+
 class _DepthCamera:
     def __init__(self, reads):
         self._reads = list(reads)
@@ -317,6 +329,55 @@ def test_single_arm_camera_timeout_still_raises_when_fallback_is_disabled(monkey
 
     with pytest.raises(TimeoutError, match="camera timeout"):
         robot.get_observation()
+
+
+def test_single_arm_safe_shutdown_disconnects_connected_cameras(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    camera = _ConnectCamera()
+    camera.connect()
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot.arm = _ShutdownArm()
+    robot.hand = None
+    robot.cameras = {"top": camera}
+
+    robot._safe_shutdown()
+
+    assert camera.connected is False
+    assert robot.arm.disabled is True
+    assert robot.arm.uninitialized is True
+
+
+def test_dual_arm_skips_camera_connect_failures_when_allowed(monkeypatch):
+    good_camera = _ConnectCamera()
+    bad_camera = _ConnectCamera(ConnectionError("missing wrist camera"))
+    module = _load_dual_arm_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "make_cameras_from_configs",
+        lambda configs: {"top": good_camera, "wrist": bad_camera},
+    )
+
+    robot = module.PicoFollowerDualArmAgibotO10(
+        SimpleNamespace(
+            left={"port": "can0", "handedness": "left"},
+            right={"port": "can1", "handedness": "right"},
+            enable_hand=False,
+            allow_camera_read_failures=True,
+            include_eef_pose=False,
+            tactile_mode="none",
+            arm_joints_num=7,
+            cameras={
+                "top": SimpleNamespace(height=2, width=3, use_depth=False),
+                "wrist": SimpleNamespace(height=2, width=3, use_depth=False),
+            },
+        )
+    )
+
+    robot.connect()
+
+    assert robot.cameras == {"top": good_camera}
+    assert good_camera.connected is True
+    assert bad_camera.connected is False
 
 
 def test_dual_arm_camera_timeout_returns_zero_frame_when_allowed(monkeypatch):

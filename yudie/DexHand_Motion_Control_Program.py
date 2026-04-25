@@ -2,7 +2,7 @@ import time
 import argparse
 import platform
 import sdk_bootstrap
-from Data_Receiver import GloveReceiver
+from Data_Receiver import GloveReceiver, ServerStatus
 if platform.system() == 'Windows': import msvcrt
 
 def main(): 
@@ -25,8 +25,7 @@ def main():
                         'xhand', 
                         'ryHand_H2',
                         'ryHand_H15',
-                        "AeroHand",
-                        'ZKLX_Hand'], 
+                        "AeroHand"], 
                         help='Choose robot hand type', default='agibotHand_O10')
     parser.add_argument('--dataType', type=str, choices=['Json','Protobuf','TeleopProtobuf'], help='Data receive type, default is Json. TeleopProtobuf is the protobuf from VR application.', default='Json')
     parser.add_argument('--ip', help='IP address, default is local IP 127.0.0.0', default='127.0.0.1')
@@ -41,6 +40,8 @@ def main():
     sdk = GloveReceiver()
     sdk.server_addr = (args.ip, args.port)
     sdk.initialize(args.dataType, args.role, args.hand)
+    if sdk.cur_status != ServerStatus.READY:
+        return
     sdk.start_listening()
 
     #AGIBOT

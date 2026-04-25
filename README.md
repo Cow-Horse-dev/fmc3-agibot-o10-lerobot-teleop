@@ -315,7 +315,7 @@ python scripts/tools/set_pose.py --read-only
 python scripts/tools/check_tactile_success.py --dataset.root <dataset_dir>
 
 # 转换 LeRobot 数据集到 openpi 训练格式
-python scripts/tools/convert_lerobot_to_openpi.py --src <lerobot_dir> --dst <openpi_dir>
+python scripts/tools/convert_lerobot_to_openpi.py --input <lerobot_dir> --output <openpi_dir>
 ```
 
 > `save_reset_pose.py` / `save_dual_reset_pose.py` / `save_gesture_reset_poses.py` 输出的是 legacy `groups.arm / groups.hand` 格式，**不能**直接覆盖 `configs/reset_poses/o10_dual_reset.json`。新的关节值请手动合并到集中式 JSON 的 `arm.<side>` / `gestures.<name>.<side>.open|closed` 字段里。

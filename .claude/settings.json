@@ -85,6 +85,9 @@
       "Bash(kill -9 17657)",
       "Bash(awk -F: '{sum+=$2} END {print \"total tests:\", sum}')",
       "Bash(python run_lerobot_play.py help)"
+    ],
+    "additionalDirectories": [
+      "/home/phl/.codex"
     ]
   },
   "enabledPlugins": {

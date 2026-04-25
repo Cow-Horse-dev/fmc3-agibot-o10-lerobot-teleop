@@ -19,14 +19,21 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-import mediapipe as mp
-from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import (
-    HandLandmarker,
-    HandLandmarkerOptions,
-    RunningMode,
-)
-from mediapipe.tasks.python.vision.hand_landmarker import HandLandmark
+try:
+    import mediapipe as mp
+    from mediapipe.tasks.python import BaseOptions
+    from mediapipe.tasks.python.vision import (
+        HandLandmarker,
+        HandLandmarkerOptions,
+        RunningMode,
+    )
+    from mediapipe.tasks.python.vision.hand_landmarker import HandLandmark
+except ModuleNotFoundError as exc:
+    if "pytest" in sys.modules and (exc.name or "").startswith("mediapipe"):
+        import pytest
+
+        pytest.skip("manual MediaPipe camera script requires mediapipe", allow_module_level=True)
+    raise
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEROBOT_PLAY_ROOT = (

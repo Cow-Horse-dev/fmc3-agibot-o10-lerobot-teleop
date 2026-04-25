@@ -239,13 +239,19 @@ class PicoFollowerDualArmAgibotO10(Robot):
                     pass
                 raise
 
-        connected_cams: list = []
+        connected_cameras = {}
         try:
-            for cam in self.cameras.values():
-                cam.connect()
-                connected_cams.append(cam)
+            for camera_name, cam in self.cameras.items():
+                try:
+                    cam.connect()
+                except Exception as exc:
+                    if not getattr(self.config, "allow_camera_read_failures", False):
+                        raise
+                    logger.warning("Skipping unavailable camera %s: %s", camera_name, exc)
+                    continue
+                connected_cameras[camera_name] = cam
         except Exception:
-            for cam in connected_cams:
+            for cam in connected_cameras.values():
                 try:
                     cam.disconnect()
                 except Exception:
@@ -262,6 +268,7 @@ class PicoFollowerDualArmAgibotO10(Robot):
             self.left_arm.uninit()
             self.right_arm.uninit()
             raise
+        self.cameras = connected_cameras
 
         self.enable_motors()
         self.configure()

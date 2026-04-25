@@ -19,6 +19,11 @@ sys.path.insert(0, lerobot_play_root)
 sys.path.insert(0, os.path.join(repo_root, "yudie"))
 sys.path.insert(0, os.path.join(repo_root, "yudie", "omnihand_2025"))
 
+if "pytest" in sys.modules:
+    import pytest
+
+    pytest.skip("manual CAN hardware script; run directly when testing O10 pinch grasp", allow_module_level=True)
+
 from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_TRIGGER_GESTURES,
     get_agibot_o10_trigger_gesture_joint_angles,

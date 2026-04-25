@@ -111,10 +111,14 @@ class GloveReceiver:
                 controller_data = {"roleName": role_name, "controllerDatas": {}}
                 parameters = device.get("Parameter", [])
                 for param in parameters:
-                    name = param["Name"]
-                    value = (param["Value"]) if "Value" in param else 0.0
+                    if not isinstance(param, dict):
+                        continue
+                    name = str(param.get("Name", ""))
+                    if not name:
+                        continue
+                    value = param["Value"] if "Value" in param else 0.0
                     # controller data is beginned with 'l_' or 'r_'
-                    if name[1] == '_' and (name[0] == 'l' or name[0] == 'r'):
+                    if len(name) >= 2 and name[1] == '_' and (name[0] == 'l' or name[0] == 'r'):
                         controller_data["controllerDatas"][name] = value
                     else:
                         glove_data["handDatas"][name] = value

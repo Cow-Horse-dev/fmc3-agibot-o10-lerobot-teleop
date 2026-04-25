@@ -1,3 +1,4 @@
+import math
 import threading
 import time
 from typing import List
@@ -11,6 +12,10 @@ from lerobot_play.utils.agibot_o10 import (
     glove_vec_to_agibot_o10_joint_angles,
     normalize_handedness,
 )
+
+
+O10_THUMB_DEADBAND_RAD = math.radians(3.0)
+O10_THUMB_JOINT_INDICES = (0, 1, 2)
 
 
 class AgibotO10GloveTeleoperator:
@@ -82,7 +87,12 @@ class AgibotO10GloveTeleoperator:
             )
 
         with self.data_lock:
-            self.hand_data = new_data.copy()
+            filtered_data = new_data.copy()
+            if self.last_update_time > 0.0:
+                for joint_index in O10_THUMB_JOINT_INDICES:
+                    if abs(filtered_data[joint_index] - self.hand_data[joint_index]) < O10_THUMB_DEADBAND_RAD:
+                        filtered_data[joint_index] = self.hand_data[joint_index]
+            self.hand_data = filtered_data
             self.last_update_time = time.time()
 
     def _infer_role_handedness(self, role_name: str) -> str | None:

@@ -517,6 +517,11 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         self.arm.uninit()
         if self.hand is not None:
             self.hand.disconnect()
+        for cam in getattr(self, "cameras", {}).values():
+            try:
+                cam.disconnect()
+            except Exception as cam_exc:
+                logger.error(f"Camera disconnect failed: {cam_exc}")
         logger.info("Motors disabled and devices disconnected")
 
     def disconnect(self):
@@ -530,5 +535,10 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             self.arm.uninit()
             if self.hand is not None:
                 self.hand.disconnect()
+            for cam in getattr(self, "cameras", {}).values():
+                try:
+                    cam.disconnect()
+                except Exception as cam_exc:
+                    logger.error(f"Camera disconnect failed: {cam_exc}")
         self._is_connected = False
         logger.info(f"{self} safely disconnected.")
