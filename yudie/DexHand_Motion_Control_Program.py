@@ -46,6 +46,14 @@ def main():
 
     #AGIBOT
     if args.mode == 'agibotHand_O10':
+        import os, sys
+        _LEROBOT_PLAY_ROOT = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..",
+            "qiuzhi", "lerobot_play_1.0.4", "x86", "noble",
+            "lerobot_play-1.0.4-py3-none-any",
+        ))
+        if _LEROBOT_PLAY_ROOT not in sys.path:
+            sys.path.insert(0, _LEROBOT_PLAY_ROOT)
         from AGIBOT.Omnihand_o10_yudie import init_hand_Omni_multiCan, init_hand_OmnimultiChannel, is_hand_ready, set_hand_position
         hands = init_hand_OmnimultiChannel(args.hand) if(args.canType == 'multiChannel') else init_hand_Omni_multiCan(args.hand)
 

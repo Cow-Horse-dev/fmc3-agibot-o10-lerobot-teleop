@@ -1,4 +1,3 @@
-import math
 import threading
 import time
 from typing import List
@@ -9,19 +8,17 @@ from lerobot_play.teleoperators.pico_leader_single_arm_eef.udexreal_driver impor
 )
 from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_HAND_FEATURE_NAMES,
-    glove_vec_to_agibot_o10_joint_angles,
+    O10HandMapper,
+    extract_ude_glove_angles,
     normalize_handedness,
 )
-
-
-O10_THUMB_DEADBAND_RAD = math.radians(3.0)
-O10_THUMB_JOINT_INDICES = (0, 1, 2)
 
 
 class AgibotO10GloveTeleoperator:
     def __init__(self, handedness: str = "right", control_freq: int = 25):
         self.handedness = normalize_handedness(handedness)
         self.control_freq = control_freq
+        self.mapper = O10HandMapper(handedness=self.handedness)
         self.ude_glove = UDEGloveSDK()
         self.listening_thread = None
         self.data_lock = threading.Lock()
@@ -87,12 +84,7 @@ class AgibotO10GloveTeleoperator:
             )
 
         with self.data_lock:
-            filtered_data = new_data.copy()
-            if self.last_update_time > 0.0:
-                for joint_index in O10_THUMB_JOINT_INDICES:
-                    if abs(filtered_data[joint_index] - self.hand_data[joint_index]) < O10_THUMB_DEADBAND_RAD:
-                        filtered_data[joint_index] = self.hand_data[joint_index]
-            self.hand_data = filtered_data
+            self.hand_data = list(new_data)
             self.last_update_time = time.time()
 
     def _infer_role_handedness(self, role_name: str) -> str | None:
@@ -134,12 +126,8 @@ class AgibotO10GloveTeleoperator:
                     role_name = self._select_role_name(role_list)
                     if role_name is not None:
                         finger_data = self.ude_glove.get_vec_finger_data(role_name)
-                        self.update_hand_data(
-                            glove_vec_to_agibot_o10_joint_angles(
-                                finger_data,
-                                self.handedness,
-                            )
-                        )
+                        glove_angles = extract_ude_glove_angles(finger_data, self.handedness)
+                        self.update_hand_data(self.mapper.map(glove_angles))
                     elif time.time() - self._last_role_warning_t > 2.0:
                         self._last_role_warning_t = time.time()
                         print(

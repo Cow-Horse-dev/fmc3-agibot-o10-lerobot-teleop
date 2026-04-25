@@ -2,25 +2,21 @@
 # OmniHand 2025 SDK is licensed under Mulan PSL v2.
 
 from omnihand_2025 import AgibotHandO10, EFinger, EControlMode, EHandType #omnihand_2025
-from typing import List
+from typing import Dict, List
 import math
 
-O10_THUMB_DEADBAND_RAD = math.radians(3.0)
-O10_THUMB_JOINT_INDICES = (0, 1, 2)
-_last_o10_joint_positions_by_hand_id = {}
+from lerobot_play.utils.agibot_o10 import O10HandMapper
+
+_O10_GLOVE_SLOT_INDICES = (20, 3, 2, 7, 6, 10, 15, 14, 19, 18)
+_o10_mapper_by_hand_id: Dict[int, O10HandMapper] = {}
 
 
-def _apply_thumb_deadband(hand: AgibotHandO10, positions: List[float]) -> List[float]:
-    previous_positions = _last_o10_joint_positions_by_hand_id.get(id(hand))
-    filtered_positions = list(positions)
-
-    if previous_positions is not None:
-        for joint_index in O10_THUMB_JOINT_INDICES:
-            if abs(filtered_positions[joint_index] - previous_positions[joint_index]) < O10_THUMB_DEADBAND_RAD:
-                filtered_positions[joint_index] = previous_positions[joint_index]
-
-    _last_o10_joint_positions_by_hand_id[id(hand)] = filtered_positions.copy()
-    return filtered_positions
+def _get_or_create_mapper(hand: AgibotHandO10, hand_type: str) -> O10HandMapper:
+    mapper = _o10_mapper_by_hand_id.get(id(hand))
+    if mapper is None:
+        mapper = O10HandMapper(handedness=hand_type)
+        _o10_mapper_by_hand_id[id(hand)] = mapper
+    return mapper
 
 
 def init_hand_OmnimultiChannel(hand_type: str):
@@ -55,15 +51,14 @@ def init_hand_Omni_multiCan(hand_type: str):
         right_hand = AgibotHandO10.create_hand(canfd_id = right_hand_scanfd_id, channel_id= 0,hand_type = EHandType.RIGHT)
     return [left_hand , right_hand]
 def set_hand_position(hand: AgibotHandO10, positions: list, hand_type: str):
-    """
-    设置手的位置
-    """
+    """设置手的位置 — 调用共享的 O10HandMapper（lerobot_play 那侧的实现）。"""
     if hand is None:
         return
 
-    positions = get_finger_data_for_AgibotHandO10hand_Angles(hand_type, positions)
-    positions = _apply_thumb_deadband(hand, positions)
-    hand.set_all_active_joint_angles(positions)
+    glove_deg = get_finger_data_for_AgibotHandO10hand_Angles(hand_type, positions)
+    mapper = _get_or_create_mapper(hand, hand_type)
+    rad_targets = mapper.map(glove_deg)
+    hand.set_all_active_joint_angles(rad_targets)
 
 def is_hand_ready(hand: AgibotHandO10) -> bool:
     """
@@ -139,40 +134,7 @@ def get_finger_data_for_o10hand(hand_data: List) -> List[float]:
         print(f"Finger Data: {joints}")
         return joints
 
-def get_finger_data_for_AgibotHandO10hand_Angles(hand: str, hand_data: List) -> List[int]:
-    """
-    Get specific hand data and transfer into the 10 freedom form for OmniHand 2025.
-    """
-    RobotHandAngleLimitationLeft = [-60,100,-49,12,90,90,-10,90,-10,90]
-    RobotHandAngleLimitationRight = [60,-100,49,-12,90,90,10,90,10,90]
-    GloveHandAnglesLimitationLeft = [37, 30, 58, 30, 79, 81, 20, 81, 30, 100]
-    GloveHandAnglesLimitationRight = [37, 30, 60, 30, 81, 81, 20, 81, 30, 100]
-
-    def to_10hand_Mapping(data: float, index: int) -> float:
-        data = abs(data)
-        if(hand == 'left'):
-            data = GloveHandAnglesLimitationLeft[index] if data > GloveHandAnglesLimitationLeft[index] else data
-            x = (data / GloveHandAnglesLimitationLeft[index]) * RobotHandAngleLimitationLeft[index]
-            if(index == 0):
-                x += 10
-        else:
-            data = GloveHandAnglesLimitationRight[index] if data > GloveHandAnglesLimitationRight[index] else data
-            x = (data / GloveHandAnglesLimitationRight[index]) * RobotHandAngleLimitationRight[index]
-            if(index == 0):
-                x -= 10
-        return int(round(x)) * math.pi / 180
-
-    joints = [
-        to_10hand_Mapping(hand_data[20], 0) ,
-        to_10hand_Mapping(hand_data[3], 1),
-        to_10hand_Mapping(hand_data[2], 2) ,
-        to_10hand_Mapping(hand_data[7], 3),
-        to_10hand_Mapping(hand_data[6], 4) ,
-        to_10hand_Mapping(hand_data[10], 5) ,
-        to_10hand_Mapping(hand_data[15], 6) ,
-        to_10hand_Mapping(hand_data[14], 7) ,
-        to_10hand_Mapping(hand_data[19], 8) ,
-        to_10hand_Mapping(hand_data[18], 9) ,
-    ]
-    print(f"Finger Data: {joints}")
-    return joints
+def get_finger_data_for_AgibotHandO10hand_Angles(hand: str, hand_data: List) -> List[float]:
+    """从 24 路手套原始 deg 中挑出 10 路对应 OmniHand O10 的关节，去符号；
+    实际 deg→rad 的缩放与滤波交给 O10HandMapper。"""
+    return [abs(float(hand_data[slot])) for slot in _O10_GLOVE_SLOT_INDICES]

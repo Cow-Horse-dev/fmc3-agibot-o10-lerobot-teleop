@@ -45,7 +45,7 @@ if str(LEROBOT_PLAY_ROOT) not in sys.path:
 
 from lerobot_play.utils.agibot_o10 import (
     AgibotO10Hand,
-    map_glove_angles_to_agibot_o10,
+    O10HandMapper,
 )
 
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
@@ -176,6 +176,7 @@ def main() -> int:
     args = parse_args()
     handedness = args.hand
     model_path = ensure_model()
+    mapper = O10HandMapper(handedness=handedness)
 
     hand_hw: AgibotO10Hand | None = None
     if not args.no_hw:
@@ -247,7 +248,7 @@ def main() -> int:
                 lm_list = result.hand_landmarks[0]
                 draw_landmarks(frame, lm_list, cam_w, cam_h)
                 glove_angles = mediapipe_to_glove_angles(lm_list)
-                angles_rad = map_glove_angles_to_agibot_o10(handedness, glove_angles)
+                angles_rad = mapper.map(glove_angles)
                 detected = True
 
             if detected and hand_hw is not None:

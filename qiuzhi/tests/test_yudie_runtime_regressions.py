@@ -9,9 +9,19 @@ from pathlib import Path
 import pytest
 
 
-YUDIE_ROOT = Path(__file__).resolve().parents[2] / "yudie"
-if str(YUDIE_ROOT) not in sys.path:
-    sys.path.insert(0, str(YUDIE_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+YUDIE_ROOT = REPO_ROOT / "yudie"
+LEROBOT_PLAY_ROOT = (
+    REPO_ROOT
+    / "qiuzhi"
+    / "lerobot_play_1.0.4"
+    / "x86"
+    / "noble"
+    / "lerobot_play-1.0.4-py3-none-any"
+)
+for _path in (str(LEROBOT_PLAY_ROOT), str(YUDIE_ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 O12_MODULE_PATH = YUDIE_ROOT / "AGIBOT" / "Omnihand_o12_yudie.py"
 O10_MODULE_PATH = YUDIE_ROOT / "AGIBOT" / "Omnihand_o10_yudie.py"
@@ -151,7 +161,9 @@ def test_o12_left_set_angles_uses_left_hand_mapping(monkeypatch):
     assert fake_hand.active_joint_angles_calls[-1][0] == pytest.approx(0.942)
 
 
-def test_o10_set_hand_position_applies_thumb_deadband_before_sending(monkeypatch):
+def test_o10_set_hand_position_routes_through_o10_hand_mapper(monkeypatch):
+    """Smoke test: yudie's set_hand_position must drive the hand via O10HandMapper
+    (deadband / EMA / curve behavior is covered separately in the mapper unit tests)."""
     module = _load_o10_module_with_fake_sdk(monkeypatch)
 
     class FakeHand:
@@ -163,18 +175,38 @@ def test_o10_set_hand_position_applies_thumb_deadband_before_sending(monkeypatch
 
     hand = FakeHand()
     baseline = [0.0] * 24
-    baseline[20] = 10.0
-    small_thumb_motion = baseline.copy()
-    small_thumb_motion[20] = 11.0
-    large_thumb_motion = baseline.copy()
-    large_thumb_motion[20] = 20.0
-
     module.set_hand_position(hand, baseline, "right")
-    module.set_hand_position(hand, small_thumb_motion, "right")
-    module.set_hand_position(hand, large_thumb_motion, "right")
 
-    assert hand.calls[1][0] == hand.calls[0][0]
-    assert hand.calls[2][0] != hand.calls[1][0]
+    assert len(hand.calls) == 1
+    assert len(hand.calls[0]) == 10
+    # Right-hand thumb_cm_roll has a fixed -10° offset even at zero glove input.
+    import math as _math
+    assert hand.calls[0][0] == pytest.approx(_math.radians(-10.0), abs=1e-9)
+
+
+def test_o10_set_hand_position_keeps_per_hand_mapper_state(monkeypatch):
+    """Two distinct hand instances must not share mapper state."""
+    module = _load_o10_module_with_fake_sdk(monkeypatch)
+
+    class FakeHand:
+        def __init__(self):
+            self.calls = []
+
+        def set_all_active_joint_angles(self, positions):
+            self.calls.append(list(positions))
+
+    hand_a = FakeHand()
+    hand_b = FakeHand()
+    glove = [0.0] * 24
+    glove[6] = 40.0  # drive index_pitch on hand_a only
+
+    for _ in range(20):
+        module.set_hand_position(hand_a, glove, "right")
+    module.set_hand_position(hand_b, [0.0] * 24, "right")
+
+    # hand_a is at steady state (channel 4 nonzero); hand_b is fresh (channel 4 ≈ 0)
+    assert hand_a.calls[-1][4] != 0.0
+    assert hand_b.calls[-1][4] == 0.0
 
 
 def test_json_receiver_preserves_valid_fields_when_parameter_names_are_malformed():

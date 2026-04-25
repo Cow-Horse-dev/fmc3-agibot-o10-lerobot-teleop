@@ -7,8 +7,9 @@ import os
 import sys
 import threading
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 AGIBOT_O10_HAND_FEATURE_NAMES = (
@@ -58,16 +59,6 @@ AGIBOT_O10_TRIGGER_GESTURES = {
     },
 }
 
-_ROBOT_HAND_ANGLE_LIMITS = {
-    "left": [-60, 100, -49, 12, 90, 90, -10, 90, -10, 90],
-    "right": [60, -100, 49, -12, 90, 90, 10, 90, 10, 90],
-}
-
-_GLOVE_HAND_ANGLE_LIMITS = {
-    "left": [37, 30, 58, 30, 79, 81, 20, 81, 30, 100],
-    "right": [37, 30, 60, 30, 81, 81, 20, 81, 30, 100],
-}
-
 _UDE_GLOVE_INDEX_MAP = {
     "left": (
         (0, "z"),
@@ -94,6 +85,151 @@ _UDE_GLOVE_INDEX_MAP = {
         (27, "x"),
     ),
 }
+
+
+# --- O10HandMapper: glove deg → robot rad with EMA + hysteresis + 3-segment curve ---
+
+@dataclass(frozen=True)
+class O10ChannelParams:
+    in_max: float
+    in_low: float
+    in_mid: float
+    out_max: float
+    out_low: float
+    out_mid: float
+    dead_band: float = 3.0
+
+
+_O10_MAPPER_GLOVE_LIMIT_DEG = (37.0, 30.0, 60.0, 30.0, 81.0, 81.0, 20.0, 81.0, 30.0, 100.0)
+_O10_MAPPER_ROBOT_LIMIT_DEG = (60.0, 100.0, 49.0, 12.0, 90.0, 90.0, 10.0, 90.0, 10.0, 90.0)
+_O10_MAPPER_MIRROR_SIGN = {
+    "left":  (-1, +1, -1, +1, +1, +1, -1, +1, -1, +1),
+    "right": (+1, -1, +1, -1, +1, +1, +1, +1, +1, +1),
+}
+_O10_MAPPER_THUMB_ROLL_OFFSET_DEG = {"left": +10.0, "right": -10.0}
+_O10_MAPPER_EMA_ALPHA = 0.35
+
+_O10_MAPPER_IN_MAX_RATIO = 0.85
+_O10_MAPPER_IN_LOW_BASE_DEG = 6.0
+_O10_MAPPER_IN_LOW_RATIO = 0.30
+_O10_MAPPER_IN_MID_RATIO = 0.55
+_O10_MAPPER_OUT_LOW_RATIO = 0.04
+_O10_MAPPER_OUT_MID_RATIO = 0.30
+_O10_MAPPER_DEAD_BAND_DEG = 3.0
+
+
+def _build_o10_default_channel_params() -> tuple[O10ChannelParams, ...]:
+    params: list[O10ChannelParams] = []
+    for glove_lim, robot_lim in zip(_O10_MAPPER_GLOVE_LIMIT_DEG, _O10_MAPPER_ROBOT_LIMIT_DEG):
+        in_max = _O10_MAPPER_IN_MAX_RATIO * glove_lim
+        in_low = min(_O10_MAPPER_IN_LOW_BASE_DEG, _O10_MAPPER_IN_LOW_RATIO * in_max)
+        in_mid = _O10_MAPPER_IN_MID_RATIO * in_max
+        out_max = robot_lim
+        params.append(
+            O10ChannelParams(
+                in_max=in_max,
+                in_low=in_low,
+                in_mid=in_mid,
+                out_max=out_max,
+                out_low=_O10_MAPPER_OUT_LOW_RATIO * out_max,
+                out_mid=_O10_MAPPER_OUT_MID_RATIO * out_max,
+                dead_band=_O10_MAPPER_DEAD_BAND_DEG,
+            )
+        )
+    return tuple(params)
+
+
+O10_DEFAULT_CHANNEL_PARAMS = _build_o10_default_channel_params()
+
+
+def _o10_channel_index_for_name(name: str) -> int:
+    for candidate in (name, name + ".pos"):
+        if candidate in AGIBOT_O10_HAND_FEATURE_NAMES:
+            return AGIBOT_O10_HAND_FEATURE_NAMES.index(candidate)
+    raise KeyError(f"Unknown O10 hand channel: {name!r}")
+
+
+def _o10_apply_curve(params: O10ChannelParams, x: float) -> float:
+    """Three-segment piecewise-linear curve with clamp to [0, out_max]."""
+    if x <= 0.0:
+        return 0.0
+    if x >= params.in_max:
+        return params.out_max
+    if x <= params.in_low:
+        return params.out_low * (x / params.in_low)
+    if x <= params.in_mid:
+        return params.out_low + (x - params.in_low) / (params.in_mid - params.in_low) * (
+            params.out_mid - params.out_low
+        )
+    return params.out_mid + (x - params.in_mid) / (params.in_max - params.in_mid) * (
+        params.out_max - params.out_mid
+    )
+
+
+class O10HandMapper:
+    """Glove-deg → robot-rad mapper with EMA + hysteresis + 3-segment curve."""
+
+    def __init__(
+        self,
+        handedness: str,
+        params: Sequence[O10ChannelParams] | None = None,
+        channel_overrides: Mapping[str, Mapping[str, float]] | None = None,
+        ema_alpha: float = _O10_MAPPER_EMA_ALPHA,
+    ) -> None:
+        self.handedness = normalize_handedness(handedness)
+        base = tuple(params) if params is not None else O10_DEFAULT_CHANNEL_PARAMS
+        if len(base) != len(AGIBOT_O10_HAND_FEATURE_NAMES):
+            raise ValueError(
+                f"O10HandMapper expects {len(AGIBOT_O10_HAND_FEATURE_NAMES)} channels, got {len(base)}"
+            )
+        if channel_overrides:
+            mutable = list(base)
+            for name, fields in channel_overrides.items():
+                index = _o10_channel_index_for_name(name)
+                mutable[index] = replace(mutable[index], **fields)
+            base = tuple(mutable)
+        self.params: tuple[O10ChannelParams, ...] = base
+        self._mirror_sign: tuple[int, ...] = _O10_MAPPER_MIRROR_SIGN[self.handedness]
+        self._thumb_roll_offset_deg: float = _O10_MAPPER_THUMB_ROLL_OFFSET_DEG[self.handedness]
+        self._ema_alpha = float(ema_alpha)
+        self._y_prev_raw: list[float] = [0.0] * len(self.params)
+        self._anchor: list[float] = [0.0] * len(self.params)
+        self._initialized: list[bool] = [False] * len(self.params)
+
+    def reset(self) -> None:
+        n = len(self.params)
+        self._y_prev_raw = [0.0] * n
+        self._anchor = [0.0] * n
+        self._initialized = [False] * n
+
+    def map(self, glove_deg: Sequence[float]) -> list[float]:
+        if len(glove_deg) != len(self.params):
+            raise ValueError(
+                f"O10HandMapper.map expects {len(self.params)} values, got {len(glove_deg)}"
+            )
+        out: list[float] = []
+        for i, raw in enumerate(glove_deg):
+            params = self.params[i]
+            x_abs = abs(float(raw))
+            ema = self._ema_alpha * x_abs + (1.0 - self._ema_alpha) * self._y_prev_raw[i]
+            self._y_prev_raw[i] = ema
+
+            anchor = self._anchor[i]
+            delta = ema - anchor
+            if abs(delta) < params.dead_band:
+                stable = anchor
+            else:
+                sign = 1.0 if delta > 0.0 else -1.0
+                stable = ema - sign * params.dead_band
+                self._anchor[i] = stable
+
+            curve = _o10_apply_curve(params, stable)
+            out_deg = self._mirror_sign[i] * curve
+            if i == 0:
+                out_deg += self._thumb_roll_offset_deg
+            out.append(out_deg * math.pi / 180.0)
+            self._initialized[i] = True
+        return out
 
 
 def _is_omnihand_root(candidate: Path) -> bool:
@@ -221,38 +357,6 @@ def extract_ude_glove_angles(finger_data: Sequence[object], handedness: str) -> 
     for finger_index, axis in mapping:
         values.append(float(getattr(finger_data[finger_index], axis)))
     return values
-
-
-def map_glove_angles_to_agibot_o10(handedness: str, glove_angles: Sequence[float]) -> list[float]:
-    side = normalize_handedness(handedness)
-    if len(glove_angles) != len(AGIBOT_O10_HAND_FEATURE_NAMES):
-        raise ValueError(
-            f"Agibot O10 glove angles must have {len(AGIBOT_O10_HAND_FEATURE_NAMES)} values, "
-            f"got {len(glove_angles)}"
-        )
-
-    robot_limits = _ROBOT_HAND_ANGLE_LIMITS[side]
-    glove_limits = _GLOVE_HAND_ANGLE_LIMITS[side]
-    thumb_roll_offset = 10 if side == "left" else -10
-
-    joints: list[float] = []
-    for index, data in enumerate(glove_angles):
-        clamped = min(abs(float(data)), glove_limits[index])
-        angle_deg = (clamped / glove_limits[index]) * robot_limits[index]
-        if index == 0:
-            angle_deg += thumb_roll_offset
-        joints.append(int(round(angle_deg)) * math.pi / 180)
-
-    return joints
-
-
-def glove_vec_to_agibot_o10_joint_angles(
-    finger_data: Sequence[object], handedness: str
-) -> list[float]:
-    return map_glove_angles_to_agibot_o10(
-        handedness,
-        extract_ude_glove_angles(finger_data, handedness),
-    )
 
 
 def _run_sdk_bootstrap(bootstrap_path: Path) -> None:

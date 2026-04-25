@@ -1,5 +1,4 @@
 import importlib.util
-import math
 from pathlib import Path
 import sys
 import time
@@ -60,27 +59,13 @@ def test_has_hand_data_respects_max_age():
     assert not teleoperator.has_hand_data(max_age_s=0.2)
 
 
-def test_update_hand_data_applies_deadband_to_thumb_joints_only():
+def test_update_hand_data_stores_pre_mapped_values_verbatim():
     teleoperator = AgibotO10GloveTeleoperator(handedness="right")
-    baseline = [0.0] * 10
-    baseline[0] = 0.10
-    baseline[1] = 0.20
-    baseline[2] = 0.30
-    teleoperator.update_hand_data(baseline)
+    sample = [0.10, -0.20, 0.30, 0.0, 0.5, 0.5, 0.0, 0.5, 0.0, 0.5]
+    teleoperator.update_hand_data(sample)
+    assert teleoperator.get_hand_data() == sample
 
-    small_thumb_motion = baseline.copy()
-    small_thumb_motion[0] += math.radians(2.0)
-    small_thumb_motion[1] -= math.radians(2.0)
-    small_thumb_motion[2] += math.radians(2.0)
-    small_thumb_motion[3] = 0.90
-    teleoperator.update_hand_data(small_thumb_motion)
 
-    filtered = teleoperator.get_hand_data()
-    assert filtered[:3] == baseline[:3]
-    assert filtered[3] == 0.90
-
-    large_thumb_motion = filtered.copy()
-    large_thumb_motion[0] += math.radians(4.0)
-    teleoperator.update_hand_data(large_thumb_motion)
-
-    assert teleoperator.get_hand_data()[0] == large_thumb_motion[0]
+def test_teleoperator_owns_an_o10_hand_mapper_with_matching_handedness():
+    teleoperator = AgibotO10GloveTeleoperator(handedness="left")
+    assert teleoperator.mapper.handedness == "left"
