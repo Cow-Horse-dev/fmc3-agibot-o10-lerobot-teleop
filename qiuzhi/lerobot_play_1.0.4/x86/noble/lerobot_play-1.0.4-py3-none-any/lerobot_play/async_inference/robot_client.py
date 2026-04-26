@@ -69,6 +69,7 @@ from lerobot.transport import (
 )
 from lerobot.transport.utils import grpc_channel_options, send_bytes_in_chunks
 from lerobot_play.robots.utils import make_robot_from_config
+from lerobot_play.utils.policy_preprocessor import load_observation_rename_map
 
 
 class RobotClient:
@@ -92,11 +93,12 @@ class RobotClient:
         self.server_address = config.server_address
 
         self.policy_config = RemotePolicyConfig(
-            config.policy_type,
-            config.pretrained_name_or_path,
-            lerobot_features,
-            config.actions_per_chunk,
-            config.policy_device,
+            policy_type=config.policy_type,
+            pretrained_name_or_path=config.pretrained_name_or_path,
+            lerobot_features=lerobot_features,
+            actions_per_chunk=config.actions_per_chunk,
+            device=config.policy_device,
+            rename_map=load_observation_rename_map(config.pretrained_name_or_path),
         )
         self.channel = grpc.insecure_channel(
             self.server_address,

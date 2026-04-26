@@ -21,6 +21,7 @@ robot:
   handedness: right
   enable_hand: true
   include_eef_pose: false
+  action_control_mode: joint  # joint, eef_delta
   tactile_mode: "none"
 
   # O10 手通道模式。
@@ -103,6 +104,7 @@ teleop:
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
+  action_control_mode: joint  # joint, eef_delta
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。

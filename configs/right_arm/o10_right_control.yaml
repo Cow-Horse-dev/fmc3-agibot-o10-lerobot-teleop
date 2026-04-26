@@ -40,6 +40,7 @@ teleop:
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
+  action_control_mode: joint  # joint, eef_delta
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
@@ -62,6 +63,7 @@ robot:
 
   # 选择“哪只 follower 手/臂”接收控制。
   handedness: right
+  action_control_mode: joint  # joint, eef_delta
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：

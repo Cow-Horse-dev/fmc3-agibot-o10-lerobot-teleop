@@ -35,6 +35,7 @@ robot:
 
   # 选择"哪只 follower 手/臂"执行回放。
   handedness: left
+  action_control_mode: joint  # 与数据集 action schema 保持一致：joint, eef_delta
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：

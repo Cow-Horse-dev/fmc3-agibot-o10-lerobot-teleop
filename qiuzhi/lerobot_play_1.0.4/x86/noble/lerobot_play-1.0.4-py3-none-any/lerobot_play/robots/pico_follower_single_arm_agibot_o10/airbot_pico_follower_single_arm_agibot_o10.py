@@ -12,12 +12,25 @@ from mmk2_kdl_py import ArmKdlNumerical
 import airbot_hardware_py as ah
 from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_ARM_FEATURE_NAMES,
+    AGIBOT_O10_EEF_DELTA_FEATURE_NAMES,
+    AGIBOT_O10_GRIPPER_FEATURE_NAMES,
     AGIBOT_O10_HAND_FEATURE_NAMES,
     AGIBOT_O10_POSE_FEATURE_NAMES,
     AgibotO10Hand,
     agibot_o10_action_feature_types,
+    agibot_o10_eef_delta_action_feature_types,
+    agibot_o10_eef_delta_gripper_action_feature_types,
+    agibot_o10_gripper_action_feature_types,
+    agibot_o10_gripper_state_feature_types,
+    agibot_o10_gripper_value_from_hand_joints,
+    agibot_o10_hand_joints_from_gripper_value,
     agibot_o10_joint_action_feature_types,
+    build_agibot_o10_eef_delta_action_dict,
+    build_agibot_o10_eef_delta_gripper_action_dict,
+    build_agibot_o10_gripper_action_dict,
     build_agibot_o10_joint_action_dict,
+    normalize_agibot_o10_action_control_mode,
+    normalize_agibot_o10_hand_action_mode,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
 from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
@@ -27,6 +40,37 @@ from .config_pico_follower_single_arm_agibot_o10 import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _rotation_matrix_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ],
+        dtype=float,
+    )
+
+
+def _apply_eef_delta_to_pose(current_pose: np.ndarray, eef_delta: list[float]) -> np.ndarray:
+    target_pose = np.array(current_pose, dtype=float, copy=True)
+    target_pose[:3, 3] += np.array(eef_delta[:3], dtype=float)
+    target_pose[:3, :3] = target_pose[:3, :3] @ _rotation_matrix_from_rpy(*eef_delta[3:6])
+    return target_pose
+
+
+def _solve_ik(arm_kdl, target_pose: np.ndarray, seed_joints: list[float]) -> list[float]:
+    try:
+        result = arm_kdl.inverse_kinematics(target_pose, seed_joints, force_calculate=True)
+    except TypeError:
+        result = arm_kdl.inverse_kinematics(target_pose, seed_joints)
+    if len(result) == 0:
+        raise RuntimeError("Agibot O10 eef_delta IK failed; refusing to send an arm target.")
+    return [float(value) for value in result[0][: len(AGIBOT_O10_ARM_FEATURE_NAMES)]]
 
 
 TACTILE_REGION_NAMES = (
@@ -222,6 +266,8 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @property
     def _motors_ft(self) -> dict[str, type]:
+        if self._hand_action_mode() == "gripper_1d":
+            return agibot_o10_gripper_state_feature_types()
         if self.config.include_eef_pose:
             return agibot_o10_action_feature_types()
         return agibot_o10_joint_action_feature_types()
@@ -319,6 +365,12 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @cached_property
     def action_features(self):
+        if self._action_control_mode() == "eef_delta":
+            if self._hand_action_mode() == "gripper_1d":
+                return agibot_o10_eef_delta_gripper_action_feature_types()
+            return agibot_o10_eef_delta_action_feature_types()
+        if self._hand_action_mode() == "gripper_1d":
+            return agibot_o10_gripper_action_feature_types()
         return agibot_o10_joint_action_feature_types()
 
     @cached_property
@@ -408,13 +460,21 @@ class PicoFollowerSingleArmAgibotO10(Robot):
                 feature_name: arm_pos[index]
                 for index, feature_name in enumerate(AGIBOT_O10_ARM_FEATURE_NAMES)
             },
-            **{
-                feature_name: hand_pos[index]
-                for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
-            },
         }
 
-        if self.config.include_eef_pose:
+        if self._hand_action_mode() == "gripper_1d":
+            obs_dict[AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]] = self._hand_joints_to_gripper_value(
+                hand_pos
+            )
+        else:
+            obs_dict.update(
+                {
+                    feature_name: hand_pos[index]
+                    for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
+                }
+            )
+
+        if self._hand_action_mode() != "gripper_1d" and self.config.include_eef_pose:
             pose = self.homogeneous_matrix_to_pose(self.arm_kdl.forward_kinematics(arm_pos[:6]))
             for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
                 obs_dict[feature_name] = pose[index]
@@ -450,7 +510,12 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             hand_joints = [float(value) for value in action["hand_joints"]]
         else:
             joints = [float(action[name]) for name in AGIBOT_O10_ARM_FEATURE_NAMES]
-            hand_joints = [float(action[name]) for name in AGIBOT_O10_HAND_FEATURE_NAMES]
+            if self._hand_action_mode() == "gripper_1d":
+                hand_joints = self._gripper_value_to_hand_joints(
+                    float(action[AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]])
+                )
+            else:
+                hand_joints = [float(action[name]) for name in AGIBOT_O10_HAND_FEATURE_NAMES]
 
         if len(joints) != len(AGIBOT_O10_ARM_FEATURE_NAMES):
             raise ValueError(
@@ -466,9 +531,102 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             "hand_joints": hand_joints,
         }
 
+    def _action_control_mode(self) -> str:
+        return normalize_agibot_o10_action_control_mode(
+            getattr(self.config, "action_control_mode", "joint")
+        )
+
+    def _hand_action_mode(self) -> str:
+        return normalize_agibot_o10_hand_action_mode(
+            getattr(self.config, "hand_action_mode", "dexterous_10d")
+        )
+
+    def _gripper_gesture(self) -> str:
+        return (
+            getattr(self.config, "gripper_gesture", None)
+            or getattr(self.config, "trigger_gesture", None)
+            or getattr(self.config, "reset_gesture", None)
+            or "pinch"
+        )
+
+    def _reset_poses_path(self) -> str | None:
+        return getattr(self.config, "reset_poses_path", None)
+
+    def _hand_joints_to_gripper_value(self, hand_joints: list[float]) -> float:
+        return agibot_o10_gripper_value_from_hand_joints(
+            hand_joints,
+            self._gripper_gesture(),
+            getattr(self.config, "handedness", "right"),
+            reset_poses_path=self._reset_poses_path(),
+        )
+
+    def _gripper_value_to_hand_joints(self, gripper_value: float) -> list[float]:
+        return agibot_o10_hand_joints_from_gripper_value(
+            gripper_value,
+            self._gripper_gesture(),
+            getattr(self.config, "handedness", "right"),
+            reset_poses_path=self._reset_poses_path(),
+        )
+
+    def convert_eef_delta_action_format(self, action: dict[str, Any]) -> dict[str, list[float]]:
+        if "eef_delta" in action and "hand_joints" in action:
+            eef_delta = [float(value) for value in action["eef_delta"]]
+            hand_joints = [float(value) for value in action["hand_joints"]]
+        else:
+            eef_delta = [float(action[name]) for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES]
+            if self._hand_action_mode() == "gripper_1d":
+                hand_joints = self._gripper_value_to_hand_joints(
+                    float(action[AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]])
+                )
+            else:
+                hand_joints = [float(action[name]) for name in AGIBOT_O10_HAND_FEATURE_NAMES]
+
+        if len(eef_delta) != len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES):
+            raise ValueError(
+                f"Expected {len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)} eef_delta values, got {len(eef_delta)}"
+            )
+        if len(hand_joints) != len(AGIBOT_O10_HAND_FEATURE_NAMES):
+            raise ValueError(
+                f"Expected {len(AGIBOT_O10_HAND_FEATURE_NAMES)} hand joints, got {len(hand_joints)}"
+            )
+
+        return {
+            "eef_delta": eef_delta,
+            "hand_joints": hand_joints,
+        }
+
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
             raise RuntimeError(f"{self} is not connected.")
+
+        if self._action_control_mode() == "eef_delta":
+            formatted_action = self.convert_eef_delta_action_format(action)
+            current_arm_joints, _ = self.get_joint_pos()
+            current_pose = self.arm_kdl.forward_kinematics(
+                current_arm_joints[: len(AGIBOT_O10_ARM_FEATURE_NAMES)]
+            )
+            target_pose = _apply_eef_delta_to_pose(current_pose, formatted_action["eef_delta"])
+            joints = _solve_ik(
+                self.arm_kdl,
+                target_pose,
+                current_arm_joints[: len(AGIBOT_O10_ARM_FEATURE_NAMES)],
+            )
+
+            self.servo_joint_pos(joints)
+            self.hand_joints = formatted_action["hand_joints"].copy()
+            if self.hand is not None:
+                self.hand.write_active_joint_angles(formatted_action["hand_joints"])
+
+            if self._hand_action_mode() == "gripper_1d":
+                return build_agibot_o10_eef_delta_gripper_action_dict(
+                    [
+                        *formatted_action["eef_delta"],
+                        self._hand_joints_to_gripper_value(formatted_action["hand_joints"]),
+                    ]
+                )
+            return build_agibot_o10_eef_delta_action_dict(
+                [*formatted_action["eef_delta"], *formatted_action["hand_joints"]]
+            )
 
         formatted_action = self.convert_action_format(action)
 
@@ -477,6 +635,13 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         if self.hand is not None:
             self.hand.write_active_joint_angles(formatted_action["hand_joints"])
 
+        if self._hand_action_mode() == "gripper_1d":
+            return build_agibot_o10_gripper_action_dict(
+                [
+                    *formatted_action["joints"],
+                    self._hand_joints_to_gripper_value(formatted_action["hand_joints"]),
+                ]
+            )
         return build_agibot_o10_joint_action_dict(
             [*formatted_action["joints"], *formatted_action["hand_joints"]]
         )

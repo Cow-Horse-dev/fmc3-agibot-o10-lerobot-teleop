@@ -19,6 +19,9 @@ class PicoFollowerSingleArmAgibotO10Config(RobotConfig):
     reset_poses_path: str | None = None
     reset_gesture: str | None = None
     include_eef_pose: bool = True
+    action_control_mode: str = "joint"  # "joint" or "eef_delta"
+    hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"
+    gripper_gesture: str | None = None
     tactile_mode: str = "none"
 
     disable_torque_on_disconnect: bool = True

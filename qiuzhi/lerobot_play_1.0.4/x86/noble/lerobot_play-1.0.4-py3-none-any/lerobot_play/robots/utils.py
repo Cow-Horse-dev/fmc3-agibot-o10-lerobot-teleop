@@ -56,7 +56,7 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         return PicoFollowerSingleArmAgibotO10(config)
 
     elif config.type == "pico_follower_dual_arm_agibot_o10":
-        from .pico_follower_dual_arm_agibot_o10 import (
+        from .pico_follower_dual_arm_agibot_o10.airbot_pico_follower_dual_arm_agibot_o10 import (
             PicoFollowerDualArmAgibotO10,
         )
 

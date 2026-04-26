@@ -86,6 +86,11 @@ def _load_dual_arm_module(monkeypatch):
         monkeypatch,
         "lerobot_play.robots.pico_follower_dual_arm_agibot_o10.airbot_pico_follower_dual_arm_agibot_o10",
         DUAL_ARM_ACTION_FEATURE_NAMES=tuple(f"action_{index}" for index in range(32)),
+        DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES=tuple(f"eef_delta_action_{index}" for index in range(32)),
+        DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES=tuple(f"gripper_action_{index}" for index in range(14)),
+        DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES=tuple(
+            f"eef_delta_gripper_action_{index}" for index in range(14)
+        ),
     )
     def _fake_load_reset_poses(path, side, gesture):
         return [], []
@@ -246,14 +251,63 @@ def test_both_mode_requires_both_triggers(monkeypatch, left_trigger, right_trigg
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_trigger_gesture_grip_axis_can_close_without_waiting_for_button(monkeypatch, side):
+def test_trigger_gesture_grip_button_forces_closed_pose(monkeypatch, side):
     module = _load_dual_arm_module(monkeypatch)
     teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
     teleop.config = SimpleNamespace(
         hand_mode="trigger_gesture",
         trigger_gesture="pinch",
         arm_trigger_mode="left",
-        grasp_grip_threshold=0.2,
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": True,
+        "RTr": False,
+        "LG": False,
+        "RG": False,
+        "leftGrip": 0.0,
+        "rightGrip": 0.0,
+    }
+    teleop.left_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.right_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.left_hand_teleoperator = None
+    teleop.right_hand_teleoperator = None
+    setattr(
+        teleop,
+        f"{side}_commanded_hand_joint_pos",
+        module.get_agibot_o10_trigger_gesture_joint_angles("pinch", side, "open"),
+    )
+    teleop._get_commanded_hand_joint_pos = (
+        lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
+    )
+    teleop._set_commanded_hand_joint_pos = (
+        lambda requested_side, joint_pos: setattr(
+            teleop,
+            f"{requested_side}_commanded_hand_joint_pos",
+            joint_pos.copy(),
+        )
+    )
+
+    button_key = "LG" if side == "left" else "RG"
+    teleop.ctrl[button_key] = True
+
+    state = teleop._get_side_joint_pos(side)
+    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "pinch",
+        side,
+        "closed",
+    )
+    assert state[6:] == pytest.approx(expected_closed)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_trigger_gesture_grip_axis_sets_continuous_gripper_value(monkeypatch, side):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="left",
     )
     teleop.startflag = True
     teleop.ctrl = {
@@ -285,15 +339,15 @@ def test_trigger_gesture_grip_axis_can_close_without_waiting_for_button(monkeypa
     )
 
     grip_key = "leftGrip" if side == "left" else "rightGrip"
-    teleop.ctrl[grip_key] = 0.21
+    teleop.ctrl[grip_key] = 0.5
 
     state = teleop._get_side_joint_pos(side)
-    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+    expected_half_closed = module.agibot_o10_hand_joints_from_gripper_value(
+        0.5,
         "pinch",
         side,
-        "closed",
     )
-    assert state[6:] == pytest.approx(expected_closed)
+    assert state[6:] == pytest.approx(expected_half_closed)
 
 
 class _OneLoopStopEvent:

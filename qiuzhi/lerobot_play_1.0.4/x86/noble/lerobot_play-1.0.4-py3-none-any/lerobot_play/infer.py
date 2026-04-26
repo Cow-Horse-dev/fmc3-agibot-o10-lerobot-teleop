@@ -21,6 +21,7 @@ import yaml
 import shutil
 
 from lerobot.cameras.configs import Cv2Rotation
+from lerobot.configs.policies import PreTrainedConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.act.modeling_act import ACTPolicy
@@ -53,11 +54,17 @@ from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agi
     PicoFollowerDualArmAgibotO10Config,
 )
 from .robots.utils import make_robot_from_config
+from .utils.policy_preprocessor import load_observation_rename_map
 from .utils.runtime_helpers import build_dataset_features
 from .utils.camera_config_parser import parse_camera_configs
 
 
 SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
+O10_ROBOT_TYPES = (
+    "pico_follower_single_arm_agibot_o10",
+    "pico_follower_dual_arm_agibot_o10",
+)
+POLICIES_WITHOUT_O10_TACTILE = ("pi0", "pi05")
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
@@ -402,11 +409,14 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_channel_id=robot_cfg.get("channel_id"),
         robot_reset_poses_path=robot_cfg.get("reset_poses_path"),
         robot_reset_gesture=robot_cfg.get("reset_gesture"),
+        robot_gripper_gesture=robot_cfg.get("gripper_gesture"),
         robot_left=robot_cfg.get("left", {}),
         robot_right=robot_cfg.get("right", {}),
         robot_enable_hand=robot_cfg.get("enable_hand", True),
         robot_allow_camera_read_failures=robot_cfg.get("allow_camera_read_failures", False),
         robot_include_eef_pose=robot_cfg.get("include_eef_pose", True),
+        robot_action_control_mode=robot_cfg.get("action_control_mode", "joint"),
+        robot_hand_action_mode=robot_cfg.get("hand_action_mode", "dexterous_10d"),
         robot_tactile_mode=robot_cfg.get("tactile_mode", "none"),
     )
 
@@ -445,6 +455,127 @@ def _validate_args(args: argparse.Namespace) -> None:
             _parse_cameras(cameras_config)
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Invalid camera configuration: {e}")
+
+
+def _apply_policy_robot_schema_defaults(args: argparse.Namespace) -> None:
+    """Apply policy-specific robot schema defaults before constructing hardware."""
+    if (
+        args.policy in POLICIES_WITHOUT_O10_TACTILE
+        and args.robot_type in O10_ROBOT_TYPES
+        and args.robot_tactile_mode != "none"
+    ):
+        log_say(
+            f"{args.policy} inference on Agibot O10 uses visual + proprioception only; "
+            f"overriding robot.tactile_mode={args.robot_tactile_mode!r} to 'none'."
+        )
+        args.robot_tactile_mode = "none"
+
+
+def _feature_shape(feature: Any) -> tuple[int, ...]:
+    shape = feature.get("shape") if isinstance(feature, dict) else getattr(feature, "shape")
+    return tuple(int(dim) for dim in shape)
+
+
+def _policy_feature_names(features: dict[str, Any], feature_type: str) -> set[str]:
+    return {
+        name
+        for name, feature in features.items()
+        if str(getattr(feature, "type", "")).split(".")[-1] == feature_type
+        or (
+            isinstance(feature, dict)
+            and str(feature.get("type", "")).split(".")[-1] == feature_type
+        )
+    }
+
+
+def _validate_policy_robot_feature_compatibility(
+    policy_or_config: Any,
+    robot_features: dict[str, dict],
+    model_path: str,
+    observation_rename_map: dict[str, str] | None = None,
+) -> None:
+    """Fail early when the checkpoint schema does not match this robot run."""
+    policy_config = getattr(policy_or_config, "config", policy_or_config)
+    policy_input_features = getattr(policy_config, "input_features", {}) or {}
+    policy_output_features = getattr(policy_config, "output_features", {}) or {}
+
+    mismatches: list[str] = []
+    for key in ("observation.state", "action"):
+        policy_features = policy_input_features if key == "observation.state" else policy_output_features
+        if key not in policy_features or key not in robot_features:
+            continue
+
+        policy_dim = _feature_shape(policy_features[key])[0]
+        robot_dim = _feature_shape(robot_features[key])[0]
+        if policy_dim != robot_dim:
+            mismatches.append(f"{key}: model expects {policy_dim}D, robot exposes {robot_dim}D")
+
+    expected_image_keys = _policy_feature_names(policy_input_features, "VISUAL")
+    robot_image_keys = {
+        key
+        for key, feature in robot_features.items()
+        if feature.get("dtype") in {"image", "video"}
+    }
+    if observation_rename_map:
+        robot_image_keys = {
+            observation_rename_map.get(key, key)
+            for key in robot_image_keys
+        }
+    missing_image_keys = sorted(expected_image_keys - robot_image_keys)
+    if missing_image_keys:
+        mismatches.append(
+            "image keys: model expects missing robot observations "
+            f"{missing_image_keys}; robot exposes {sorted(robot_image_keys)}"
+        )
+
+    if mismatches:
+        details = "\n  - ".join(mismatches)
+        raise ValueError(
+            "Policy checkpoint features do not match the current robot inference schema "
+            f"for {model_path}:\n  - {details}\n"
+            "Use a checkpoint fine-tuned on a dataset recorded with the same "
+            "hand_action_mode, tactile_mode, action_control_mode, and camera keys."
+        )
+
+
+def _load_policy_config(model_path: str, device: str | None) -> PreTrainedConfig:
+    config = PreTrainedConfig.from_pretrained(model_path)
+    if device:
+        config.device = device
+    return config
+
+
+def _validate_policy_type_matches_checkpoint(
+    policy_type: str,
+    policy_config: PreTrainedConfig,
+    model_path: str,
+) -> None:
+    if policy_config.type != policy_type:
+        raise ValueError(
+            f"infer.policy is {policy_type!r}, but checkpoint at {model_path} "
+            f"has config type {policy_config.type!r}."
+        )
+
+
+def _load_observation_rename_map(model_path: str) -> dict[str, str]:
+    return load_observation_rename_map(model_path, logger=log_say)
+
+
+def _load_and_validate_policy_config(
+    policy_type: str,
+    model_path: str,
+    device: str | None,
+    robot_features: dict[str, dict],
+) -> PreTrainedConfig:
+    policy_config = _load_policy_config(model_path, device)
+    _validate_policy_type_matches_checkpoint(policy_type, policy_config, model_path)
+    _validate_policy_robot_feature_compatibility(
+        policy_config,
+        robot_features,
+        model_path,
+        observation_rename_map=_load_observation_rename_map(model_path),
+    )
+    return policy_config
 
 
 def _load_policy(policy_type: str, model_path: str, device: str):
@@ -596,9 +727,12 @@ def _create_robot_config(args: argparse.Namespace):
             channel_id=args.robot_channel_id,
             reset_poses_path=args.robot_reset_poses_path,
             reset_gesture=args.robot_reset_gesture,
+            gripper_gesture=args.robot_gripper_gesture,
             enable_hand=args.robot_enable_hand,
             allow_camera_read_failures=args.robot_allow_camera_read_failures,
             include_eef_pose=args.robot_include_eef_pose,
+            action_control_mode=args.robot_action_control_mode,
+            hand_action_mode=args.robot_hand_action_mode,
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
@@ -610,6 +744,8 @@ def _create_robot_config(args: argparse.Namespace):
             enable_hand=args.robot_enable_hand,
             allow_camera_read_failures=args.robot_allow_camera_read_failures,
             include_eef_pose=args.robot_include_eef_pose,
+            action_control_mode=args.robot_action_control_mode,
+            hand_action_mode=args.robot_hand_action_mode,
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
@@ -652,9 +788,6 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
     dataset = None
     save_path = None
 
-    # 加载策略
-    policy = _load_policy(args.policy, args.model_path, args.device)
-
     # 创建保存路径
     if args.save_path:
         save_path = args.save_path
@@ -670,6 +803,15 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 创建数据集
     dataset = _create_dataset(robot, args.fps, save_path)
+    _load_and_validate_policy_config(
+        args.policy,
+        args.model_path,
+        args.device,
+        dataset.features,
+    )
+
+    # 加载策略
+    policy = _load_policy(args.policy, args.model_path, args.device)
 
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=policy.config,
@@ -799,6 +941,17 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 创建机器人配置
     robot_config = _create_robot_config(args)
+    robot = make_robot_from_config(robot_config)
+    robot_features = build_dataset_features(
+        robot,
+        use_videos=bool(getattr(robot, "cameras", {})),
+    )
+    _load_and_validate_policy_config(
+        args.policy,
+        args.model_path,
+        args.device,
+        robot_features,
+    )
 
     # 创建客户端配置
     client_cfg = RobotClientConfig(
@@ -882,6 +1035,7 @@ def main():
         cli_args = _parse_cli_args()
         cfg = _load_config(cli_args)
         args = _config_to_args(cfg)
+        _apply_policy_robot_schema_defaults(args)
 
         # 验证参数
         _validate_args(args)

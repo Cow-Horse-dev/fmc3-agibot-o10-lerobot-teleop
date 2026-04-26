@@ -1,8 +1,12 @@
 from pathlib import Path
+import json
 import sys
 import types
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import torch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -19,17 +23,37 @@ if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
 
 
 fake_airbot_hardware = types.ModuleType("airbot_hardware_py")
+fake_airbot_hardware.MotorType = SimpleNamespace(OD=object(), DM=object(), NA=object())
+fake_airbot_hardware.EEFType = SimpleNamespace(NA=object())
+fake_airbot_hardware.MotorControlMode = SimpleNamespace(PVT=object())
+fake_airbot_hardware.create_asio_executor = lambda *args, **kwargs: SimpleNamespace(
+    get_io_context=lambda: SimpleNamespace()
+)
+fake_airbot_hardware.Play = SimpleNamespace(
+    create=lambda *args, **kwargs: SimpleNamespace(
+        init=lambda *args, **kwargs: True,
+        uninit=lambda *args, **kwargs: None,
+        enable=lambda *args, **kwargs: None,
+        disable=lambda *args, **kwargs: None,
+        set_param=lambda *args, **kwargs: None,
+        pvt=lambda *args, **kwargs: None,
+        state=lambda: SimpleNamespace(pos=[0.0] * 6),
+    )
+)
 fake_mmk2_kdl = types.ModuleType("mmk2_kdl_py")
-fake_mmk2_kdl.ArmKdlNumerical = object
+fake_mmk2_kdl.ArmKdlNumerical = lambda *args, **kwargs: SimpleNamespace()
 
 sys.modules.setdefault("airbot_hardware_py", fake_airbot_hardware)
 sys.modules.setdefault("mmk2_kdl_py", fake_mmk2_kdl)
 
 from lerobot_play.infer import (
+    _apply_policy_robot_schema_defaults,
     _config_to_args,
     _create_dataset,
     _create_robot_config,
     _create_save_directory,
+    _validate_policy_type_matches_checkpoint,
+    _validate_policy_robot_feature_compatibility,
     _validate_args,
     _validate_model_path,
 )
@@ -147,6 +171,309 @@ def test_dual_arm_o10_infer_passes_schema_fields_to_robot_config():
     assert robot_config.tactile_mode == "7d"
     assert robot_config.left == {"port": "can0", "handedness": "left"}
     assert robot_config.right == {"port": "can1", "handedness": "right"}
+
+
+def test_dual_arm_o10_robot_factory_imports_runtime_class(monkeypatch):
+    from lerobot_play.robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
+        PicoFollowerDualArmAgibotO10Config,
+    )
+    from lerobot_play.robots.utils import make_robot_from_config
+
+    robot_config = PicoFollowerDualArmAgibotO10Config(
+        left={"port": "can0", "handedness": "left"},
+        right={"port": "can1", "handedness": "right"},
+        enable_hand=False,
+        cameras={},
+    )
+
+    robot = make_robot_from_config(robot_config)
+
+    assert robot.name == "pico_follower_dual_arm_agibot_o10"
+
+
+def test_pi0_dual_arm_o10_infer_forces_tactile_off_for_robot_schema():
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "pi0",
+                "task_description": "pick",
+                "model_path": "/tmp/model",
+            },
+            "robot": {
+                "type": "pico_follower_dual_arm_agibot_o10",
+                "tactile_mode": "7d",
+                "left": {"port": "can0", "handedness": "left"},
+                "right": {"port": "can1", "handedness": "right"},
+                "cameras": {},
+            },
+        }
+    )
+
+    _apply_policy_robot_schema_defaults(args)
+
+    assert args.robot_tactile_mode == "none"
+
+
+def test_diffusion_dual_arm_o10_infer_keeps_configured_tactile_schema():
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "diffusion",
+                "task_description": "pick",
+                "model_path": "/tmp/model",
+            },
+            "robot": {
+                "type": "pico_follower_dual_arm_agibot_o10",
+                "tactile_mode": "7d",
+                "left": {"port": "can0", "handedness": "left"},
+                "right": {"port": "can1", "handedness": "right"},
+                "cameras": {},
+            },
+        }
+    )
+
+    _apply_policy_robot_schema_defaults(args)
+
+    assert args.robot_tactile_mode == "7d"
+
+
+def test_validate_policy_robot_feature_compatibility_rejects_state_action_mismatch(tmp_path):
+    policy = SimpleNamespace(
+        config=SimpleNamespace(
+            input_features={
+                "observation.images.base_0_rgb": SimpleNamespace(shape=(3, 224, 224)),
+                "observation.state": SimpleNamespace(shape=(32,)),
+            },
+            output_features={
+                "action": SimpleNamespace(shape=(32,)),
+            },
+        )
+    )
+    robot_features = {
+        "observation.images.base_0_rgb": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (14,),
+            "names": [f"state_{index}" for index in range(14)],
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (14,),
+            "names": [f"action_{index}" for index in range(14)],
+        },
+    }
+
+    with pytest.raises(ValueError, match="observation.state"):
+        _validate_policy_robot_feature_compatibility(
+            policy,
+            robot_features,
+            str(tmp_path),
+        )
+
+
+def test_validate_policy_robot_feature_compatibility_allows_saved_camera_rename_map(tmp_path):
+    policy = SimpleNamespace(
+        config=SimpleNamespace(
+            input_features={
+                "observation.images.base_0_rgb": SimpleNamespace(shape=(3, 224, 224)),
+                "observation.images.left_wrist_0_rgb": SimpleNamespace(shape=(3, 224, 224)),
+                "observation.images.right_wrist_0_rgb": SimpleNamespace(shape=(3, 224, 224)),
+                "observation.state": SimpleNamespace(shape=(14,)),
+            },
+            output_features={
+                "action": SimpleNamespace(shape=(14,)),
+            },
+        )
+    )
+    robot_features = {
+        "observation.images.top": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.images.left_wrist": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.images.right_wrist": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (14,),
+            "names": [f"state_{index}" for index in range(14)],
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (14,),
+            "names": [f"action_{index}" for index in range(14)],
+        },
+    }
+
+    _validate_policy_robot_feature_compatibility(
+        policy,
+        robot_features,
+        str(tmp_path),
+        observation_rename_map={
+            "observation.images.top": "observation.images.base_0_rgb",
+            "observation.images.left_wrist": "observation.images.left_wrist_0_rgb",
+            "observation.images.right_wrist": "observation.images.right_wrist_0_rgb",
+        },
+    )
+
+
+def test_validate_policy_type_matches_checkpoint_rejects_wrong_policy_name(tmp_path):
+    policy_config = SimpleNamespace(type="pi0")
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        _validate_policy_type_matches_checkpoint("diffusion", policy_config, str(tmp_path))
+
+
+def test_async_robot_client_sends_saved_observation_rename_map(tmp_path, monkeypatch):
+    from lerobot_play.async_inference import robot_client as robot_client_module
+
+    model_root = tmp_path / "model"
+    model_root.mkdir()
+    rename_map = {
+        "observation.images.top": "observation.images.base_0_rgb",
+        "observation.images.left_wrist": "observation.images.left_wrist_0_rgb",
+        "observation.images.right_wrist": "observation.images.right_wrist_0_rgb",
+    }
+    (model_root / "policy_preprocessor.json").write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {
+                        "registry_name": "rename_observations_processor",
+                        "config": {"rename_map": rename_map},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fake_robot = SimpleNamespace(
+        connect=lambda: None,
+        observation_features={},
+        action_features={},
+    )
+    monkeypatch.setattr(
+        robot_client_module,
+        "make_robot_from_config",
+        lambda robot_config: fake_robot,
+    )
+    monkeypatch.setattr(
+        robot_client_module,
+        "map_robot_keys_to_lerobot_features",
+        lambda robot: {"observation.images.top": {"dtype": "video"}},
+    )
+
+    client = robot_client_module.RobotClient(
+        SimpleNamespace(
+            robot=SimpleNamespace(),
+            server_address="127.0.0.1:1",
+            policy_type="pi0",
+            pretrained_name_or_path=str(model_root),
+            actions_per_chunk=50,
+            policy_device="cpu",
+            environment_dt=1 / 30,
+            chunk_size_threshold=0.5,
+            aggregate_fn=None,
+            fps=30,
+        )
+    )
+
+    assert client.policy_config.rename_map == rename_map
+
+
+def test_async_raw_observation_renames_images_before_policy_resize():
+    from lerobot.async_inference.helpers import raw_observation_to_observation
+
+    raw_observation = {
+        "joint": 0.1,
+        "top": np.zeros((4, 4, 3), dtype=np.uint8),
+    }
+    lerobot_features = {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (1,),
+            "names": ["joint"],
+        },
+        "observation.images.top": {
+            "dtype": "image",
+            "shape": (4, 4, 3),
+            "names": ["height", "width", "channels"],
+        },
+    }
+    policy_image_features = {
+        "observation.images.base_0_rgb": SimpleNamespace(shape=(3, 2, 2)),
+    }
+
+    observation = raw_observation_to_observation(
+        raw_observation,
+        lerobot_features,
+        policy_image_features,
+        observation_rename_map={
+            "observation.images.top": "observation.images.base_0_rgb",
+        },
+    )
+
+    assert "observation.images.base_0_rgb" in observation
+    assert "observation.images.top" not in observation
+    assert observation["observation.images.base_0_rgb"].shape == (1, 3, 2, 2)
+
+
+def test_async_policy_server_uses_received_rename_map_in_action_prediction(monkeypatch):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import TimedObservation
+    from lerobot.async_inference.policy_server import PolicyServer
+
+    captured: dict[str, object] = {}
+
+    def fake_raw_observation_to_observation(
+        raw_observation,
+        lerobot_features,
+        policy_image_features,
+        observation_rename_map=None,
+    ):
+        captured["observation_rename_map"] = observation_rename_map
+        return {"observation.state": "prepared"}
+
+    monkeypatch.setattr(
+        "lerobot.async_inference.policy_server.raw_observation_to_observation",
+        fake_raw_observation_to_observation,
+    )
+
+    server = PolicyServer(PolicyServerConfig())
+    server.lerobot_features = {}
+    server.observation_rename_map = {
+        "observation.images.top": "observation.images.base_0_rgb",
+    }
+    server.policy = SimpleNamespace(
+        config=SimpleNamespace(image_features={}),
+        predict_action_chunk=lambda observation: torch.zeros((1, 1, 1)),
+    )
+    server.preprocessor = lambda observation: observation
+    server.postprocessor = lambda action: action
+    server.actions_per_chunk = 1
+
+    server._predict_action_chunk(
+        TimedObservation(
+            timestamp=0.0,
+            timestep=0,
+            observation={"top": np.zeros((4, 4, 3), dtype=np.uint8)},
+        )
+    )
+
+    assert captured["observation_rename_map"] == server.observation_rename_map
 
 
 def _minimal_valid_args(tmp_path):

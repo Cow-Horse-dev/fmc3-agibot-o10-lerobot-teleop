@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import math
 import os
 import sys
@@ -35,6 +36,17 @@ AGIBOT_O10_POSE_FEATURE_NAMES = (
     "quaternion.qz",
     "quaternion.qw",
 )
+AGIBOT_O10_EEF_DELTA_FEATURE_NAMES = (
+    "delta_pose.x",
+    "delta_pose.y",
+    "delta_pose.z",
+    "delta_orientation.roll",
+    "delta_orientation.pitch",
+    "delta_orientation.yaw",
+)
+AGIBOT_O10_GRIPPER_FEATURE_NAMES = ("gripper.pos",)
+AGIBOT_O10_ACTION_CONTROL_MODES = ("joint", "eef_delta")
+AGIBOT_O10_HAND_ACTION_MODES = ("dexterous_10d", "gripper_1d")
 
 AGIBOT_O10_TRIGGER_GESTURES = {
     "pinch": {
@@ -305,12 +317,144 @@ def get_agibot_o10_trigger_gesture_joint_angles(
     return gesture[side][state_key].copy()
 
 
+def get_agibot_o10_reset_pose_gesture_joint_angles(
+    reset_poses_path: str | Path | None,
+    gesture_name: str,
+    handedness: str,
+    state: str,
+) -> list[float] | None:
+    if not reset_poses_path:
+        return None
+
+    filepath = Path(reset_poses_path).expanduser()
+    data = json.loads(filepath.read_text(encoding="utf-8"))
+    gestures = data.get("gestures")
+    if not isinstance(gestures, dict):
+        raise ValueError(f"reset-poses JSON missing 'gestures' section: {filepath}")
+
+    gesture_key = normalize_trigger_gesture_name(gesture_name)
+    if gesture_key not in gestures:
+        raise ValueError(
+            f"gesture '{gesture_key}' not found (available: {list(gestures.keys())})"
+        )
+    side = normalize_handedness(handedness)
+    gesture_section = gestures[gesture_key]
+    if side not in gesture_section:
+        raise ValueError(
+            f"side '{side}' not found in gesture '{gesture_key}' "
+            f"(available: {list(gesture_section.keys())})"
+        )
+
+    state_key = normalize_trigger_gesture_state(state)
+    side_section = gesture_section[side]
+    if state_key not in side_section:
+        raise ValueError(
+            f"state '{state_key}' not found in gesture '{gesture_key}' side '{side}' "
+            f"(available: {list(side_section.keys())})"
+        )
+    return [float(value) for value in side_section[state_key]]
+
+
+def normalize_agibot_o10_hand_action_mode(mode: str | None) -> str:
+    normalized = (mode or "dexterous_10d").strip().lower()
+    if normalized not in AGIBOT_O10_HAND_ACTION_MODES:
+        expected = ", ".join(AGIBOT_O10_HAND_ACTION_MODES)
+        raise ValueError(
+            f"Unsupported Agibot O10 hand_action_mode {mode!r}; expected one of: {expected}"
+        )
+    return normalized
+
+
+def agibot_o10_hand_joints_from_gripper_value(
+    gripper_value: float,
+    gesture_name: str,
+    handedness: str,
+    reset_poses_path: str | Path | None = None,
+) -> list[float]:
+    """Interpolate an O10 trigger-gesture hand pose from a 0..1 gripper value."""
+    value = min(1.0, max(0.0, float(gripper_value)))
+    open_pose = get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        gesture_name,
+        handedness,
+        "open",
+    ) or get_agibot_o10_trigger_gesture_joint_angles(
+        gesture_name,
+        handedness,
+        "open",
+    )
+    closed_pose = get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        gesture_name,
+        handedness,
+        "closed",
+    ) or get_agibot_o10_trigger_gesture_joint_angles(
+        gesture_name,
+        handedness,
+        "closed",
+    )
+    return [
+        open_value + value * (closed_value - open_value)
+        for open_value, closed_value in zip(open_pose, closed_pose, strict=True)
+    ]
+
+
+def agibot_o10_gripper_value_from_hand_joints(
+    hand_joints: Sequence[float],
+    gesture_name: str,
+    handedness: str,
+    reset_poses_path: str | Path | None = None,
+) -> float:
+    """Project a 10D O10 hand pose onto the configured open→closed gesture axis."""
+    if len(hand_joints) != len(AGIBOT_O10_HAND_FEATURE_NAMES):
+        raise ValueError(
+            f"Expected {len(AGIBOT_O10_HAND_FEATURE_NAMES)} hand joints, got {len(hand_joints)}"
+        )
+
+    open_pose = get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        gesture_name,
+        handedness,
+        "open",
+    ) or get_agibot_o10_trigger_gesture_joint_angles(
+        gesture_name,
+        handedness,
+        "open",
+    )
+    closed_pose = get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        gesture_name,
+        handedness,
+        "closed",
+    ) or get_agibot_o10_trigger_gesture_joint_angles(
+        gesture_name,
+        handedness,
+        "closed",
+    )
+    delta = [
+        closed_value - open_value
+        for open_value, closed_value in zip(open_pose, closed_pose, strict=True)
+    ]
+    denom = sum(value * value for value in delta)
+    if denom <= 1e-12:
+        return 0.0
+    numer = sum(
+        (float(joint_value) - open_value) * delta_value
+        for joint_value, open_value, delta_value in zip(hand_joints, open_pose, delta, strict=True)
+    )
+    return min(1.0, max(0.0, numer / denom))
+
+
 def default_channel_id_for_handedness(handedness: str) -> int:
     return 0 if normalize_handedness(handedness) == "left" else 1
 
 
 def agibot_o10_hand_feature_types() -> dict[str, type]:
     return {name: float for name in AGIBOT_O10_HAND_FEATURE_NAMES}
+
+
+def agibot_o10_gripper_feature_types() -> dict[str, type]:
+    return {name: float for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES}
 
 
 def agibot_o10_joint_action_feature_types() -> dict[str, type]:
@@ -320,11 +464,36 @@ def agibot_o10_joint_action_feature_types() -> dict[str, type]:
     }
 
 
+def agibot_o10_gripper_action_feature_types() -> dict[str, type]:
+    return {
+        **{name: float for name in AGIBOT_O10_ARM_FEATURE_NAMES},
+        **agibot_o10_gripper_feature_types(),
+    }
+
+
+def agibot_o10_eef_delta_action_feature_types() -> dict[str, type]:
+    return {
+        **{name: float for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES},
+        **agibot_o10_hand_feature_types(),
+    }
+
+
+def agibot_o10_eef_delta_gripper_action_feature_types() -> dict[str, type]:
+    return {
+        **{name: float for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES},
+        **agibot_o10_gripper_feature_types(),
+    }
+
+
 def agibot_o10_action_feature_types() -> dict[str, type]:
     return {
         **agibot_o10_joint_action_feature_types(),
         **{name: float for name in AGIBOT_O10_POSE_FEATURE_NAMES},
     }
+
+
+def agibot_o10_gripper_state_feature_types() -> dict[str, type]:
+    return agibot_o10_gripper_action_feature_types()
 
 
 def build_agibot_o10_joint_action_dict(joint_values: Sequence[float]) -> dict[str, float]:
@@ -349,6 +518,79 @@ def build_agibot_o10_joint_action_dict(joint_values: Sequence[float]) -> dict[st
             for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
         },
     }
+
+
+def build_agibot_o10_gripper_action_dict(values: Sequence[float]) -> dict[str, float]:
+    expected_value_count = len(AGIBOT_O10_ARM_FEATURE_NAMES) + len(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+    if len(values) != expected_value_count:
+        raise ValueError(
+            "Agibot O10 gripper action must contain "
+            f"{expected_value_count} values, got {len(values)}"
+        )
+
+    arm_joint_count = len(AGIBOT_O10_ARM_FEATURE_NAMES)
+    return {
+        **{
+            feature_name: float(values[index])
+            for index, feature_name in enumerate(AGIBOT_O10_ARM_FEATURE_NAMES)
+        },
+        **{
+            feature_name: float(values[arm_joint_count + index])
+            for index, feature_name in enumerate(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+        },
+    }
+
+
+def build_agibot_o10_eef_delta_action_dict(values: Sequence[float]) -> dict[str, float]:
+    expected_value_count = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES) + len(AGIBOT_O10_HAND_FEATURE_NAMES)
+    if len(values) != expected_value_count:
+        raise ValueError(
+            "Agibot O10 eef_delta action must contain "
+            f"{expected_value_count} values, got {len(values)}"
+        )
+
+    delta_count = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)
+    return {
+        **{
+            feature_name: float(values[index])
+            for index, feature_name in enumerate(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)
+        },
+        **{
+            feature_name: float(values[delta_count + index])
+            for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
+        },
+    }
+
+
+def build_agibot_o10_eef_delta_gripper_action_dict(values: Sequence[float]) -> dict[str, float]:
+    expected_value_count = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES) + len(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+    if len(values) != expected_value_count:
+        raise ValueError(
+            "Agibot O10 eef_delta gripper action must contain "
+            f"{expected_value_count} values, got {len(values)}"
+        )
+
+    delta_count = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)
+    return {
+        **{
+            feature_name: float(values[index])
+            for index, feature_name in enumerate(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)
+        },
+        **{
+            feature_name: float(values[delta_count + index])
+            for index, feature_name in enumerate(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+        },
+    }
+
+
+def normalize_agibot_o10_action_control_mode(mode: str | None) -> str:
+    normalized = (mode or "joint").strip().lower()
+    if normalized not in AGIBOT_O10_ACTION_CONTROL_MODES:
+        expected = ", ".join(AGIBOT_O10_ACTION_CONTROL_MODES)
+        raise ValueError(
+            f"Unsupported Agibot O10 action_control_mode {mode!r}; expected one of: {expected}"
+        )
+    return normalized
 
 
 def extract_ude_glove_angles(finger_data: Sequence[object], handedness: str) -> list[float]:

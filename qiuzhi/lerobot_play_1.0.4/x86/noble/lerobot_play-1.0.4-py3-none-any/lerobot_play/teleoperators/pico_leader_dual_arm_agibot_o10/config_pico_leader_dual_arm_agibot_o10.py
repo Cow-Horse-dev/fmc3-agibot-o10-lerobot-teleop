@@ -18,6 +18,8 @@ class PicoLeaderDualArmAgibotO10Config(TeleoperatorConfig):
     arm_trigger_mode: str = "split"
     hand_mode: str = "glove"
     trigger_gesture: str = "pinch"
+    action_control_mode: str = "joint"  # "joint" or "eef_delta"
+    hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"
     left: dict = field(default_factory=dict)
     right: dict = field(default_factory=dict)
     disable_torque_on_disconnect: bool = True

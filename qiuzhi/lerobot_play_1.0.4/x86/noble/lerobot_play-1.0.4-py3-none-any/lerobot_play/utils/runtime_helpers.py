@@ -191,11 +191,26 @@ _REPLAY_ACTION_LAYOUTS: dict[str, ReplayActionLayout] = {
 }
 
 
-def decode_replay_action(robot_type: str, action_values: Sequence[Any]) -> dict[str, Any]:
+def decode_replay_action(
+    robot_type: str,
+    action_values: Sequence[Any],
+    action_names: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    values = [float(value) for value in action_values]
+    if action_names is not None:
+        if len(values) < len(action_names):
+            raise ValueError(
+                f"Action for {robot_type} must contain at least {len(action_names)} values, "
+                f"got {len(values)}"
+            )
+        return {
+            feature_name: values[index]
+            for index, feature_name in enumerate(action_names)
+        }
+
     if robot_type not in _REPLAY_ACTION_LAYOUTS:
         raise ValueError(f"Unsupported robot type: {robot_type}")
 
-    values = [float(value) for value in action_values]
     layout = _REPLAY_ACTION_LAYOUTS[robot_type]
     if len(values) < layout.min_length:
         raise ValueError(

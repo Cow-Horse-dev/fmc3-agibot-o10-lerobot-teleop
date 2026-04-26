@@ -21,9 +21,10 @@ def test_observation_features_source_references_dual_arm_tactile_feature_sets():
     assert "return {**state_ft, **tactile_ft, **self._cameras_ft}" in source
 
 
-def test_observation_source_supports_optional_eef_pose_fields():
+def test_gripper_observation_source_uses_gripper_state_without_eef_pose_fields():
     source = SRC_FILE.read_text(encoding="utf-8")
 
-    assert "DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES" in source
-    assert "if self.config.include_eef_pose:" in source
+    assert "DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES" in source
+    assert 'if self._hand_action_mode() == "gripper_1d":' in source
+    assert 'if self._hand_action_mode() != "gripper_1d" and self.config.include_eef_pose:' in source
     assert "for idx, feat in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):" in source

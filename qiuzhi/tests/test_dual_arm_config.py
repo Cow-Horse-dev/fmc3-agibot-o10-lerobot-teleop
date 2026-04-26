@@ -11,6 +11,12 @@ def test_dual_control_yaml_parses():
     assert config["teleop"]["type"] == "pico_leader_dual_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
+    assert config["teleop"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["teleop"]["left"]["gripper_gesture"] == "tripod"
+    assert config["teleop"]["right"]["gripper_gesture"] == "pinch"
+    assert config["robot"]["left"]["gripper_gesture"] == "tripod"
+    assert config["robot"]["right"]["gripper_gesture"] == "pinch"
     assert config["robot"]["left"]["port"] == "can0"
     assert config["robot"]["right"]["port"] == "can1"
     assert config["teleop"]["left"]["handedness"] == "left"
@@ -79,6 +85,16 @@ def test_dual_record_yaml_has_dataset_section():
     assert "dataset" in config
     assert "run" in config
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["include_eef_pose"] is False
+    assert config["robot"]["action_control_mode"] == "joint"
+    assert config["robot"]["tactile_mode"] == "7d"
+
+
+def test_dual_infer_yaml_uses_gripper_state_without_eef_pose():
+    with open("configs/dual_arm/o10_dual_infer.yaml") as f:
+        config = yaml.safe_load(f)
+
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["tactile_mode"] == "7d"
 

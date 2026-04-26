@@ -81,6 +81,15 @@ def _install_common_robot_stubs(monkeypatch):
 
     arm_feature_names = tuple(f"joint{index}.pos" for index in range(1, 7))
     hand_feature_names = tuple(f"hand_joint_{index}.pos" for index in range(10))
+    gripper_feature_names = ("gripper.pos",)
+    eef_delta_feature_names = (
+        "delta_pose.x",
+        "delta_pose.y",
+        "delta_pose.z",
+        "delta_orientation.roll",
+        "delta_orientation.pitch",
+        "delta_orientation.yaw",
+    )
     pose_feature_names = tuple(
         ("pose.x", "pose.y", "pose.z", "quaternion.qx", "quaternion.qy", "quaternion.qz", "quaternion.qw")
     )
@@ -120,19 +129,49 @@ def _install_common_robot_stubs(monkeypatch):
         monkeypatch,
         "lerobot_play.utils.agibot_o10",
         AGIBOT_O10_ARM_FEATURE_NAMES=arm_feature_names,
+        AGIBOT_O10_EEF_DELTA_FEATURE_NAMES=eef_delta_feature_names,
+        AGIBOT_O10_GRIPPER_FEATURE_NAMES=gripper_feature_names,
         AGIBOT_O10_HAND_FEATURE_NAMES=hand_feature_names,
         AGIBOT_O10_POSE_FEATURE_NAMES=pose_feature_names,
         AgibotO10Hand=FakeAgibotO10Hand,
+        agibot_o10_gripper_value_from_hand_joints=lambda *args, **kwargs: 0.0,
+        agibot_o10_hand_joints_from_gripper_value=lambda *args, **kwargs: [0.0] * len(hand_feature_names),
         agibot_o10_action_feature_types=lambda: {
             name: float for name in (*arm_feature_names, *hand_feature_names, *pose_feature_names)
         },
         agibot_o10_joint_action_feature_types=lambda: {
             name: float for name in (*arm_feature_names, *hand_feature_names)
         },
+        agibot_o10_eef_delta_action_feature_types=lambda: {
+            name: float for name in (*eef_delta_feature_names, *hand_feature_names)
+        },
+        agibot_o10_gripper_action_feature_types=lambda: {
+            name: float for name in (*arm_feature_names, *gripper_feature_names)
+        },
+        agibot_o10_eef_delta_gripper_action_feature_types=lambda: {
+            name: float for name in (*eef_delta_feature_names, *gripper_feature_names)
+        },
+        agibot_o10_gripper_state_feature_types=lambda: {
+            name: float for name in (*arm_feature_names, *gripper_feature_names)
+        },
         build_agibot_o10_joint_action_dict=lambda values: {
             name: float(value)
             for name, value in zip((*arm_feature_names, *hand_feature_names), values, strict=True)
         },
+        build_agibot_o10_eef_delta_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*eef_delta_feature_names, *hand_feature_names), values, strict=True)
+        },
+        build_agibot_o10_gripper_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*arm_feature_names, *gripper_feature_names), values, strict=True)
+        },
+        build_agibot_o10_eef_delta_gripper_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*eef_delta_feature_names, *gripper_feature_names), values, strict=True)
+        },
+        normalize_agibot_o10_action_control_mode=lambda mode: (mode or "joint").strip().lower(),
+        normalize_agibot_o10_hand_action_mode=lambda mode: (mode or "dexterous_10d").strip().lower(),
     )
     _install_stub_module(
         monkeypatch,

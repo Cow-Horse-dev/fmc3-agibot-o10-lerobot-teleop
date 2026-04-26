@@ -39,6 +39,7 @@ teleop:
   # - true: 手 + 臂一起控制
   # - false: 只控制机械臂
   enable_hand: true
+  action_control_mode: joint  # joint, eef_delta
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
@@ -64,6 +65,7 @@ robot:
 
   # 选择"哪只 follower 手/臂"接收控制。
   handedness: left
+  action_control_mode: joint  # joint, eef_delta
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：

@@ -741,12 +741,15 @@ def main():
             channel_id=cfg["robot"].get("channel_id"),
             reset_poses_path=cfg["robot"].get("reset_poses_path"),
             reset_gesture=cfg["robot"].get("reset_gesture"),
+            gripper_gesture=cfg["robot"].get("gripper_gesture"),
             enable_hand=cfg["robot"].get(
                 "enable_hand",
                 cfg["teleop"].get("enable_hand", True),
             ),
             tactile_mode=cfg["robot"].get("tactile_mode", "none"),
             include_eef_pose=cfg["robot"].get("include_eef_pose", True),
+            action_control_mode=cfg["robot"].get("action_control_mode", "joint"),
+            hand_action_mode=cfg["robot"].get("hand_action_mode", "dexterous_10d"),
             cameras=camera_cfgs,
             id=cfg["robot"]["id"],
         )
@@ -760,6 +763,8 @@ def main():
             ),
             tactile_mode=cfg["robot"].get("tactile_mode", "none"),
             include_eef_pose=cfg["robot"].get("include_eef_pose", True),
+            action_control_mode=cfg["robot"].get("action_control_mode", "joint"),
+            hand_action_mode=cfg["robot"].get("hand_action_mode", "dexterous_10d"),
             cameras=camera_cfgs,
             id=cfg["robot"]["id"],
         )
@@ -842,6 +847,15 @@ def main():
             enable_hand=cfg["teleop"].get("enable_hand", True),
             hand_mode=cfg["teleop"].get("hand_mode", "glove"),
             trigger_gesture=cfg["teleop"].get("trigger_gesture", "pinch"),
+            action_control_mode=cfg["teleop"].get(
+                "action_control_mode",
+                cfg["robot"].get("action_control_mode", "joint"),
+            ),
+            hand_action_mode=cfg["teleop"].get(
+                "hand_action_mode",
+                cfg["robot"].get("hand_action_mode", "dexterous_10d"),
+            ),
+            gripper_gesture=cfg["teleop"].get("gripper_gesture"),
             reset_poses_path=cfg["teleop"].get("reset_poses_path"),
             reset_gesture=cfg["teleop"].get("reset_gesture"),
             cameras=camera_cfgs,
@@ -856,6 +870,14 @@ def main():
             arm_trigger_mode=cfg["teleop"].get("arm_trigger_mode", "split"),
             hand_mode=cfg["teleop"].get("hand_mode", "glove"),
             trigger_gesture=cfg["teleop"].get("trigger_gesture", "pinch"),
+            action_control_mode=cfg["teleop"].get(
+                "action_control_mode",
+                cfg["robot"].get("action_control_mode", "joint"),
+            ),
+            hand_action_mode=cfg["teleop"].get(
+                "hand_action_mode",
+                cfg["robot"].get("hand_action_mode", "dexterous_10d"),
+            ),
             left=cfg["teleop"].get("left", {}),
             right=cfg["teleop"].get("right", {}),
             cameras=camera_cfgs,

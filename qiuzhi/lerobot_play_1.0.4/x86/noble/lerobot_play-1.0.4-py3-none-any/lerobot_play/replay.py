@@ -243,10 +243,13 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_channel_id=robot_cfg.get("channel_id"),
         robot_reset_poses_path=robot_cfg.get("reset_poses_path"),
         robot_reset_gesture=robot_cfg.get("reset_gesture"),
+        robot_gripper_gesture=robot_cfg.get("gripper_gesture"),
         robot_left=robot_cfg.get("left", {}),
         robot_right=robot_cfg.get("right", {}),
         robot_enable_hand=robot_cfg.get("enable_hand", True),
         robot_include_eef_pose=robot_cfg.get("include_eef_pose", True),
+        robot_action_control_mode=robot_cfg.get("action_control_mode", "joint"),
+        robot_hand_action_mode=robot_cfg.get("hand_action_mode", "dexterous_10d"),
         robot_tactile_mode=robot_cfg.get("tactile_mode", "none"),
     )
 
@@ -342,6 +345,9 @@ def _create_robot_config(args: argparse.Namespace):
             channel_id=args.robot_channel_id,
             reset_poses_path=args.robot_reset_poses_path,
             reset_gesture=args.robot_reset_gesture,
+            gripper_gesture=args.robot_gripper_gesture,
+            action_control_mode=args.robot_action_control_mode,
+            hand_action_mode=args.robot_hand_action_mode,
             id=args.robot_id,
         )
     elif args.robot_type == "pico_follower_dual_arm_agibot_o10":
@@ -354,6 +360,8 @@ def _create_robot_config(args: argparse.Namespace):
             right=args.robot_right,
             enable_hand=args.robot_enable_hand,
             include_eef_pose=args.robot_include_eef_pose,
+            action_control_mode=args.robot_action_control_mode,
+            hand_action_mode=args.robot_hand_action_mode,
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
         )
@@ -370,6 +378,8 @@ def _replay_episode(
 
     # 获取动作数据
     actions = dataset.hf_dataset.select_columns("action")
+    action_feature = dataset.features.get("action", {})
+    action_names = action_feature.get("names") if isinstance(action_feature, dict) else None
     num_frames = dataset.num_frames
     progress_interval = max(1, num_frames // 10) if num_frames > 0 else 1
 
@@ -381,7 +391,7 @@ def _replay_episode(
 
             # 获取动作张量
             action_tensor = actions[idx]["action"]
-            action_dict = decode_replay_action(robot_type, action_tensor)
+            action_dict = decode_replay_action(robot_type, action_tensor, action_names=action_names)
 
             # 发送动作到机器人
             robot.send_action(action_dict)

@@ -12,9 +12,15 @@ from mmk2_kdl_py import ArmKdlNumerical
 import airbot_hardware_py as ah
 from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_ARM_FEATURE_NAMES,
+    AGIBOT_O10_EEF_DELTA_FEATURE_NAMES,
+    AGIBOT_O10_GRIPPER_FEATURE_NAMES,
     AGIBOT_O10_HAND_FEATURE_NAMES,
     AGIBOT_O10_POSE_FEATURE_NAMES,
     AgibotO10Hand,
+    agibot_o10_gripper_value_from_hand_joints,
+    agibot_o10_hand_joints_from_gripper_value,
+    normalize_agibot_o10_action_control_mode,
+    normalize_agibot_o10_hand_action_mode,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
 from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
@@ -25,9 +31,43 @@ from .config_pico_follower_dual_arm_agibot_o10 import (
 
 logger = logging.getLogger(__name__)
 
+
+def _rotation_matrix_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ],
+        dtype=float,
+    )
+
+
+def _apply_eef_delta_to_pose(current_pose: np.ndarray, eef_delta: list[float]) -> np.ndarray:
+    target_pose = np.array(current_pose, dtype=float, copy=True)
+    target_pose[:3, 3] += np.array(eef_delta[:3], dtype=float)
+    target_pose[:3, :3] = target_pose[:3, :3] @ _rotation_matrix_from_rpy(*eef_delta[3:6])
+    return target_pose
+
+
 _NUM_ARM_JOINTS = len(AGIBOT_O10_ARM_FEATURE_NAMES)
 _NUM_HAND_JOINTS = len(AGIBOT_O10_HAND_FEATURE_NAMES)
 _SIDE_ACTION_DIM = _NUM_ARM_JOINTS + _NUM_HAND_JOINTS  # 16
+_SIDE_EEF_DELTA_ACTION_DIM = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES) + _NUM_HAND_JOINTS
+_SIDE_GRIPPER_ACTION_DIM = _NUM_ARM_JOINTS + len(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+
+
+def _solve_ik(arm_kdl, target_pose: np.ndarray, seed_joints: list[float]) -> list[float]:
+    try:
+        result = arm_kdl.inverse_kinematics(target_pose, seed_joints, force_calculate=True)
+    except TypeError:
+        result = arm_kdl.inverse_kinematics(target_pose, seed_joints)
+    if len(result) == 0:
+        raise RuntimeError("Agibot O10 eef_delta IK failed; refusing to send an arm target.")
+    return [float(value) for value in result[0][:_NUM_ARM_JOINTS]]
 
 # 32D action: left arm[6] + left hand[10] + right arm[6] + right hand[10]
 DUAL_ARM_ACTION_FEATURE_NAMES = tuple(
@@ -40,6 +80,36 @@ DUAL_ARM_ACTION_FEATURE_NAMES = tuple(
     f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
 )
 
+DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES = tuple(
+    f"left.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
+) + tuple(
+    f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
+)
+
+DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES = tuple(
+    f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
+) + tuple(
+    f"left.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
+)
+
+DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES = tuple(
+    f"left.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
+) + tuple(
+    f"left.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
+) + tuple(
+    f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
+)
+
 DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES = tuple(
     f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
 ) + tuple(
@@ -49,6 +119,8 @@ DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES = tuple(
 ) + tuple(
     f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
 )
+
+DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES = DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES
 
 # 46D state: left arm[6] + left hand[10] + left pose[7]
 #          + right arm[6] + right hand[10] + right pose[7]
@@ -498,15 +570,24 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
     @cached_property
     def action_features(self) -> dict[str, type]:
+        if self._action_control_mode() == "eef_delta":
+            if self._hand_action_mode() == "gripper_1d":
+                return {name: float for name in DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES}
+            return {name: float for name in DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES}
+        if self._hand_action_mode() == "gripper_1d":
+            return {name: float for name in DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES}
         return {name: float for name in DUAL_ARM_ACTION_FEATURE_NAMES}
 
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        state_feature_names = (
-            DUAL_ARM_STATE_FEATURE_NAMES
-            if self.config.include_eef_pose
-            else DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES
-        )
+        if self._hand_action_mode() == "gripper_1d":
+            state_feature_names = DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES
+        else:
+            state_feature_names = (
+                DUAL_ARM_STATE_FEATURE_NAMES
+                if self.config.include_eef_pose
+                else DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES
+            )
         state_ft = {name: float for name in state_feature_names}
         tactile_mode = getattr(self.config, "tactile_mode", "none")
         tactile_ft: dict[str, type] = {}
@@ -606,9 +687,16 @@ class PicoFollowerDualArmAgibotO10(Robot):
             arm_pos, hand_pos = positions[side]
             for idx, feat in enumerate(AGIBOT_O10_ARM_FEATURE_NAMES):
                 obs_dict[f"{side}.{feat}"] = arm_pos[idx]
-            for idx, feat in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES):
-                obs_dict[f"{side}.{feat}"] = hand_pos[idx]
-            if self.config.include_eef_pose:
+            if self._hand_action_mode() == "gripper_1d":
+                gripper_feature = AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]
+                obs_dict[f"{side}.{gripper_feature}"] = self._hand_joints_to_gripper_value(
+                    side,
+                    hand_pos,
+                )
+            else:
+                for idx, feat in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES):
+                    obs_dict[f"{side}.{feat}"] = hand_pos[idx]
+            if self._hand_action_mode() != "gripper_1d" and self.config.include_eef_pose:
                 pose = self.homogeneous_matrix_to_pose(
                     self.arm_kdl.forward_kinematics(arm_pos[:_NUM_ARM_JOINTS])
                 )
@@ -642,17 +730,146 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
         return obs_dict
 
+    def _action_control_mode(self) -> str:
+        return normalize_agibot_o10_action_control_mode(
+            getattr(self.config, "action_control_mode", "joint")
+        )
+
+    def _hand_action_mode(self) -> str:
+        return normalize_agibot_o10_hand_action_mode(
+            getattr(self.config, "hand_action_mode", "dexterous_10d")
+        )
+
+    def _side_config(self, side: str) -> dict[str, Any]:
+        return getattr(self.config, side, {}) or {}
+
+    def _side_handedness(self, side: str) -> str:
+        return self._side_config(side).get("handedness", side)
+
+    def _side_gripper_gesture(self, side: str) -> str:
+        side_config = self._side_config(side)
+        return (
+            side_config.get("gripper_gesture")
+            or side_config.get("trigger_gesture")
+            or side_config.get("reset_gesture")
+            or "pinch"
+        )
+
+    def _side_reset_poses_path(self, side: str) -> str | None:
+        return self._side_config(side).get("reset_poses_path")
+
+    def _hand_joints_to_gripper_value(self, side: str, hand_joints: list[float]) -> float:
+        return agibot_o10_gripper_value_from_hand_joints(
+            hand_joints,
+            self._side_gripper_gesture(side),
+            self._side_handedness(side),
+            reset_poses_path=self._side_reset_poses_path(side),
+        )
+
+    def _gripper_value_to_hand_joints(self, side: str, gripper_value: float) -> list[float]:
+        return agibot_o10_hand_joints_from_gripper_value(
+            gripper_value,
+            self._side_gripper_gesture(side),
+            self._side_handedness(side),
+            reset_poses_path=self._side_reset_poses_path(side),
+        )
+
+    def _extract_side_gripper_value(self, action: dict[str, Any], side: str) -> float:
+        return float(action[f"{side}.{AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]}"])
+
+    def _extract_eef_delta_side_action(
+        self,
+        action: dict[str, Any],
+        side: str,
+    ) -> tuple[list[float], list[float]]:
+        eef_delta = [
+            float(action[f"{side}.{name}"])
+            for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
+        ]
+        if self._hand_action_mode() == "gripper_1d":
+            hand_joints = self._gripper_value_to_hand_joints(
+                side,
+                self._extract_side_gripper_value(action, side),
+            )
+        else:
+            hand_joints = [
+                float(action[f"{side}.{name}"])
+                for name in AGIBOT_O10_HAND_FEATURE_NAMES
+            ]
+        return eef_delta, hand_joints
+
+    def _solve_eef_delta_side_joints(
+        self,
+        current_arm_joints: list[float],
+        eef_delta: list[float],
+    ) -> list[float]:
+        current_pose = self.arm_kdl.forward_kinematics(current_arm_joints[:_NUM_ARM_JOINTS])
+        target_pose = _apply_eef_delta_to_pose(current_pose, eef_delta)
+        return _solve_ik(self.arm_kdl, target_pose, current_arm_joints[:_NUM_ARM_JOINTS])
+
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
             raise RuntimeError(f"{self} is not connected.")
 
+        if self._action_control_mode() == "eef_delta":
+            positions = self.get_joint_pos()
+            all_values: list[float] = []
+
+            left_eef_delta, left_hand_joints = self._extract_eef_delta_side_action(action, "left")
+            left_arm_joints = self._solve_eef_delta_side_joints(positions["left"][0], left_eef_delta)
+            self.servo_joint_pos(self.left_arm, left_arm_joints)
+            if self.config.enable_hand:
+                self.left_hand.write_active_joint_angles(left_hand_joints)
+            self.left_hand_joints = left_hand_joints.copy()
+            if self._hand_action_mode() == "gripper_1d":
+                all_values.extend([
+                    *left_eef_delta,
+                    self._extract_side_gripper_value(action, "left"),
+                ])
+            else:
+                all_values.extend([*left_eef_delta, *left_hand_joints])
+
+            right_eef_delta, right_hand_joints = self._extract_eef_delta_side_action(action, "right")
+            right_arm_joints = self._solve_eef_delta_side_joints(positions["right"][0], right_eef_delta)
+            self.servo_joint_pos(self.right_arm, right_arm_joints)
+            if self.config.enable_hand:
+                self.right_hand.write_active_joint_angles(right_hand_joints)
+            self.right_hand_joints = right_hand_joints.copy()
+            if self._hand_action_mode() == "gripper_1d":
+                all_values.extend([
+                    *right_eef_delta,
+                    self._extract_side_gripper_value(action, "right"),
+                ])
+            else:
+                all_values.extend([*right_eef_delta, *right_hand_joints])
+
+            action_feature_names = (
+                DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES
+                if self._hand_action_mode() == "gripper_1d"
+                else DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES
+            )
+            return {
+                name: all_values[idx]
+                for idx, name in enumerate(action_feature_names)
+            }
+
         # Extract left arm + hand joints
         left_arm_joints = [float(action[f"left.{n}"]) for n in AGIBOT_O10_ARM_FEATURE_NAMES]
-        left_hand_joints = [float(action[f"left.{n}"]) for n in AGIBOT_O10_HAND_FEATURE_NAMES]
+        if self._hand_action_mode() == "gripper_1d":
+            left_gripper = self._extract_side_gripper_value(action, "left")
+            left_hand_joints = self._gripper_value_to_hand_joints("left", left_gripper)
+        else:
+            left_gripper = None
+            left_hand_joints = [float(action[f"left.{n}"]) for n in AGIBOT_O10_HAND_FEATURE_NAMES]
 
         # Extract right arm + hand joints
         right_arm_joints = [float(action[f"right.{n}"]) for n in AGIBOT_O10_ARM_FEATURE_NAMES]
-        right_hand_joints = [float(action[f"right.{n}"]) for n in AGIBOT_O10_HAND_FEATURE_NAMES]
+        if self._hand_action_mode() == "gripper_1d":
+            right_gripper = self._extract_side_gripper_value(action, "right")
+            right_hand_joints = self._gripper_value_to_hand_joints("right", right_gripper)
+        else:
+            right_gripper = None
+            right_hand_joints = [float(action[f"right.{n}"]) for n in AGIBOT_O10_HAND_FEATURE_NAMES]
 
         # Send to hardware
         self.servo_joint_pos(self.left_arm, left_arm_joints)
@@ -666,10 +883,15 @@ class PicoFollowerDualArmAgibotO10(Robot):
         self.right_hand_joints = right_hand_joints.copy()
 
         # Build action feedback dict
-        all_values = left_arm_joints + left_hand_joints + right_arm_joints + right_hand_joints
+        if self._hand_action_mode() == "gripper_1d":
+            all_values = left_arm_joints + [left_gripper] + right_arm_joints + [right_gripper]
+            action_feature_names = DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES
+        else:
+            all_values = left_arm_joints + left_hand_joints + right_arm_joints + right_hand_joints
+            action_feature_names = DUAL_ARM_ACTION_FEATURE_NAMES
         return {
             name: all_values[idx]
-            for idx, name in enumerate(DUAL_ARM_ACTION_FEATURE_NAMES)
+            for idx, name in enumerate(action_feature_names)
         }
 
     # ------------------------------------------------------------------

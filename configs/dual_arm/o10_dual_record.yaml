@@ -16,16 +16,20 @@ teleop:
   arm_trigger_mode: left
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: tripod  # pinch, tripod（仅 trigger_gesture 模式生效）
+  action_control_mode: joint  # joint, eef_delta
+  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
   left:
     handedness: left
     wrist_pose_source: left
     trigger_gesture: tripod
+    gripper_gesture: tripod
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
     reset_gesture: tripod
   right:
     handedness: right
     wrist_pose_source: right
     trigger_gesture: pinch
+    gripper_gesture: pinch
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
     reset_gesture: pinch
 
@@ -34,6 +38,8 @@ robot:
   id: o10_dual
   enable_hand: true  # true, false
   include_eef_pose: false
+  action_control_mode: joint  # joint, eef_delta
+  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
   tactile_mode: "7d"  # none, 7d, 80d, 130d
   left:
     port: can0
@@ -42,8 +48,9 @@ robot:
     device_id: 1
     canfd_id: 0
     channel_id: null
+    gripper_gesture: tripod
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    reset_gesture: tripod
   right:
     port: can1
     handedness: right
@@ -51,6 +58,7 @@ robot:
     device_id: 1
     canfd_id: 0
     channel_id: null
+    gripper_gesture: pinch
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
     reset_gesture: pinch
   cameras:

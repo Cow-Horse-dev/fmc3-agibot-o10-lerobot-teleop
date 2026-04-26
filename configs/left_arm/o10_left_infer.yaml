@@ -26,6 +26,7 @@ robot:
   handedness: left
   enable_hand: true
   include_eef_pose: false   # 与 o10_left_record.yaml 保持一致
+  action_control_mode: joint # 与训练数据集 action schema 保持一致：joint, eef_delta
   tactile_mode: "none"
   channel_mode: multiChannel
   device_id: 1
