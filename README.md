@@ -228,6 +228,14 @@ cd ~/workspace/arm-hand-teleop
 | 单臂 | 16D | 臂 6 + 手 10 |
 | 双臂 | 32D | `left.*` 16D + `right.*` 16D |
 
+### O10 双臂 gripper_1d 映射
+
+双臂 O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。录制数据是 14D：左臂 6 个 arm joint + `left.gripper.pos`，右臂 6 个 arm joint + `right.gripper.pos`。
+
+录制侧仍先得到每只 O10 手的 10D 手指关节，再按配置的 `gripper_gesture`、`handedness` 和 reset pose 里的 `open` / `closed` 姿态，把当前 10D 手指关节投影到 `0..1` 的 `gripper.pos`。回放侧读取数据集里的 `left.gripper.pos` / `right.gripper.pos`，按同样的 `gripper_gesture` 和 `handedness`，从对应 `open` / `closed` pose 线性插值还原为 10D 手指关节并下发到 O10 手。
+
+当前双臂配置在 `configs/dual_arm/o10_dual_record.yaml` 和 `configs/dual_arm/o10_dual_replay.yaml`：左手使用 `tripod`，右手使用 `pinch`。20260427 数据集 replay 基本能对上，说明录制/回放映射链路没问题。
+
 `observation.state` 由 `robot.include_eef_pose` 和 `robot.tactile_mode` 决定：
 
 | include_eef_pose | tactile_mode | 单臂 state | 双臂 state |
