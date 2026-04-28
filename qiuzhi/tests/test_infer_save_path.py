@@ -196,6 +196,60 @@ def test_load_policy_wraps_pi_peft_adapter(
     assert policy.config.device == "cuda"
 
 
+def test_load_policy_filters_unknown_checkpoint_config_fields_for_pi0(tmp_path, monkeypatch):
+    model_root = tmp_path / "pi0"
+    model_root.mkdir()
+    (model_root / "model.safetensors").write_text("weights", encoding="utf-8")
+    (model_root / "config.json").write_text(
+        json.dumps(
+            {
+                "type": "pi0",
+                "device": "cpu",
+                "n_obs_steps": 1,
+                "chunk_size": 10,
+                "n_action_steps": 10,
+                "input_features": {
+                    "observation.state": {"type": "STATE", "shape": [14]},
+                    "observation.images.top": {"type": "VISUAL", "shape": [3, 224, 224]},
+                },
+                "output_features": {
+                    "action": {"type": "ACTION", "shape": [14]},
+                },
+                "optimizer_foreach": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    class DummyPolicy:
+        def __init__(self, config):
+            self.config = config
+
+        def to(self, device):
+            self.config.device = device
+            return self
+
+    def fake_from_pretrained(model_path, **kwargs):
+        captured["model_path"] = model_path
+        captured["kwargs"] = kwargs
+        return DummyPolicy(kwargs["config"])
+
+    monkeypatch.setattr(
+        "lerobot_play.infer.PI0Policy.from_pretrained",
+        fake_from_pretrained,
+    )
+
+    policy = _load_policy("pi0", str(model_root), "cuda")
+
+    assert captured["model_path"] == str(model_root)
+    assert "config" in captured["kwargs"]
+    assert not hasattr(captured["kwargs"]["config"], "optimizer_foreach")
+    assert captured["kwargs"]["config"].type == "pi0"
+    assert policy.config.device == "cuda"
+
+
 def test_single_arm_o10_infer_passes_schema_fields_to_robot_config():
     args = _config_to_args(
         {

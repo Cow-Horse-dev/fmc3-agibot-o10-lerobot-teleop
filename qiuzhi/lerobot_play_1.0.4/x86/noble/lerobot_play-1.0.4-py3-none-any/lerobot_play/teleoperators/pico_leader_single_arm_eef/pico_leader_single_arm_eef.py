@@ -639,11 +639,11 @@ class PicoLeaderSingleArmEEF(Teleoperator):
 
     def _get_enable_reset_button_keys(self) -> tuple[str, str]:
         if self.controller_side == "left":
-            return "A", "B"
-        return "X", "Y"
+            return "X", "Y"
+        return "A", "B"
 
     def _get_control_trigger_key(self) -> str:
-        return "LTr" if self.controller_side == "right" else "RTr"
+        return "LTr" if self.controller_side == "left" else "RTr"
 
     def handle_pose_data(self):
         while not self.stop_event.is_set():

@@ -12,7 +12,7 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_right
 
-  # 右臂模式下，右手柄控制右臂和右手；左手柄 X/Y/LTr 负责使能、复位和按住门控。
+  # 右臂模式下，右手柄控制右臂和右手；右手柄 A/B/RTr 负责使能、复位和按住门控。
   handedness: right
   controller_side: right
 
@@ -56,7 +56,7 @@ robot:
   allow_camera_read_failures: true
 
   # 机械臂 CAN 口。
-  port: can1
+  port: can0
 
   # 机器人名字，仅用于日志显示。
   id: o10_right

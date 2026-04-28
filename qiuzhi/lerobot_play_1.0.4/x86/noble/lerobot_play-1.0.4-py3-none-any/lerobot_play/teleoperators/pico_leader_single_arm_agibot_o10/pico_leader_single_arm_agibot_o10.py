@@ -317,7 +317,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         return current_joint_pos
 
     def _is_hand_control_enabled(self) -> bool:
-        if getattr(self, "controller_side", self.handedness) == "right":
+        if getattr(self, "controller_side", self.handedness) == "left":
             return self.startflag and self.ctrl["LTr"]
         return self.startflag and self.ctrl["RTr"]
 

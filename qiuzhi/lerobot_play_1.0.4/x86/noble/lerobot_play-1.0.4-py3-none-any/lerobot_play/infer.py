@@ -12,11 +12,14 @@ import os
 import sys
 import time
 import threading
+import tempfile
+from dataclasses import fields, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 import yaml
+import draccus
 
 from lerobot.cameras.configs import Cv2Rotation
 from lerobot.configs.policies import PreTrainedConfig
@@ -549,6 +552,57 @@ def _load_policy_config(model_path: str, device: str | None) -> PreTrainedConfig
     return config
 
 
+def _load_policy_config_lenient(model_path: str, device: str | None) -> PreTrainedConfig:
+    try:
+        return _load_policy_config(model_path, device)
+    except Exception as original_error:
+        config_path = Path(model_path).expanduser() / "config.json"
+        if not config_path.exists():
+            raise
+
+        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+        policy_type = raw_config.get("type")
+        if not policy_type:
+            raise
+
+        try:
+            config_class = PreTrainedConfig.get_choice_class(policy_type)
+        except Exception:
+            raise original_error
+
+        if not is_dataclass(config_class):
+            raise original_error
+
+        valid_fields = {field.name for field in fields(config_class)}
+        filtered_config = {
+            key: value
+            for key, value in raw_config.items()
+            if key != "type" and key in valid_fields
+        }
+        dropped_fields = sorted(set(raw_config) - valid_fields - {"type"})
+        if not dropped_fields:
+            raise original_error
+
+        log_say(
+            f"Ignoring unsupported {policy_type} config fields for inference: "
+            f"{dropped_fields}"
+        )
+
+        with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as file:
+            json.dump(filtered_config, file)
+            filtered_config_path = file.name
+
+        try:
+            with draccus.config_type("json"):
+                config = draccus.parse(config_class, filtered_config_path, args=[])
+        finally:
+            os.unlink(filtered_config_path)
+
+        if device:
+            config.device = device
+        return config
+
+
 def _is_local_peft_adapter_path(model_path: str) -> bool:
     model_path = os.path.expanduser(model_path)
     if not os.path.isdir(model_path):
@@ -564,19 +618,24 @@ def _is_local_peft_adapter_path(model_path: str) -> bool:
     return has_adapter_config and has_adapter_weights
 
 
-def _load_base_policy(policy_type: str, model_path: str):
+def _load_base_policy(policy_type: str, model_path: str, device: str | None = None):
+    config_path = Path(model_path).expanduser() / "config.json"
+    from_pretrained_kwargs = {}
+    if device is not None and config_path.exists():
+        from_pretrained_kwargs["config"] = _load_policy_config_lenient(model_path, device)
+
     if policy_type == "act":
-        return ACTPolicy.from_pretrained(model_path)
+        return ACTPolicy.from_pretrained(model_path, **from_pretrained_kwargs)
     if policy_type == "diffusion":
-        return DiffusionPolicy.from_pretrained(model_path)
+        return DiffusionPolicy.from_pretrained(model_path, **from_pretrained_kwargs)
     if policy_type == "pi0":
-        return PI0Policy.from_pretrained(model_path)
+        return PI0Policy.from_pretrained(model_path, **from_pretrained_kwargs)
     if policy_type == "pi05":
-        return PI05Policy.from_pretrained(model_path)
+        return PI05Policy.from_pretrained(model_path, **from_pretrained_kwargs)
     if policy_type == "groot":
-        return GrootPolicy.from_pretrained(model_path)
+        return GrootPolicy.from_pretrained(model_path, **from_pretrained_kwargs)
     if policy_type == "smolvla":
-        return SmolVLAPolicy.from_pretrained(model_path)
+        return SmolVLAPolicy.from_pretrained(model_path, **from_pretrained_kwargs)
     raise ValueError(f"Unsupported policy type: {policy_type}")
 
 
@@ -649,7 +708,7 @@ def _load_and_validate_policy_config(
     device: str | None,
     robot_features: dict[str, dict],
 ) -> PreTrainedConfig:
-    policy_config = _load_policy_config(model_path, device)
+    policy_config = _load_policy_config_lenient(model_path, device)
     _validate_policy_type_matches_checkpoint(policy_type, policy_config, model_path)
     _validate_policy_robot_feature_compatibility(
         policy_config,
@@ -675,7 +734,7 @@ def _load_policy(policy_type: str, model_path: str, device: str):
         if _is_local_peft_adapter_path(model_path):
             policy = _load_peft_policy(policy_type, model_path)
         else:
-            policy = _load_base_policy(policy_type, model_path)
+            policy = _load_base_policy(policy_type, model_path, device)
 
         _set_policy_device(policy, device)
 

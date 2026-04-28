@@ -84,10 +84,18 @@
       "Bash(fuser /dev/video12)",
       "Bash(kill -9 17657)",
       "Bash(awk -F: '{sum+=$2} END {print \"total tests:\", sum}')",
-      "Bash(python run_lerobot_play.py help)"
+      "Bash(python run_lerobot_play.py help)",
+      "Bash(python -c ' *)",
+      "Bash(git reset *)",
+      "Bash(git tag *)",
+      "WebSearch",
+      "Bash(codex --help)",
+      "Bash(codex login *)"
     ],
     "additionalDirectories": [
-      "/home/phl/.codex"
+      "/home/phl/.codex",
+      "/tmp/test_strip_tactile",
+      "/home/phl"
     ]
   },
   "enabledPlugins": {

@@ -78,6 +78,28 @@ class TeleoperateConfig:
     display_compressed_images: bool = False
 
 
+def _disconnect_best_effort(
+    device,
+    label: str,
+    *,
+    startup_attempted: bool = False,
+) -> None:
+    if not (getattr(device, "is_connected", False) or startup_attempted):
+        return
+
+    was_connected = getattr(device, "_is_connected", None)
+    if startup_attempted and was_connected is False:
+        device._is_connected = True
+
+    try:
+        device.disconnect()
+    except Exception:
+        logging.exception("Failed to disconnect %s", label)
+    finally:
+        if startup_attempted and was_connected is False:
+            device._is_connected = False
+
+
 def teleop_loop(
     teleop: Teleoperator,
     robot: Robot,
@@ -169,8 +191,28 @@ def teleoperate(cfg: TeleoperateConfig):
         robot_observation_processor,
     ) = make_default_processors()
 
-    teleop.connect()
-    robot.connect()
+    startup_complete = False
+    teleop_startup_attempted = False
+    robot_startup_attempted = False
+
+    try:
+        teleop_startup_attempted = True
+        teleop.connect()
+        robot_startup_attempted = True
+        robot.connect()
+        startup_complete = True
+    finally:
+        if not startup_complete:
+            _disconnect_best_effort(
+                robot,
+                "robot",
+                startup_attempted=robot_startup_attempted,
+            )
+            _disconnect_best_effort(
+                teleop,
+                "teleoperator",
+                startup_attempted=teleop_startup_attempted,
+            )
 
     try:
         teleop_loop(
@@ -186,10 +228,8 @@ def teleoperate(cfg: TeleoperateConfig):
             display_compressed_images=display_compressed_images,
         )
     finally:
-        if getattr(teleop, "is_connected", False):
-            teleop.disconnect()
-        if getattr(robot, "is_connected", False):
-            robot.disconnect()
+        _disconnect_best_effort(teleop, "teleoperator")
+        _disconnect_best_effort(robot, "robot")
 
 
 def main():

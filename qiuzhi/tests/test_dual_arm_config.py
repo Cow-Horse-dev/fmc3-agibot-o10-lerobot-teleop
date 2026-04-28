@@ -36,7 +36,7 @@ def test_left_control_yaml_parses():
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
-    assert config["robot"]["port"] == "can0"
+    assert config["robot"]["port"] == "can1"
     assert config["teleop"]["handedness"] == "left"
     assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "left"
@@ -51,7 +51,7 @@ def test_right_control_yaml_parses():
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
-    assert config["robot"]["port"] == "can1"
+    assert config["robot"]["port"] == "can0"
     assert config["teleop"]["handedness"] == "right"
     assert config["teleop"]["controller_side"] == "right"
     assert config["teleop"]["wrist_pose_source"] == "right"
