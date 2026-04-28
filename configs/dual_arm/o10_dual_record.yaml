@@ -2,141 +2,142 @@
 # 供脚本 `./scripts/o10/dual_arm/record_o10_dual.sh` 使用。
 
 teleop:
-  type: pico_leader_dual_arm_agibot_o10
-  id: pico_dual
-  vr_pose_port: 8000
-  vr_ctrl_port: 8001
-  vr_device: pico
-  enable_hand: true
+  type: pico_leader_dual_arm_agibot_o10  # 可选: pico_leader_dual_arm_agibot_o10
+  id: pico_dual  # 遥操作端 id
+  vr_pose_port: 8000  # VR 姿态端口
+  vr_ctrl_port: 8001  # VR 控制端口
+  vr_device: pico  # 可选: pico, pico_wrist
+  enable_hand: true  # 可选: true, false
   # 双臂控臂“使能扳机”模式，不是选择只控制哪一只臂：
   # - left:  按住左扳机 LTr 时，双臂都允许跟随
   # - right: 按住右扳机 RTr 时，双臂都允许跟随
   # - both:  同时按住 LTr + RTr 时，双臂都允许跟随
   # - split: 左臂看 LTr，右臂看 RTr
-  arm_trigger_mode: left
-  hand_mode: trigger_gesture  # glove, trigger_gesture
-  trigger_gesture: tripod  # pinch, tripod（仅 trigger_gesture 模式生效）
-  action_control_mode: joint  # joint, eef_delta
-  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
+  arm_trigger_mode: left  # 可选: split, left, right, both
+  hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
+  trigger_gesture: tripod  # 可选: pinch, tripod（仅 trigger_gesture 模式生效）
+  action_control_mode: joint  # 可选: joint, eef_delta
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   left:
-    handedness: left
-    wrist_pose_source: left
-    trigger_gesture: tripod
-    gripper_gesture: tripod
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: tripod
+    handedness: left  # 可选: left, right
+    wrist_pose_source: left  # 可选: auto, left, right
+    trigger_gesture: tripod  # 可选: pinch, tripod
+    gripper_gesture: tripod  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    handedness: right
-    wrist_pose_source: right
-    trigger_gesture: pinch
-    gripper_gesture: pinch
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    handedness: right  # 可选: left, right
+    wrist_pose_source: right  # 可选: auto, left, right
+    trigger_gesture: pinch  # 可选: pinch, tripod
+    gripper_gesture: pinch  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod
 
 robot:
-  type: pico_follower_dual_arm_agibot_o10
-  id: o10_dual
-  enable_hand: true  # true, false
-  include_eef_pose: false
-  action_control_mode: joint  # joint, eef_delta
-  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
-  tactile_mode: "7d"  # none, 7d, 80d, 130d
+  type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
+  id: o10_dual  # 机器人端 id
+  enable_hand: true  # 可选: true, false
+  include_eef_pose: false  # 可选: true, false
+  action_control_mode: joint  # 可选: joint, eef_delta
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
+  allow_camera_read_failures: true  # 可选: true, false
+  tactile_mode: "none"  # 可选: none, 7d, 80d, 130d
   left:
-    port: can0
-    handedness: left
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: tripod
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: tripod
+    port: can0  # CAN 口
+    handedness: left  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: tripod  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    port: can1
-    handedness: right
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: pinch
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    port: can1  # CAN 口
+    handedness: right  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: pinch  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod
   cameras:
     top:
-      type: opencv
-      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-      width: 640
-      height: 480
-      fps: 30
-      fourcc: MJPG
-      rotation: NO_ROTATION
+      type: opencv  # 可选: opencv, intelrealsense, realsense
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0  # OpenCV 相机设备路径
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      fourcc: MJPG  # OpenCV 编码格式
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     left_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322276846"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322276846"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     right_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322273018"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322273018"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
 
 run:
   # 录制频率，单位 Hz。
-  fps: 30
+  fps: 30  # 录制频率，单位 Hz
 
   # 是否显示本地预览窗口。
   # 双臂 + 三路相机录制时本地显示负载较高，默认关闭以保证空格开始后稳定进入录制循环。
-  display_data: false
+  display_data: false  # 可选: true, false
 
   # 一次运行最多录多少个 episode。
   # 测试采集默认只录 1 条，避免自动进入下一条时打断写盘。
-  num_episodes: 1000
+  num_episodes: 1000  # 最多录制 episode 数
 
   # 单个 episode 最长时长，单位秒。
-  episode_time_sec: 60
+  episode_time_sec: 60  # 单个 episode 最长时长，单位秒
 
   # 保留的 reset 时间字段。
-  reset_time_sec: 10
+  reset_time_sec: 10  # reset 时间字段，单位秒
 
   # 任务名。
-  single_task: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch
+  single_task: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch  # 任务描述
 
 dataset:
   # 是否自动按"任务名 + 日期"命名数据集目录。
-  auto_name_from_task_date: true
+  auto_name_from_task_date: true  # 可选: true, false
 
   # 自动命名时日期格式。
-  date_format: "%Y%m%d"
+  date_format: "%Y%m%d"  # 自动命名日期格式
 
   # 手动目录名。
-  repo_id: manual_dataset_name
+  repo_id: manual_dataset_name  # 手动数据集目录名
 
   # 数据集根目录。
-  root: ~/workspace/dataset/Robot/agi_arm_bot
+  root: ~/workspace/dataset/Robot/agi_arm_bot  # 数据集根目录
 
   # 是否录相机视频。
-  video: true
+  video: true  # 可选: true, false
 
   # 是否用 MCAP 存相机流。
-  mcap: false
+  mcap: false  # 可选: true, false
 
   # 是否按 SSH 模式运行。
-  is_ssh: false
+  is_ssh: false  # 可选: true, false
 
   # 每路相机使用多少个图像写线程。
-  num_image_writer_threads_per_camera: 4
+  num_image_writer_threads_per_camera: 4  # 每路相机图像写线程数
 
   # 是否额外启用写入进程。
-  num_image_writer_processes: 0
+  num_image_writer_processes: 0  # 图像写进程数
 
   # 攒多少个 episode 再批量编码视频。
-  video_encoding_batch_size: 1
+  video_encoding_batch_size: 1  # 视频批量编码 episode 数

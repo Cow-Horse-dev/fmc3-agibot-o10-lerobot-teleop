@@ -2,87 +2,87 @@
 # 供脚本 `./scripts/o10/dual_arm/control_o10_dual.sh` 使用。
 
 teleop:
-  type: pico_leader_dual_arm_agibot_o10
-  id: pico_dual
-  vr_pose_port: 8000
-  vr_ctrl_port: 8001
-  vr_device: pico  # pico_wrist, pico
-  enable_hand: true  # true, false
-  arm_trigger_mode: left  # split, left, right, both
-  hand_mode: trigger_gesture  # glove, trigger_gesture
-  trigger_gesture: tripod  # pinch, tripod（仅 trigger_gesture 模式生效）
-  action_control_mode: joint  # joint, eef_delta
-  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
+  type: pico_leader_dual_arm_agibot_o10  # 可选: pico_leader_dual_arm_agibot_o10
+  id: pico_dual  # 遥操作端 id
+  vr_pose_port: 8000  # VR 姿态端口
+  vr_ctrl_port: 8001  # VR 控制端口
+  vr_device: pico  # 可选: pico, pico_wrist
+  enable_hand: true  # 可选: true, false
+  arm_trigger_mode: left  # 可选: split, left, right, both
+  hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
+  trigger_gesture: tripod  # 可选: pinch, tripod（仅 trigger_gesture 模式生效）
+  action_control_mode: joint  # 可选: joint, eef_delta
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   left:
-    handedness: left
-    wrist_pose_source: left  # auto, left, right
-    trigger_gesture: tripod
-    gripper_gesture: tripod
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    handedness: left  # 可选: left, right
+    wrist_pose_source: left  # 可选: auto, left, right
+    trigger_gesture: tripod  # 可选: pinch, tripod
+    gripper_gesture: tripod  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    handedness: right
-    wrist_pose_source: right  # auto, left, right
-    trigger_gesture: pinch
-    gripper_gesture: pinch
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    handedness: right  # 可选: left, right
+    wrist_pose_source: right  # 可选: auto, left, right
+    trigger_gesture: pinch  # 可选: pinch, tripod
+    gripper_gesture: pinch  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod
 
 robot:
-  type: pico_follower_dual_arm_agibot_o10
-  id: o10_dual
-  enable_hand: true  # true, false
-  action_control_mode: joint  # joint, eef_delta
-  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
-  allow_camera_read_failures: true
+  type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
+  id: o10_dual  # 机器人端 id
+  enable_hand: true  # 可选: true, false
+  action_control_mode: joint  # 可选: joint, eef_delta
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
+  allow_camera_read_failures: true  # 可选: true, false
   left:
     port: can0  # CAN 口
-    handedness: left
-    channel_mode: multiChannel  # multiChannel, multiCan
-    device_id: 1
-    canfd_id: 0
-    channel_id: null  # null 自动: left->0, right->1
-    gripper_gesture: tripod
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    handedness: left  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: tripod  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
     port: can1  # CAN 口
-    handedness: right
-    channel_mode: multiChannel  # multiChannel, multiCan
-    device_id: 1
-    canfd_id: 0
-    channel_id: null  # null 自动: left->0, right->1
-    gripper_gesture: pinch
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    handedness: right  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: pinch  # 可选: pinch, tripod
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod
   cameras:
     top:
-      type: opencv  # opencv, intelrealsense
-      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-      width: 640
-      height: 480
-      fps: 30
-      fourcc: MJPG
-      rotation: NO_ROTATION  # NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
+      type: opencv  # 可选: opencv, intelrealsense, realsense
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0  # OpenCV 相机设备路径
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      fourcc: MJPG  # OpenCV 编码格式
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     left_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322276846"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322276846"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     right_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322273018"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322273018"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
 
-fps: 30
-display_data: true  # true, false
-display_terminal: false  # true, false
+fps: 30  # 控制频率，单位 Hz
+display_data: true  # 可选: true, false
+display_terminal: false  # 可选: true, false

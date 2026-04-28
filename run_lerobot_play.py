@@ -20,6 +20,7 @@ COMMAND_MODULES = {
     "record": "lerobot_play.record",
     "replay": "lerobot_play.replay",
     "infer": "lerobot_play.infer",
+    "async_policy_server": "lerobot_play.async_inference.policy_server",
     "control": "lerobot_play.control",
     "train": "lerobot_play.train",
 }

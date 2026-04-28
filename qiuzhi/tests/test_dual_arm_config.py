@@ -23,6 +23,13 @@ def test_dual_control_yaml_parses():
     assert config["teleop"]["right"]["handedness"] == "right"
 
 
+def test_dual_record_yaml_keeps_local_preview_disabled():
+    with open("configs/dual_arm/o10_dual_record.yaml") as f:
+        config = yaml.safe_load(f)
+
+    assert config["run"]["display_data"] is False
+
+
 def test_left_control_yaml_parses():
     with open("configs/left_arm/o10_left_control.yaml") as f:
         config = yaml.safe_load(f)
@@ -85,9 +92,10 @@ def test_dual_record_yaml_has_dataset_section():
     assert "dataset" in config
     assert "run" in config
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["action_control_mode"] == "joint"
-    assert config["robot"]["tactile_mode"] == "7d"
+    assert config["robot"]["tactile_mode"] == "none"
 
 
 def test_dual_infer_yaml_uses_gripper_state_without_eef_pose():
@@ -96,7 +104,7 @@ def test_dual_infer_yaml_uses_gripper_state_without_eef_pose():
 
     assert config["robot"]["hand_action_mode"] == "gripper_1d"
     assert config["robot"]["include_eef_pose"] is False
-    assert config["robot"]["tactile_mode"] == "7d"
+    assert config["robot"]["tactile_mode"] == "none"
 
 
 def test_dual_record_yaml_keeps_left_trigger_mode_and_tripod_left_hand():

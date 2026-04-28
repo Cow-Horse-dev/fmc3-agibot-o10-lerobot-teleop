@@ -168,8 +168,6 @@ def init_keyboard_listener():
                 events["keyboard_exit_requested"] = True
                 events["exit_early"] = True
             elif key == keyboard.Key.left and events["start"]:
-                if events["keyboard_exit_requested"]:
-                    return
                 print(
                     "Left arrow key pressed. Exiting loop and rerecord the last episode..."
                 )

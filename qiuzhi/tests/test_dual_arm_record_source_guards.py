@@ -57,6 +57,31 @@ def test_record_source_rehydrates_dual_arm_teleop_when_episode_starts():
     assert "_release_teleop_waiting_state_for_recording(teleop)" in block
 
 
+def test_record_source_releases_o10_pause_gate_when_episode_starts():
+    source = RECORD_SRC.read_text(encoding="utf-8")
+
+    start = source.index("def _release_teleop_waiting_state_for_recording(teleop) -> None:")
+    end = source.index("\n\ndef _describe_dual_arm_trigger_mode", start)
+    block = source[start:end]
+
+    single_start = block.index("if _is_o10_single_arm_teleop(teleop):")
+    dual_start = block.index("elif _is_o10_dual_arm_teleop(teleop):")
+    single_block = block[single_start:dual_start]
+    dual_block = block[dual_start:]
+
+    assert "_set_single_arm_zero_mode(teleop, False)" in single_block
+    assert "teleop.pause_event.set()" in single_block
+    assert single_block.index("_set_single_arm_zero_mode(teleop, False)") < single_block.index(
+        "teleop.pause_event.set()"
+    )
+
+    assert "_set_dual_arm_zero_mode(teleop, False)" in dual_block
+    assert "teleop.pause_event.set()" in dual_block
+    assert dual_block.index("_set_dual_arm_zero_mode(teleop, False)") < dual_block.index(
+        "teleop.pause_event.set()"
+    )
+
+
 def test_record_source_prepares_o10_teleop_waiting_state_after_initial_reset():
     source = RECORD_SRC.read_text(encoding="utf-8")
 

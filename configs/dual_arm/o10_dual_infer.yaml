@@ -7,71 +7,71 @@
 #   observation.state 维度/语义都会跟模型对不上
 
 infer:
-  policy: diffusion
-  task_description: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch
-  model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model
-  save_data: false
-  display_data: true
-  async_infer: false
-  num_episodes: 100
-  episode_time_sec: 100
-  fps: 30
-  device: cuda
+  policy: diffusion  # 可选: act, diffusion, pi0, pi05, smolvla, groot
+  task_description: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch  # VLA/策略任务描述
+  model_path: ~/workspace/mymodels/agi_arm_bot/diffusion_pick_up_blue_camera_into_black_box/checkpoints/last/pretrained_model  # 本机模型目录
+  save_data: false  # 可选: true, false
+  display_data: true  # 可选: true, false
+  async_infer: false  # 可选: true, false
+  num_episodes: 100  # 推理 episode 数
+  episode_time_sec: 100  # 单个 episode 最长时长，单位秒
+  fps: 30  # 推理频率，单位 Hz
+  device: cuda  # 可选: cuda, cpu
   server_address: localhost:8080  # 仅 async_infer: true 时用
-  save_path: null
+  save_path: null  # 可选: null 或数据保存目录
 
 robot:
-  type: pico_follower_dual_arm_agibot_o10
-  id: o10_dual
-  enable_hand: true
-  include_eef_pose: false   # 与 o10_dual_record.yaml 保持一致；gripper_1d state 不包含末端 pose
-  action_control_mode: joint # 与训练数据集 action schema 保持一致：joint, eef_delta
-  hand_action_mode: gripper_1d  # 与 o10_dual_record.yaml 保持一致：dexterous_10d, gripper_1d
-  tactile_mode: "7d"        # 与 o10_dual_record.yaml 保持一致
+  type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
+  id: o10_dual  # 机器人端 id
+  enable_hand: true  # 可选: true, false
+  include_eef_pose: false  # 可选: true, false；与 o10_dual_record.yaml 保持一致
+  action_control_mode: joint  # 可选: joint, eef_delta；与训练数据集 action schema 保持一致
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d；与 o10_dual_record.yaml 保持一致
+  tactile_mode: "none"  # 可选: none, 7d, 80d, 130d；与 20260427 gripper_1d 训练数据集一致
   left:
-    port: can0
-    handedness: left
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: tripod  # 与录制一致
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: tripod
+    port: can0  # CAN 口
+    handedness: left  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: tripod  # 可选: pinch, tripod；与录制一致
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    port: can1
-    handedness: right
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: pinch  # 与录制一致
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    port: can1  # CAN 口
+    handedness: right  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: pinch  # 可选: pinch, tripod；与录制一致
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod
   cameras:
     top:
-      type: opencv
-      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-      width: 640
-      height: 480
-      fps: 30
-      fourcc: MJPG
-      rotation: NO_ROTATION
+      type: opencv  # 可选: opencv, intelrealsense, realsense
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0  # OpenCV 相机设备路径
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      fourcc: MJPG  # OpenCV 编码格式
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     left_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322276846"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322276846"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     right_wrist:
-      type: intelrealsense
-      serial_number_or_name: "260322273018"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: rgb
-      rotation: NO_ROTATION
+      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
+      serial_number_or_name: "260322273018"  # RealSense 序列号或设备名
+      width: 640  # 图像宽度
+      height: 480  # 图像高度
+      fps: 30  # 相机帧率
+      use_depth: false  # 可选: true, false
+      color_mode: rgb  # 可选: rgb, bgr
+      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270

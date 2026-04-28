@@ -1,7 +1,10 @@
 from pathlib import Path
 import json
+import pickle
 import sys
+import threading
 import types
+from queue import Queue
 from types import SimpleNamespace
 
 import numpy as np
@@ -52,10 +55,12 @@ from lerobot_play.infer import (
     _create_dataset,
     _create_robot_config,
     _create_save_directory,
+    _run_async_inference,
     _validate_policy_type_matches_checkpoint,
     _validate_policy_robot_feature_compatibility,
     _validate_args,
     _validate_model_path,
+    _load_policy,
 )
 
 
@@ -111,6 +116,84 @@ def test_validate_model_path_expands_user_home(tmp_path, monkeypatch):
     (model_root / "model.safetensors").write_text("weights", encoding="utf-8")
 
     assert _validate_model_path("~/models/agi_arm_bot") is True
+
+
+@pytest.mark.parametrize(
+    ("policy_type", "policy_class_name"),
+    [
+        ("pi0", "PI0Policy"),
+        ("pi05", "PI05Policy"),
+    ],
+)
+def test_load_policy_wraps_pi_peft_adapter(
+    policy_type, policy_class_name, tmp_path, monkeypatch
+):
+    base_model_root = tmp_path / f"base_{policy_type}"
+    base_model_root.mkdir()
+    adapter_root = tmp_path / f"{policy_type}_lora"
+    adapter_root.mkdir()
+    (adapter_root / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (adapter_root / "adapter_model.safetensors").write_text("adapter", encoding="utf-8")
+    (adapter_root / "config.json").write_text("{}", encoding="utf-8")
+
+    loaded_paths = []
+    wrapped_paths = []
+
+    class DummyConfig:
+        device = "cpu"
+
+    class DummyPolicy:
+        config = DummyConfig()
+
+        def to(self, device):
+            self.config.device = device
+            return self
+
+    class DummyWrappedPolicy:
+        config = SimpleNamespace(peft_type="LORA")
+
+        def __init__(self, base_policy):
+            self.base_policy = base_policy
+
+        def to(self, device):
+            self.config.device = device
+            return self
+
+    class DummyPeftConfig:
+        base_model_name_or_path = str(base_model_root)
+
+    class DummyPeftModel:
+        @staticmethod
+        def from_pretrained(policy, adapter_path, config):
+            wrapped_paths.append((policy, adapter_path, config))
+            return DummyWrappedPolicy(policy)
+
+    fake_peft = types.ModuleType("peft")
+    fake_peft.PeftConfig = SimpleNamespace(
+        from_pretrained=lambda adapter_path: DummyPeftConfig()
+    )
+    fake_peft.PeftModel = DummyPeftModel
+    monkeypatch.setitem(sys.modules, "peft", fake_peft)
+
+    def fake_from_pretrained(model_path):
+        loaded_paths.append(model_path)
+        return DummyPolicy()
+
+    monkeypatch.setattr(
+        f"lerobot_play.infer.{policy_class_name}.from_pretrained",
+        fake_from_pretrained,
+    )
+
+    policy = _load_policy(policy_type, str(adapter_root), "cuda")
+
+    assert isinstance(policy, DummyWrappedPolicy)
+    assert loaded_paths == [str(base_model_root)]
+    assert len(wrapped_paths) == 1
+    assert isinstance(wrapped_paths[0][0], DummyPolicy)
+    assert wrapped_paths[0][1] == str(adapter_root)
+    assert isinstance(wrapped_paths[0][2], DummyPeftConfig)
+    assert policy.config is wrapped_paths[0][0].config
+    assert policy.config.device == "cuda"
 
 
 def test_single_arm_o10_infer_passes_schema_fields_to_robot_config():
@@ -474,6 +557,171 @@ def test_async_policy_server_uses_received_rename_map_in_action_prediction(monke
     )
 
     assert captured["observation_rename_map"] == server.observation_rename_map
+
+
+def test_async_inference_runs_each_episode_for_configured_duration(tmp_path, monkeypatch):
+    import lerobot_play.infer as infer_module
+
+    model_root = tmp_path / "model"
+    model_root.mkdir()
+    (model_root / "config.json").write_text("{}", encoding="utf-8")
+    (model_root / "model.safetensors").write_text("weights", encoding="utf-8")
+
+    control_calls = []
+
+    class FakeRobot:
+        name = "fake_robot"
+        cameras = {}
+
+    class FakeClient:
+        def __init__(self, cfg):
+            self.cfg = cfg
+            self.action_queue_size = []
+            self.stopped = False
+
+        def start(self):
+            return True
+
+        def receive_actions(self):
+            return None
+
+        def control_loop(self, task, control_time_s=None):
+            control_calls.append((task, control_time_s))
+            return None, None
+
+        def clear_action_queue(self, advance_action_watermark=False):
+            return None
+
+        def stop(self):
+            self.stopped = True
+
+    monkeypatch.setattr(infer_module, "make_robot_from_config", lambda robot_config: FakeRobot())
+    monkeypatch.setattr(
+        infer_module,
+        "build_dataset_features",
+        lambda robot, use_videos: {
+            "observation.state": {"dtype": "float32", "shape": (1,), "names": ["joint"]},
+            "action": {"dtype": "float32", "shape": (1,), "names": ["joint"]},
+        },
+    )
+    monkeypatch.setattr(
+        infer_module,
+        "_load_and_validate_policy_config",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(infer_module, "RobotClient", FakeClient)
+    monkeypatch.setattr(infer_module, "visualize_action_queue_size", lambda *args, **kwargs: None)
+
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "act",
+                "task_description": "pick",
+                "model_path": str(model_root),
+                "num_episodes": 2,
+                "episode_time_sec": 3,
+                "fps": 30,
+                "device": "cpu",
+                "server_address": "localhost:8080",
+            },
+            "robot": {"cameras": {}},
+        }
+    )
+
+    result = _run_async_inference(args)
+
+    assert control_calls == [("pick", 3), ("pick", 3)]
+    assert result["episodes_completed"] == 2
+
+
+def test_async_robot_client_control_loop_duration_does_not_rewait_start_barrier():
+    from lerobot_play.async_inference.robot_client import RobotClient
+
+    barrier_waits = []
+    client = object.__new__(RobotClient)
+    client.start_barrier = SimpleNamespace(wait=lambda: barrier_waits.append("wait"))
+    client.shutdown_event = SimpleNamespace(is_set=lambda: False)
+
+    client.control_loop("pick", control_time_s=0)
+    client.control_loop("pick", control_time_s=0)
+
+    assert barrier_waits == ["wait"]
+
+
+def test_async_robot_client_clear_action_queue_advances_stale_action_watermark():
+    from lerobot.async_inference.helpers import TimedAction
+    from lerobot_play.async_inference.robot_client import RobotClient
+
+    client = object.__new__(RobotClient)
+    client.action_queue = Queue()
+    client.action_queue_lock = threading.Lock()
+    client.action_queue_size = [2, 1]
+    client.latest_action = 10
+    client.latest_action_lock = threading.Lock()
+    client.action_chunk_size = -1
+    client.config = SimpleNamespace(actions_per_chunk=50)
+    client.must_go = SimpleNamespace(set=lambda: None)
+
+    client.clear_action_queue(advance_action_watermark=True)
+    client._aggregate_action_queues(
+        [
+            TimedAction(timestamp=0.0, timestep=59, action=torch.tensor([1.0])),
+            TimedAction(timestamp=0.0, timestep=61, action=torch.tensor([2.0])),
+        ]
+    )
+
+    assert client.latest_action == 60
+    assert client.action_queue_size == []
+    assert client.action_queue.qsize() == 1
+    assert client.action_queue.get_nowait().get_timestep() == 61
+
+
+def test_lerobot_play_async_policy_server_loads_policy_through_project_loader(monkeypatch):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import RemotePolicyConfig
+    from lerobot.transport import services_pb2
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    loaded = []
+
+    fake_policy = SimpleNamespace(
+        config=SimpleNamespace(device="cpu"),
+    )
+
+    def fake_load_policy(policy_type, model_path, device):
+        loaded.append((policy_type, model_path, device))
+        fake_policy.config.device = device
+        return fake_policy
+
+    monkeypatch.setattr(
+        "lerobot_play.async_inference.policy_server._load_policy",
+        fake_load_policy,
+    )
+    monkeypatch.setattr(
+        "lerobot_play.async_inference.policy_server.make_pre_post_processors",
+        lambda *args, **kwargs: ("pre", "post"),
+    )
+
+    server = PolicyServer(PolicyServerConfig())
+    server.shutdown_event.clear()
+    policy_specs = RemotePolicyConfig(
+        policy_type="pi0",
+        pretrained_name_or_path="/tmp/pi0_lora",
+        lerobot_features={"observation.state": {"dtype": "float32"}},
+        actions_per_chunk=50,
+        device="cuda",
+        rename_map={"observation.images.top": "observation.images.base_0_rgb"},
+    )
+    request = services_pb2.PolicySetup(data=pickle.dumps(policy_specs))
+    context = SimpleNamespace(peer=lambda: "test-client")
+
+    server.SendPolicyInstructions(request, context)
+
+    assert loaded == [("pi0", "/tmp/pi0_lora", "cuda")]
+    assert server.policy is fake_policy
+    assert server.preprocessor == "pre"
+    assert server.postprocessor == "post"
+    assert server.observation_rename_map == policy_specs.rename_map
 
 
 def _minimal_valid_args(tmp_path):

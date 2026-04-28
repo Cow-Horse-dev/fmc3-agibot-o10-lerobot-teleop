@@ -95,3 +95,19 @@ def test_keyboard_listener_ignores_duplicate_exit_keys_after_first_request(monke
     assert events["rerecord_episode"] is True
     assert events["exit_early"] is True
     assert events["stop_recording"] is False
+
+
+def test_keyboard_listener_left_arrow_can_upgrade_right_arrow_exit_to_rerecord(monkeypatch):
+    _install_fake_keyboard(monkeypatch)
+
+    listener, events = control_utils.init_keyboard_listener()
+    assert listener is not None
+
+    listener.on_press(_FakeKey.space)
+    listener.on_press(_FakeKey.right)
+    listener.on_press(_FakeKey.left)
+
+    assert events["keyboard_exit_requested"] is True
+    assert events["rerecord_episode"] is True
+    assert events["exit_early"] is True
+    assert events["stop_recording"] is False

@@ -124,6 +124,7 @@ class RobotClient:
         self.start_barrier = threading.Barrier(
             2
         )  # 2 threads: action receiver, control loop
+        self._control_loop_started = False
 
         # FPS measurement
         self.fps_tracker = FPSTracker(target_fps=self.config.fps)
@@ -133,6 +134,25 @@ class RobotClient:
         # Use an event for thread-safe coordination
         self.must_go = threading.Event()
         self.must_go.set()  # Initially set - observations qualify for direct processing
+
+    def _wait_for_control_start_once(self) -> None:
+        if getattr(self, "_control_loop_started", False):
+            return
+        self.start_barrier.wait()
+        self._control_loop_started = True
+
+    def clear_action_queue(self, advance_action_watermark: bool = False) -> None:
+        with self.action_queue_lock:
+            self.action_queue = Queue()
+        if advance_action_watermark:
+            with self.latest_action_lock:
+                self.latest_action += max(
+                    int(getattr(self.config, "actions_per_chunk", 0)),
+                    int(getattr(self, "action_chunk_size", 0)),
+                    0,
+                )
+        self.action_queue_size = []
+        self.must_go.set()
 
     @property
     def running(self):
@@ -475,17 +495,22 @@ class RobotClient:
             self.logger.error(f"Error in observation sender: {e}")
 
     def control_loop(
-        self, task: str, verbose: bool = False
+        self, task: str, verbose: bool = False, control_time_s: float | None = None
     ) -> tuple[Observation, Action]:
         """Combined function for executing actions and streaming observations"""
-        # Wait at barrier for synchronized start
-        self.start_barrier.wait()
+        # Wait at barrier for synchronized start once; repeated episode loops reuse
+        # the same receiver thread and must not wait on the barrier again.
+        self._wait_for_control_start_once()
         self.logger.info("Control loop thread starting")
 
         _performed_action = None
         _captured_observation = None
 
+        loop_start = time.perf_counter()
         while self.running:
+            if control_time_s is not None and time.perf_counter() - loop_start >= control_time_s:
+                break
+
             control_loop_start = time.perf_counter()
             """Control loop: (1) Performing actions, when available"""
             if self.actions_available():

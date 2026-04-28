@@ -6,41 +6,41 @@
 
 dataset:
   # 数据集名字。
-  repo_id: null
+  repo_id: null  # 可选: null 或数据集名字
 
   # 要回放的具体数据集目录。
-  root: ~/workspace/dataset/Robot/agi_arm_bot/right_hand_picks_up_the_camera_left_hand_picks_up_the_pen_then_left_hand_uses_the_pen_to_touch_20260424_3
+  root: /home/phl/workspace/dataset/Robot/agi_arm_bot/right_hand_picks_up_the_camera_left_hand_picks_up_the_pen_then_left_hand_uses_the_pen_to_touch_20260427_2  # 要回放的具体数据集目录
 
 replay:
   # 回放第几个 episode，从 0 开始编号。
-  episode_index: 0
+  episode_index: 0  # episode 编号，从 0 开始
 
   # 回放频率，单位 Hz。
-  fps: 30
+  fps: 30  # 回放频率，单位 Hz
 
 robot:
-  type: pico_follower_dual_arm_agibot_o10
-  id: o10_dual
-  enable_hand: true
-  action_control_mode: joint  # 与数据集 action schema 保持一致：joint, eef_delta
-  hand_action_mode: gripper_1d  # 与录制数据集一致：dexterous_10d, gripper_1d
+  type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
+  id: o10_dual  # 机器人端 id
+  enable_hand: true  # 可选: true, false
+  action_control_mode: joint  # 可选: joint, eef_delta；与数据集 action schema 保持一致
+  hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d；与录制数据集一致
   left:
-    port: can0
-    handedness: left
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: tripod  # 与录制一致
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: tripod
+    port: can0  # CAN 口
+    handedness: left  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: tripod  # 可选: pinch, tripod；与录制一致
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    port: can1
-    handedness: right
-    channel_mode: multiChannel
-    device_id: 1
-    canfd_id: 0
-    channel_id: null
-    gripper_gesture: pinch  # 与录制一致
-    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-    reset_gesture: pinch
+    port: can1  # CAN 口
+    handedness: right  # 可选: left, right
+    channel_mode: multiChannel  # 可选: multiChannel
+    device_id: 1  # O10 设备 id
+    canfd_id: 0  # CANFD id
+    channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
+    gripper_gesture: pinch  # 可选: pinch, tripod；与录制一致
+    reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
+    reset_gesture: pinch  # 可选: pinch, tripod

@@ -655,10 +655,12 @@ def _release_teleop_waiting_state_for_recording(teleop) -> None:
         _set_single_arm_zero_mode(teleop, True)
         _sync_teleop_to_robot_reset(teleop)
         _set_single_arm_zero_mode(teleop, False)
+        teleop.pause_event.set()
     elif _is_o10_dual_arm_teleop(teleop):
         _set_dual_arm_zero_mode(teleop, True)
         _sync_teleop_to_robot_reset(teleop)
         _set_dual_arm_zero_mode(teleop, False)
+        teleop.pause_event.set()
 
 
 def _describe_dual_arm_trigger_mode(trigger_mode: str) -> str:

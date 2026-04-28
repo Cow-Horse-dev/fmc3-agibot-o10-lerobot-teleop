@@ -12,13 +12,11 @@ import os
 import sys
 import time
 import threading
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 import yaml
-import shutil
 
 from lerobot.cameras.configs import Cv2Rotation
 from lerobot.configs.policies import PreTrainedConfig
@@ -65,6 +63,8 @@ O10_ROBOT_TYPES = (
     "pico_follower_dual_arm_agibot_o10",
 )
 POLICIES_WITHOUT_O10_TACTILE = ("pi0", "pi05")
+PEFT_ADAPTER_CONFIG_FILE = "adapter_config.json"
+PEFT_ADAPTER_WEIGHT_FILES = ("adapter_model.safetensors", "adapter_model.bin")
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
@@ -86,10 +86,14 @@ def _validate_model_path(model_path: str) -> bool:
     if not os.path.exists(config_path):
         raise ValueError(f"config.json not found in model directory: {model_path}")
 
-    weight_candidates = ["pytorch_model.bin", "model.safetensors"]
+    weight_candidates = [
+        "pytorch_model.bin",
+        "model.safetensors",
+        *PEFT_ADAPTER_WEIGHT_FILES,
+    ]
     if not any(os.path.exists(os.path.join(model_path, file)) for file in weight_candidates):
         print(
-            "Warning: neither pytorch_model.bin nor model.safetensors was found "
+            "Warning: no model or PEFT adapter weight file was found "
             f"in model directory: {model_path}"
         )
 
@@ -545,6 +549,84 @@ def _load_policy_config(model_path: str, device: str | None) -> PreTrainedConfig
     return config
 
 
+def _is_local_peft_adapter_path(model_path: str) -> bool:
+    model_path = os.path.expanduser(model_path)
+    if not os.path.isdir(model_path):
+        return False
+
+    has_adapter_config = os.path.exists(
+        os.path.join(model_path, PEFT_ADAPTER_CONFIG_FILE)
+    )
+    has_adapter_weights = any(
+        os.path.exists(os.path.join(model_path, file))
+        for file in PEFT_ADAPTER_WEIGHT_FILES
+    )
+    return has_adapter_config and has_adapter_weights
+
+
+def _load_base_policy(policy_type: str, model_path: str):
+    if policy_type == "act":
+        return ACTPolicy.from_pretrained(model_path)
+    if policy_type == "diffusion":
+        return DiffusionPolicy.from_pretrained(model_path)
+    if policy_type == "pi0":
+        return PI0Policy.from_pretrained(model_path)
+    if policy_type == "pi05":
+        return PI05Policy.from_pretrained(model_path)
+    if policy_type == "groot":
+        return GrootPolicy.from_pretrained(model_path)
+    if policy_type == "smolvla":
+        return SmolVLAPolicy.from_pretrained(model_path)
+    raise ValueError(f"Unsupported policy type: {policy_type}")
+
+
+def _set_policy_device(policy, device: str | None) -> None:
+    if not device:
+        return
+
+    policy.to(device)
+    policy_config = getattr(policy, "config", None)
+    if policy_config is not None and hasattr(policy_config, "device"):
+        policy_config.device = device
+
+
+def _policy_device(policy) -> str:
+    policy_config = getattr(policy, "config", None)
+    return getattr(policy_config, "device", "unknown")
+
+
+def _ensure_lerobot_policy_config(policy, base_policy) -> None:
+    policy_config = getattr(policy, "config", None)
+    if policy_config is None or not hasattr(policy_config, "input_features"):
+        policy.config = base_policy.config
+
+
+def _load_peft_policy(policy_type: str, adapter_path: str):
+    try:
+        from peft import PeftConfig, PeftModel
+    except ImportError as exc:
+        raise RuntimeError(
+            "PEFT/LoRA adapter checkpoint detected, but package 'peft' is not installed."
+        ) from exc
+
+    peft_config = PeftConfig.from_pretrained(adapter_path)
+    base_model_path = getattr(peft_config, "base_model_name_or_path", None)
+    if not base_model_path:
+        raise ValueError(
+            "PEFT adapter_config.json does not contain base_model_name_or_path; "
+            "cannot load the base policy for inference."
+        )
+
+    log_say(
+        f"Detected PEFT adapter at {adapter_path}; "
+        f"loading base {policy_type} policy from {base_model_path}"
+    )
+    base_policy = _load_base_policy(policy_type, base_model_path)
+    policy = PeftModel.from_pretrained(base_policy, adapter_path, config=peft_config)
+    _ensure_lerobot_policy_config(policy, base_policy)
+    return policy
+
+
 def _validate_policy_type_matches_checkpoint(
     policy_type: str,
     policy_config: PreTrainedConfig,
@@ -590,28 +672,16 @@ def _load_policy(policy_type: str, model_path: str, device: str):
     start_time = time.time()
 
     try:
-        if policy_type == "act":
-            policy = ACTPolicy.from_pretrained(model_path)
-        elif policy_type == "diffusion":
-            policy = DiffusionPolicy.from_pretrained(model_path)
-        elif policy_type == "pi0":
-            policy = PI0Policy.from_pretrained(model_path)
-        elif policy_type == "pi05":
-            policy = PI05Policy.from_pretrained(model_path)
-        elif policy_type == "groot":
-            policy = GrootPolicy.from_pretrained(model_path)
-        elif policy_type == "smolvla":
-            policy = SmolVLAPolicy.from_pretrained(model_path)
+        if _is_local_peft_adapter_path(model_path):
+            policy = _load_peft_policy(policy_type, model_path)
         else:
-            raise ValueError(f"Unsupported policy type: {policy_type}")
+            policy = _load_base_policy(policy_type, model_path)
 
-        if device:
-            policy.to(device)
-            policy.config.device = device
+        _set_policy_device(policy, device)
 
         load_time = time.time() - start_time
         log_say(
-            f"Policy loaded successfully in {load_time:.2f} seconds on {policy.config.device}"
+            f"Policy loaded successfully in {load_time:.2f} seconds on {_policy_device(policy)}"
         )
         return policy
 
@@ -772,6 +842,25 @@ def _create_dataset(robot, fps: int, save_path: str) -> LeRobotDataset:
     )
 
 
+class _NullDataset:
+    """Stub dataset for inference runs that don't save data.
+
+    record_loop only reads .fps/.features and conditionally calls .add_frame;
+    using a stub avoids LeRobotDataset.create() spinning up image writer
+    threads that fight the inference loop for CPU/IO.
+    """
+
+    def __init__(self, features: dict, fps: int):
+        self.features = features
+        self.fps = fps
+        self.meta = type("_Meta", (), {"stats": {}})()
+
+    def add_frame(self, frame): pass
+    def save_episode(self): pass
+    def wait_all_async_tasks(self): pass
+    def finalize(self): pass
+
+
 def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
     """运行同步推理"""
     log_say("Starting synchronous inference")
@@ -787,22 +876,23 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
     ) = make_default_processors()
     dataset = None
     save_path = None
+    save_dataset = bool(args.save_data or args.save_path)
 
-    # 创建保存路径
-    if args.save_path:
-        save_path = args.save_path
-    elif args.save_data:
-        save_path = _get_default_save_path(args.policy)
+    if save_dataset:
+        if args.save_path:
+            save_path = args.save_path
+        else:
+            save_path = _get_default_save_path(args.policy)
+        save_path = _create_save_directory(save_path)
+        dataset = _create_dataset(robot, args.fps, save_path)
     else:
-        save_path = os.path.join(
-            tempfile.gettempdir(),
-            f"{args.policy}_infer_{next(tempfile._get_candidate_names())}",
+        dataset = _NullDataset(
+            features=build_dataset_features(
+                robot, use_videos=bool(getattr(robot, "cameras", {}))
+            ),
+            fps=args.fps,
         )
 
-    save_path = _create_save_directory(save_path)
-
-    # 创建数据集
-    dataset = _create_dataset(robot, args.fps, save_path)
     _load_and_validate_policy_config(
         args.policy,
         args.model_path,
@@ -899,9 +989,9 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
             "policy": args.policy,
             "task": args.task_description,
             "episodes_completed": episodes_completed,
-            "data_saved": args.save_data,
+            "data_saved": save_dataset,
             "execution_time": execution_time,
-            "save_path": save_path if args.save_data else None,
+            "save_path": save_path if save_dataset else None,
             "performance_stats": {
                 "total_time": execution_time,
                 "avg_episode_time": avg_episode_time,
@@ -909,7 +999,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
         }
 
     finally:
-        if dataset is not None:
+        if save_dataset and dataset is not None:
             try:
                 dataset.wait_all_async_tasks()
             except Exception as exc:
@@ -929,9 +1019,6 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 cam.disconnect()
             except Exception as exc:
                 log_say(f"Warning: failed to disconnect camera: {exc}")
-
-        if not args.save_data and save_path is not None:
-            shutil.rmtree(save_path, ignore_errors=True)
 
 
 def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
@@ -985,7 +1072,10 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
             )
 
             try:
-                client.control_loop(args.task_description)
+                client.control_loop(
+                    args.task_description,
+                    control_time_s=args.episode_time_sec,
+                )
             except KeyboardInterrupt:
                 log_say("Inference interrupted by user")
                 break
@@ -993,6 +1083,7 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
             # 机器人归零
             if episode_idx < args.num_episodes - 1:  # 不是最后一轮
                 log_say("Resetting robot to zero position")
+                client.clear_action_queue(advance_action_watermark=True)
                 # 异步推理的归零需要特殊处理
                 time.sleep(2)  # 等待动作完成
 
