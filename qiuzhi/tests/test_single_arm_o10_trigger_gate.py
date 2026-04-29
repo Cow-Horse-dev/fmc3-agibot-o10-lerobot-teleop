@@ -242,6 +242,13 @@ def _build_ctrl(**overrides):
     return ctrl
 
 
+def test_default_pose_treats_zero_norm_quaternion_as_invalid(monkeypatch):
+    module = _load_single_arm_eef_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderSingleArmEEF)
+
+    assert teleop._is_default_pose([0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 0.0]) is True
+
+
 def _make_single_arm_eef_teleop(
     module,
     handedness: str,

@@ -428,6 +428,9 @@ class PicoLeaderSingleArmEEF(Teleoperator):
         if np.isnan(pos).any() or np.isnan(quat).any():
             return True
 
+        if np.linalg.norm(quat) < 1e-9:
+            return True
+
         if not np.allclose(pos, 0.0, atol=1e-6):
             return False
 
