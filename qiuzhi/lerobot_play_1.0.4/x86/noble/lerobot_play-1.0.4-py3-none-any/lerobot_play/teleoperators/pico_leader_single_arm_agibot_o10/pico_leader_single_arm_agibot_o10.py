@@ -344,9 +344,11 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         )
 
     def _is_trigger_gesture_grasp_pressed(self) -> bool:
-        controller_side = getattr(self, "controller_side", self.handedness)
-        button_key = "RG" if controller_side == "right" else "LG"
-        grip_key = "rightGrip" if controller_side == "right" else "leftGrip"
+        grip_side = getattr(self, "wrist_pose_source", "auto")
+        if grip_side not in {"left", "right"}:
+            grip_side = getattr(self, "handedness", "right")
+        button_key = "RG" if grip_side == "right" else "LG"
+        grip_key = "rightGrip" if grip_side == "right" else "leftGrip"
         return bool(self.ctrl[button_key]) or float(self.ctrl.get(grip_key, 0.0)) >= 0.2
 
     def reset_pose(self):

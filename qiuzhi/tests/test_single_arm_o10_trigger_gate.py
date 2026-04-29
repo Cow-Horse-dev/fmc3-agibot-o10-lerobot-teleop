@@ -254,6 +254,7 @@ def _make_single_arm_eef_teleop(
     handedness: str,
     *,
     controller_side: str | None = None,
+    wrist_pose_source: str | None = None,
     startflag: bool,
     ctrl: dict,
 ):
@@ -263,6 +264,7 @@ def _make_single_arm_eef_teleop(
     teleop._is_connected = True
     teleop.handedness = handedness
     teleop.controller_side = controller_side or handedness
+    teleop.wrist_pose_source = wrist_pose_source or "auto"
     teleop.ctrl = ctrl
     teleop.startflag = startflag
     teleop.pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
@@ -279,6 +281,8 @@ def _make_single_arm_eef_teleop(
     [
         ("left", "left", "X", "A"),
         ("right", "right", "A", "X"),
+        ("left", "right", "A", "X"),
+        ("right", "left", "X", "A"),
     ],
 )
 def test_single_arm_start_button_uses_controller_side(
@@ -313,6 +317,8 @@ def test_single_arm_start_button_uses_controller_side(
     [
         ("left", "left", "Y", "B"),
         ("right", "right", "B", "Y"),
+        ("left", "right", "B", "Y"),
+        ("right", "left", "Y", "B"),
     ],
 )
 def test_single_arm_reset_button_uses_controller_side(
@@ -357,6 +363,8 @@ def test_single_arm_reset_button_uses_controller_side(
     [
         ("left", "left", "LTr", "RTr"),
         ("right", "right", "RTr", "LTr"),
+        ("left", "right", "RTr", "LTr"),
+        ("right", "left", "LTr", "RTr"),
     ],
 )
 def test_single_arm_arm_control_requires_controller_side_trigger_gate(
@@ -399,6 +407,8 @@ def test_single_arm_arm_control_requires_controller_side_trigger_gate(
     [
         ("left", "left", "LTr", "RTr"),
         ("right", "right", "RTr", "LTr"),
+        ("left", "right", "RTr", "LTr"),
+        ("right", "left", "LTr", "RTr"),
     ],
 )
 def test_single_arm_hand_control_requires_controller_side_trigger_gate(
@@ -415,3 +425,39 @@ def test_single_arm_hand_control_requires_controller_side_trigger_gate(
 
     teleop.ctrl = _build_ctrl(**{matching_trigger: True})
     assert teleop._is_hand_control_enabled() is True
+
+
+@pytest.mark.parametrize(
+    ("handedness", "controller_side", "wrist_pose_source", "matching_grip", "matching_grip_axis", "opposite_grip", "opposite_grip_axis"),
+    [
+        ("left", "right", "left", "LG", "leftGrip", "RG", "rightGrip"),
+        ("right", "left", "right", "RG", "rightGrip", "LG", "leftGrip"),
+    ],
+)
+def test_single_arm_trigger_gesture_grasp_uses_wrist_pose_source(
+    monkeypatch,
+    handedness,
+    controller_side,
+    wrist_pose_source,
+    matching_grip,
+    matching_grip_axis,
+    opposite_grip,
+    opposite_grip_axis,
+):
+    module = _load_single_arm_agibot_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderSingleArmAgibotO10)
+    teleop.handedness = handedness
+    teleop.controller_side = controller_side
+    teleop.wrist_pose_source = wrist_pose_source
+
+    teleop.ctrl = _build_ctrl(**{opposite_grip: True})
+    assert teleop._is_trigger_gesture_grasp_pressed() is False
+
+    teleop.ctrl = _build_ctrl(**{opposite_grip_axis: 1.0})
+    assert teleop._is_trigger_gesture_grasp_pressed() is False
+
+    teleop.ctrl = _build_ctrl(**{matching_grip: True})
+    assert teleop._is_trigger_gesture_grasp_pressed() is True
+
+    teleop.ctrl = _build_ctrl(**{matching_grip_axis: 0.2})
+    assert teleop._is_trigger_gesture_grasp_pressed() is True

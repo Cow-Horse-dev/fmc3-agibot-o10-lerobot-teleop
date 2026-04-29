@@ -12,9 +12,9 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_left
 
-  # 左臂模式下，左手柄控制左臂和左手；左手柄 X/Y/LTr 负责使能、复位和按住门控。
+  # 左臂模式下，左手柄控制左臂和左手；右手柄 A/B/RTr 负责开始、复位和按住使能。
   handedness: left
-  controller_side: left
+  controller_side: right
 
   # Pico wrist 位姿流端口。
   vr_pose_port: 8000
@@ -39,6 +39,8 @@ teleop:
   # - true: 手 + 臂一起控制
   # - false: 只控制机械臂
   enable_hand: true
+  hand_mode: trigger_gesture  # glove, trigger_gesture
+  trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
   action_control_mode: joint  # joint, eef_delta
 
   # 统一复位姿态 JSON 路径。

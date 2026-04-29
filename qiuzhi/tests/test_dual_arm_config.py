@@ -17,8 +17,8 @@ def test_dual_control_yaml_parses():
     assert config["teleop"]["right"]["gripper_gesture"] == "pinch"
     assert config["robot"]["left"]["gripper_gesture"] == "tripod"
     assert config["robot"]["right"]["gripper_gesture"] == "pinch"
-    assert config["robot"]["left"]["port"] == "can0"
-    assert config["robot"]["right"]["port"] == "can1"
+    assert config["robot"]["left"]["port"] == "can1"
+    assert config["robot"]["right"]["port"] == "can0"
     assert config["teleop"]["left"]["handedness"] == "left"
     assert config["teleop"]["right"]["handedness"] == "right"
 
@@ -38,7 +38,7 @@ def test_left_control_yaml_parses():
     assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["port"] == "can1"
     assert config["teleop"]["handedness"] == "left"
-    assert config["teleop"]["controller_side"] == "left"
+    assert config["teleop"]["controller_side"] == "right"
     assert config["teleop"]["wrist_pose_source"] == "left"
     assert config["robot"]["enable_hand"] is True
     assert set(config["robot"]["cameras"]) == {"top", "left_wrist"}
@@ -53,7 +53,7 @@ def test_right_control_yaml_parses():
     assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["port"] == "can0"
     assert config["teleop"]["handedness"] == "right"
-    assert config["teleop"]["controller_side"] == "right"
+    assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "right"
     assert set(config["robot"]["cameras"]) == {"top", "right_wrist"}
     assert config["robot"]["cameras"]["right_wrist"]["serial_number_or_name"] == "260322273018"
@@ -170,7 +170,7 @@ def test_left_record_yaml_has_dataset_section():
     assert config["robot"]["port"] == "can0"
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["tactile_mode"] == "none"
-    assert config["teleop"]["controller_side"] == "left"
+    assert config["teleop"]["controller_side"] == "right"
     assert config["teleop"]["wrist_pose_source"] == "left"
     assert "left" in config["robot"]["cameras"]
     assert "right" not in config["robot"]["cameras"]
@@ -183,7 +183,7 @@ def test_right_record_yaml_uses_joint_only_state_without_tactile():
     assert config["robot"]["port"] == "can1"
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["tactile_mode"] == "none"
-    assert config["teleop"]["controller_side"] == "right"
+    assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "right"
     assert "right" in config["robot"]["cameras"]
 

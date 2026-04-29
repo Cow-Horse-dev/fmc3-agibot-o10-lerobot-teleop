@@ -81,9 +81,9 @@ teleop:
   # 遥操作器名字，仅用于日志显示。
   id: pico_right
 
-  # 右臂录制时仍录右臂，但输入来自左侧控制器。
+  # 右臂录制时仍录右臂；右手柄控制右臂和右手，左手柄 X/Y/LTr 负责开始、复位和按住使能。
   handedness: right
-  controller_side: right
+  controller_side: left
 
   # Pico 位姿流端口。
   vr_pose_port: 8000
