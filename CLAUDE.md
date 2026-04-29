@@ -120,6 +120,9 @@ mapping; hand CANFD over multiChannel (channel 0 = left, 1 = right); arms on CAN
   copying device-specific branches across `record`, `control`, teleoperator classes.
 - Treat `*.zip`, `*.whl`, `.so`, `__pycache__/`, and generated `Protobuf/*_pb2.py` as
   vendor artifacts unless regeneration is in scope.
+- Documentation: `README.md` is Chinese and `README_en.md` is English. Whenever
+  user-facing README content changes, update both files together so commands,
+  configs, hardware notes, and troubleshooting stay synchronized.
 
 ## Behavioral Guidelines
 

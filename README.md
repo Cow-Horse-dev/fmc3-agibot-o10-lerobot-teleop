@@ -131,32 +131,53 @@ cd ~/workspace/arm-hand-teleop
   - `both`：同时按住 `LTr + RTr`，双臂才跟随。
   - `split`：左臂看 `LTr`，右臂看 `RTr`。
 
-## 手部模式
+## 手部控制模式
 
-通过各配置里的 `teleop.hand_mode` 切换：
+手部控制分两层配置：`hand_mode` 选择“手从哪里来”，`hand_action_mode` 选择“手以什么维度写入 action / 下发给机器人”。
 
-- `glove`：使用 HDService + 宇叠手套，手指关节实时跟随；需要先启动 HDService。
-- `trigger_gesture`：不使用手套，手只有 `open/closed` 两类姿态。
-  - 默认 `open`。
-  - 闭合条件：工作侧手柄的 grip 按键（左臂看 `LG`，右臂看 `RG`）按下，或 grip 轴值超过阈值。
-    - 单臂：阈值硬编码为 `0.2`，不可通过配置修改。
-    - 双臂：每侧独立判断（左手看 `LG`/`leftGrip`，右手看 `RG`/`rightGrip`），阈值可用 `teleop.grasp_grip_threshold` 覆盖，默认 `0.2`。
-  - `teleop.trigger_gesture` 选择闭合姿态形状，常用 `pinch` / `tripod`。
-  - 双臂可在 `teleop.left.trigger_gesture` / `teleop.right.trigger_gesture` 里为左右手分别指定不同手势。
+### 手部输入来源：`teleop.hand_mode`
+
+- `glove`：使用 HDService + 宇叠手套，手指关节实时跟随。使用前必须先启动 HDService，并在 HDWeb 里确认对应左右手在线。
+- `trigger_gesture`：不使用手套，用 VR 手柄 grip 控制预设手势开合。默认 `open`，按下工作侧 grip 或 grip 轴值超过阈值后切到 `closed`。
+
+`trigger_gesture` 细节：
+
+- 单臂左臂：左手柄控制左臂/左手运动，因此手势抓握看左手柄 `LG` / `leftGrip`。
+- 单臂右臂：右手柄控制右臂/右手运动，因此手势抓握看右手柄 `RG` / `rightGrip`。
+- 双臂：左手看 `LG` / `leftGrip`，右手看 `RG` / `rightGrip`。
+- 单臂 grip 阈值硬编码为 `0.2`；双臂阈值可用 `teleop.grasp_grip_threshold` 覆盖，默认 `0.2`。
+- `teleop.trigger_gesture` 选择闭合姿态形状，常用 `pinch` / `tripod`。
+- 双臂可在 `teleop.left.trigger_gesture` / `teleop.right.trigger_gesture` 里为左右手分别指定不同手势。
+
+### 手部 action 维度：`hand_action_mode`
+
+- `dexterous_10d`：10D 灵巧手关节控制。action/state 中保留 O10 手的 10 个关节，适合完整手指遥操作和录制。
+- `gripper_1d`：1D 夹爪控制。action 中只保留 `gripper.pos`，运行时按 `gripper_gesture` 和 reset pose 的 `open` / `closed` 姿态映射回 O10 手 10D 关节。
+
+`hand_mode` 和 `hand_action_mode` 可以组合使用：
+
+| 输入来源 | action 维度 | 效果 |
+|---|---|---|
+| `glove` | `dexterous_10d` | 手套实时控制 10D 手指关节，录制完整 10D 手动作 |
+| `glove` | `gripper_1d` | 手套先映射成 10D，再投影成 1D `gripper.pos` 录制/控制 |
+| `trigger_gesture` | `dexterous_10d` | 手柄 grip 在预设 `open/closed` 两个 10D 手势间切换 |
+| `trigger_gesture` | `gripper_1d` | 手柄 grip 直接控制 1D `gripper.pos`，再还原成预设手势 |
+
+`control` 和 `record` 时，`teleop.hand_action_mode` 会默认跟随 `robot.hand_action_mode`；如果两个都写，建议保持一致。`replay` / `infer` 没有 teleop 手部输入，只按 `robot.hand_action_mode` 解释数据集或策略输出。
 
 ## 配置文件
 
 ### 左臂
 
-- `configs/left_arm/o10_left_control.yaml`：实时控制。`controller_side: left`，`wrist_pose_source: left`，相机 `top + left_wrist`。
-- `configs/left_arm/o10_left_record.yaml`：数据录制。`controller_side: left`，`wrist_pose_source: left`，相机 `top + left`。
+- `configs/left_arm/o10_left_control.yaml`：实时控制。`controller_side: right`，`wrist_pose_source: left`，相机 `top + left_wrist`。
+- `configs/left_arm/o10_left_record.yaml`：数据录制。`controller_side: right`，`wrist_pose_source: left`，相机 `top + left`。
 - `configs/left_arm/o10_left_replay.yaml`：轨迹回放。
 - `configs/left_arm/o10_left_infer.yaml`：策略推理。相机 key 与左臂录制 schema 保持一致：`top + left`。
 
 ### 右臂
 
-- `configs/right_arm/o10_right_control.yaml`：实时控制。`controller_side: right`，`wrist_pose_source: right`，相机 `top + right_wrist`。
-- `configs/right_arm/o10_right_record.yaml`：数据录制。`controller_side: right`，`wrist_pose_source: right`，相机 `top + right`。
+- `configs/right_arm/o10_right_control.yaml`：实时控制。`controller_side: left`，`wrist_pose_source: right`，相机 `top + right_wrist`。
+- `configs/right_arm/o10_right_record.yaml`：数据录制。`controller_side: left`，`wrist_pose_source: right`，相机 `top + right`。
 - `configs/right_arm/o10_right_replay.yaml`：轨迹回放。
 - `configs/right_arm/o10_right_infer.yaml`：GPU 策略推理。相机 key 与右臂录制 schema 保持一致：`top + right`。
 - `configs/right_arm/o10_right_infer_cpu.yaml`：CPU 推理示例，默认 `policy: act`。
@@ -164,9 +185,9 @@ cd ~/workspace/arm-hand-teleop
 ### 双臂
 
 - `configs/dual_arm/o10_dual_control.yaml`：实时控制。`arm_trigger_mode: left`，左右 wrist pose 分别来自 `left/right`。
-- `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "7d"`。
+- `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "none"`。
 - `configs/dual_arm/o10_dual_replay.yaml`：轨迹回放。
-- `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose: false`，`tactile_mode: "7d"`，相机 `top + left_wrist + right_wrist`。
+- `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose: false`，`tactile_mode: "none"`，相机 `top + left_wrist + right_wrist`。
 
 ### 复位姿态
 
@@ -181,7 +202,13 @@ cd ~/workspace/arm-hand-teleop
 - Pico WebRTC 进程发布：
   - 位姿：`tcp://localhost:8000`
   - 按键/扳机：`tcp://localhost:8001`
-- 宇叠手套：UDP `0.0.0.0:7777`，仅 `hand_mode: glove` 使用。
+- Pico 头显里的 VRControl / VR 控制页面需要填写主机 IPv4 地址，端口保持配置里的 `8000/8001`：
+  - 主机 WiFi IP：`192.168.1.111`（网卡 `wlo1`）
+  - 主机有线 IP：`192.168.1.138`（网卡 `enp4s0`）
+  - Pico 和主机连同一个 WiFi 时优先填 WiFi IP；如果 Pico 所在网络能访问主机有线网段，则填有线 IP。
+  - 不要填 `127.0.0.1`、Docker、Tailscale 或 `198.18.*` 这类虚拟网卡地址。
+  - IP 变化时用 `ip -br addr show wlo1 enp4s0` 重新确认。
+- 宇叠手套：HDService 由脚本设置 `HD_UDP_TARGET=127.0.0.1:5555`，O10 teleop 在本机 `5555` 接收；仅 `hand_mode: glove` 使用。
 - 臂 CAN：左臂默认 `can0`，右臂默认 `can1`，以各 YAML 的 `robot.port` 或 `robot.left/right.port` 为准。
 - 手 CANFD：`channel_mode: multiChannel`，`channel_id: null` 时自动按 handedness 选择，`left -> 0`，`right -> 1`。
 
@@ -221,16 +248,23 @@ cd ~/workspace/arm-hand-teleop
   --dataset.repo_id my_dataset
 ```
 
-`action` 固定只含关节指令：
+默认 `dexterous_10d` 时，`action` 只含臂关节 + 手 10D 关节：
 
 | 模式 | action 维度 | 组成 |
 |---|---:|---|
 | 单臂 | 16D | 臂 6 + 手 10 |
 | 双臂 | 32D | `left.*` 16D + `right.*` 16D |
 
-### O10 双臂 gripper_1d 映射
+`gripper_1d` 时，手部 action 会压缩成 1D：
 
-双臂 O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。录制数据是 14D：左臂 6 个 arm joint + `left.gripper.pos`，右臂 6 个 arm joint + `right.gripper.pos`。
+| 模式 | action 维度 | 组成 |
+|---|---:|---|
+| 单臂 | 7D | 臂 6 + `gripper.pos` |
+| 双臂 | 14D | 左臂 6 + `left.gripper.pos`，右臂 6 + `right.gripper.pos` |
+
+### O10 gripper_1d 映射
+
+O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。单臂录制数据是 7D：6 个 arm joint + `gripper.pos`；双臂录制数据是 14D：左臂 6 个 arm joint + `left.gripper.pos`，右臂 6 个 arm joint + `right.gripper.pos`。
 
 录制侧仍先得到每只 O10 手的 10D 手指关节，再按配置的 `gripper_gesture`、`handedness` 和 reset pose 里的 `open` / `closed` 姿态，把当前 10D 手指关节投影到 `0..1` 的 `gripper.pos`。回放侧读取数据集里的 `left.gripper.pos` / `right.gripper.pos`，按同样的 `gripper_gesture` 和 `handedness`，从对应 `open` / `closed` pose 线性插值还原为 10D 手指关节并下发到 O10 手。
 

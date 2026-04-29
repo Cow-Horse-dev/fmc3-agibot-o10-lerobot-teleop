@@ -25,6 +25,10 @@ Favor high cohesion and low coupling when adding or reshaping features. Prefer e
 
 Add Python tests under `qiuzhi/tests/` as `test_<feature>.py`. Prefer pure-Python regression tests that stub SDK imports and verify mapping math, bootstrap discovery, and error messages without requiring CAN hardware. No coverage gate is configured, so each behavior change should ship with a focused test or a short manual validation note.
 
+## Documentation Guidelines
+
+`README.md` is the Chinese README and `README_en.md` is the English README. Whenever user-facing README content changes, update both files in the same change so commands, configs, hardware notes, and troubleshooting stay synchronized.
+
 ## Commit & Pull Request Guidelines
 
 History is sparse and uses short summary lines such as `第一次合并` and `宇叠手套控制手跑通版本`. Keep commits short, scoped, and single-purpose, for example `yudie: fix JSON role fallback`. `qiuzhi/` and `yudie/` each contain their own Git metadata while the root repo tracks gitlinks, so be explicit about whether you changed nested repos, root pointers, or both. PRs should list the affected area, hardware assumptions, exact test commands, and logs or screenshots for runtime control changes.
