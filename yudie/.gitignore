@@ -6,6 +6,8 @@ __pycache__/
 
 # C extensions
 *.so
+!omnihand_2025/*.so
+!omnihand_2025/*.so.*
 
 # Distribution / packaging
 .Python
@@ -16,6 +18,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/lib/
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/lib/libAr1_linear.so
 lib64/
 parts/
 sdist/
