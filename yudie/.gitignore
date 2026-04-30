@@ -20,6 +20,10 @@ eggs/
 lib/
 !HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/lib/
 !HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/lib/libAr1_linear.so
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/usr/lib/
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/usr/lib/x86_64-linux-gnu/
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/usr/lib/x86_64-linux-gnu/libprotobuf.so.23
+!HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/usr/lib/x86_64-linux-gnu/libprotobuf.so.23.0.4
 lib64/
 parts/
 sdist/

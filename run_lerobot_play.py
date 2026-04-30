@@ -7,14 +7,9 @@ import sys
 from pathlib import Path
 
 
-LOCAL_LEROBOT_PLAY_ROOT = (
-    Path(__file__).resolve().parent
-    / "qiuzhi"
-    / "lerobot_play_1.0.4"
-    / "x86"
-    / "noble"
-    / "lerobot_play-1.0.4-py3-none-any"
-)
+REPO_ROOT = Path(__file__).resolve().parent
+LOCAL_PLATFORM_ROOT = REPO_ROOT / "qiuzhi" / "lerobot_play_1.0.4" / "x86" / "noble"
+LOCAL_LEROBOT_PLAY_ROOT = LOCAL_PLATFORM_ROOT / "lerobot_play-1.0.4-py3-none-any"
 
 COMMAND_MODULES = {
     "record": "lerobot_play.record",
@@ -32,10 +27,33 @@ SCRIPT_COMMANDS = {
 }
 
 
+def _find_local_dependency_root(pattern: str) -> Path | None:
+    for candidate in sorted(LOCAL_PLATFORM_ROOT.glob(pattern)):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+LOCAL_AIRBOT_HARDWARE_ROOT = _find_local_dependency_root("airbot_hardware_py-*")
+LOCAL_MMK2_KDL_ROOT = _find_local_dependency_root("mmk2_kdl_py-*")
+
+
+def _prepend_sys_path(path: Path | None) -> None:
+    if path is None:
+        return
+
+    path_str = str(path)
+    if path.exists() and path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+
 def _bootstrap_local_package() -> None:
-    local_root = str(LOCAL_LEROBOT_PLAY_ROOT)
-    if local_root not in sys.path:
-        sys.path.insert(0, local_root)
+    for dependency_root in (
+        LOCAL_LEROBOT_PLAY_ROOT,
+        LOCAL_AIRBOT_HARDWARE_ROOT,
+        LOCAL_MMK2_KDL_ROOT,
+    ):
+        _prepend_sys_path(dependency_root)
 
 
 def _print_usage() -> None:
@@ -65,7 +83,7 @@ def main() -> int:
         return 2
 
     if script_module is not None:
-        repo_root = str(Path(__file__).resolve().parent)
+        repo_root = str(REPO_ROOT)
         if repo_root not in sys.path:
             sys.path.insert(0, repo_root)
         module = importlib.import_module(script_module)

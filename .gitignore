@@ -46,4 +46,5 @@ env/
 ENV/
 
 # Large model weights (downloaded on-demand)
-models/
+models/**
+!models/hand_landmarker.task

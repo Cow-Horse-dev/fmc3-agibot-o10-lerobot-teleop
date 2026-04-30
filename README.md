@@ -39,6 +39,20 @@ conda activate arm-hand-teleop
 pip install pytest
 ```
 
+仓库已经包含日常启动必需的本地运行时文件，不需要再额外手工拷贝 `omnihand_2025`、`HDService` 的核心 `.so`，也不需要再单独安装 `lerobot_play`、`airbot_hardware_py`、`mmk2_kdl_py` 这几套 vendored Python 包。
+
+另外：
+
+- `scripts/` 下的启动脚本会自动尝试 `source /opt/ros/jazzy/setup.bash`，找不到时回退到 `/opt/ros/humble/setup.bash`，避免 `rclpy` 因为没 source ROS 而直接导入失败。
+- 仓库根目录提供 `environment.yml` 和 `explicit.txt`，用于在新机器重建 `arm-hand-teleop` conda 环境。
+- `models/hand_landmarker.task` 已随仓库提供，手动运行 `tests/test_mediapipe_right_hand_control.py` 时不需要临时联网下载模型。
+
+但“拉下来就能用”仍然有系统前置条件，这些不能靠 git 一起带走：
+
+- 目标机器仍需安装 ROS 2，并保证 `/opt/ros/jazzy` 或 `/opt/ros/humble` 至少有一个存在。
+- 目标机器仍需有系统 `libusb-1.0-0`、USB-CAN/串口权限、相机权限，以及实际硬件连接。
+- 如果你手动删掉 `yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/`，`start_hdservice.sh` 会回退到 bundled `.deb` 重新解包，这时仍需要系统 `dpkg-deb`。
+
 ## 统一入口
 
 推荐日常使用 `scripts/o10/.../*.sh`。需要直接调用入口时注意参数名不同：

@@ -39,6 +39,20 @@ conda activate arm-hand-teleop
 pip install pytest
 ```
 
+The repo already includes the local runtime files needed for normal startup. You do not need to copy `omnihand_2025` or the core `HDService` shared libraries by hand, and you do not need to separately install the vendored `lerobot_play`, `airbot_hardware_py`, or `mmk2_kdl_py` Python packages.
+
+Also:
+
+- Launch scripts under `scripts/` automatically try `source /opt/ros/jazzy/setup.bash`, then fall back to `/opt/ros/humble/setup.bash`, so `rclpy` does not fail just because ROS was not sourced in the current shell.
+- The repo root now includes `environment.yml` and `explicit.txt` for rebuilding the `arm-hand-teleop` conda environment on another machine.
+- `models/hand_landmarker.task` is now tracked in the repo, so `tests/test_mediapipe_right_hand_control.py` does not need to download the MediaPipe model at first run.
+
+That said, "clone and run" still has system prerequisites that git cannot bundle:
+
+- The target machine still needs ROS 2 installed, with at least one of `/opt/ros/jazzy` or `/opt/ros/humble` present.
+- The target machine still needs system `libusb-1.0-0`, USB-CAN / serial permissions, camera permissions, and the actual hardware connected.
+- If you manually delete `yudie/HDW-Regular_V2.2.5_202604021755_Ubuntu22+_x86_64/HDService/.local_deps/`, `start_hdservice.sh` falls back to unpacking the bundled `.deb`, which still requires system `dpkg-deb`.
+
 ## Unified Entry Point
 
 Daily use should prefer `scripts/o10/.../*.sh`. When calling the Python entry point directly, note the different argument names:
