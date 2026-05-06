@@ -6,10 +6,11 @@ The project is built on a vendored `lerobot_play` snapshot. The main input devic
 
 ## Directory Overview
 
-- `configs/`: control, record, infer, replay configs, plus reset-pose JSON files.
-- `scripts/`: daily launch scripts, HDService/HDWeb service scripts, and utility scripts.
+- `configs/`: control, record, infer, replay configs, task-specific model configs, plus reset-pose JSON files.
+- `scripts/`: daily launch scripts, HDService/HDWeb service scripts, training scripts, and utility scripts.
 - `qiuzhi/`: vendored `lerobot_play` code and Python regression tests.
 - `yudie/`: Udexreal glove, OmniHand, HDService, HDWeb code and SDKs.
+- `tests/`: root-level hand, tactile, MediaPipe, and README command checks; some are manual hardware demos.
 - `run_lerobot_play.py`: unified project entry point; all O10 scripts wrap it.
 
 ## Environment And Python Interpreter
@@ -17,7 +18,7 @@ The project is built on a vendored `lerobot_play` snapshot. The main input devic
 For daily shell scripts, you usually do not need to run `conda activate` manually. Scripts under `scripts/o10/` and `scripts/services/` find Python in this order:
 
 ```text
-ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > python3
+ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > /opt/conda/envs/arm-hand-teleop/bin/python > python3 > python
 ```
 
 Enter the environment only when running Python, installing packages, or running tests manually:
@@ -53,6 +54,10 @@ python run_lerobot_play.py control --config_path configs/right_arm/o10_right_con
 python run_lerobot_play.py record --yaml configs/right_arm/o10_right_record.yaml
 python run_lerobot_play.py replay --yaml configs/right_arm/o10_right_replay.yaml
 python run_lerobot_play.py infer  --yaml configs/right_arm/o10_right_infer.yaml
+
+# training and async policy server
+python run_lerobot_play.py train [lerobot-train args]
+python run_lerobot_play.py async_policy_server [args]
 
 # other tool entries
 python run_lerobot_play.py set_pose [args]
@@ -108,6 +113,7 @@ cd ~/workspace/arm-hand-teleop
 ./scripts/o10/dual_arm/record_o10_dual.sh          # data recording
 ./scripts/o10/dual_arm/replay_o10_dual.sh          # trajectory replay
 ./scripts/o10/dual_arm/infer_o10_dual.sh           # policy inference
+./scripts/o10/dual_arm/async_policy_server_o10_dual.sh # PI0/PI0.5 async policy server
 ```
 
 ## Pico Control Logic
@@ -188,6 +194,7 @@ During `control` and `record`, `teleop.hand_action_mode` defaults to `robot.hand
 - `configs/dual_arm/o10_dual_record.yaml`: data recording. Defaults: `include_eef_pose: false`, `tactile_mode: "none"`.
 - `configs/dual_arm/o10_dual_replay.yaml`: trajectory replay.
 - `configs/dual_arm/o10_dual_infer.yaml`: policy inference. Must match the dual-arm recording schema: `include_eef_pose: false`, `tactile_mode: "none"`, cameras `top + left_wrist + right_wrist`.
+- `configs/dual_arm/models/*.yaml`: task-specific dual-arm inference configs. Current files cover camera-pen-touch `act`, `diffusion`, `pi0`, and `pi05` variants; they pin the matching training schema and local model paths.
 
 ### Reset Poses
 
@@ -270,16 +277,20 @@ The recording side still first obtains each O10 hand's 10D finger joints. Then, 
 
 Current dual-arm configs in `configs/dual_arm/o10_dual_record.yaml` and `configs/dual_arm/o10_dual_replay.yaml` use `tripod` for the left hand and `pinch` for the right hand. Replay of the 20260427 dataset is generally aligned, which indicates the record/replay mapping path is working.
 
-`observation.state` is controlled by `robot.include_eef_pose` and `robot.tactile_mode`:
+`observation.state` is controlled by `robot.hand_action_mode`, `robot.include_eef_pose`, and `robot.tactile_mode`. In `gripper_1d` mode, state only keeps arm joints + `gripper.pos`; EEF pose fields are not added.
 
-| include_eef_pose | tactile_mode | Single-Arm State | Dual-Arm State |
-|---|---|---:|---:|
-| `false` | `none` | 16D (current single-arm record default) | 32D |
-| `true` | `none` | 23D | 46D |
-| `false` | `7d` | 23D | 46D (current dual-arm record default) |
-| `true` | `7d` | 30D | 60D |
-| `false` | `80d` | 96D | 192D |
-| `false` | `130d` | 146D | 292D |
+| hand_action_mode | include_eef_pose | tactile_mode | Single-Arm State | Dual-Arm State |
+|---|---|---|---:|---:|
+| `dexterous_10d` | `false` | `none` | 16D (current single-arm record default) | 32D |
+| `dexterous_10d` | `true` | `none` | 23D | 46D |
+| `dexterous_10d` | `false` | `7d` | 23D | 46D |
+| `dexterous_10d` | `true` | `7d` | 30D | 60D |
+| `dexterous_10d` | `false` | `80d` | 96D | 192D |
+| `dexterous_10d` | `false` | `130d` | 146D | 292D |
+| `gripper_1d` | any | `none` | 7D | 14D (current dual-arm record default) |
+| `gripper_1d` | any | `7d` | 14D | 28D |
+| `gripper_1d` | any | `80d` | 87D | 174D |
+| `gripper_1d` | any | `130d` | 137D | 274D |
 
 ## Inference
 
@@ -289,8 +300,14 @@ Supported policies:
 - `diffusion`
 - `pi0`
 - `pi05`
+- `pi0_fast`
+- `sac`
 - `smolvla`
 - `groot`
+- `tdmpc`
+- `vqbet`
+- `wall_x`
+- `xvla`
 
 Common commands:
 
@@ -301,6 +318,20 @@ Common commands:
 ./scripts/o10/dual_arm/infer_o10_dual.sh
 ```
 
+Task-specific dual-arm inference scripts:
+
+```bash
+./scripts/o10/dual_arm/infer_o10_dual_act_camera_pen_touch_20260427.sh
+./scripts/o10/dual_arm/infer_o10_dual_diffusion_camera_pen_touch_20260427.sh
+./scripts/o10/dual_arm/infer_o10_dual_pi0_camera_pen_touch_20260427.sh
+```
+
+Configs with `async_infer: true`, such as `pi0` / `pi05`, require this project's patched async policy server first. It listens on `localhost:8080` by default:
+
+```bash
+./scripts/o10/dual_arm/async_policy_server_o10_dual.sh
+```
+
 Pre-inference checklist:
 
 - `infer.model_path` must exist and contain `config.json`; weights are usually `model.safetensors` or `pytorch_model.bin`.
@@ -308,6 +339,7 @@ Pre-inference checklist:
 - `infer.device` can be `cuda` or `cpu`; CPU is only suitable for small models or debugging.
 - `robot.include_eef_pose`, `robot.tactile_mode`, and camera keys must match the training dataset, otherwise the policy input schema will not match.
 - When `infer.save_data: true`, inference is saved as a LeRobot dataset. If `save_path` is empty, data is written under `~/.cache/huggingface/lerobot/...`.
+- Flow-matching policies such as `pi0`, `pi05`, and `smolvla` can use the `rtc:` YAML block for Real-Time Chunking; other policy types ignore that block.
 
 ## Replay
 
@@ -354,14 +386,55 @@ python scripts/tools/set_pose.py --from-json configs/reset_poses/o10_dual_reset.
 python scripts/tools/set_pose.py --arm 0 0 0 0 0 0
 python scripts/tools/set_pose.py --read-only
 
-# Check whether tactile channels in a recorded dataset contain data.
-python scripts/tools/check_tactile_success.py --dataset.root <dataset_dir>
+# Judge one tactile success sample: right thumb/index/middle averages exceed threshold.
+python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 --threshold 30
+
+# Strip tactile columns from LeRobot v3.0 observation.state.
+# Default output is <input>_no_tactile.
+python scripts/tools/strip_tactile.py --input <lerobot_dir>
+python scripts/tools/strip_tactile.py --input <lerobot_dir> --output <lerobot_no_tactile_dir>
 
 # Convert a LeRobot dataset to openpi training format.
 python scripts/tools/convert_lerobot_to_openpi.py --input <lerobot_dir> --output <openpi_dir>
+
+# Export the local Docker image. Default image is ARM_HAND_TELEOP_IMAGE or arm-hand-teleop:jazzy.
+bash scripts/tools/docker_export_image.sh
 ```
 
 > `save_reset_pose.py` / `save_dual_reset_pose.py` / `save_gesture_reset_poses.py` output legacy `groups.arm / groups.hand` format and must not directly overwrite `configs/reset_poses/o10_dual_reset.json`. Manually merge new joint values into the canonical JSON fields `arm.<side>` / `gestures.<name>.<side>.open|closed`.
+
+`convert_lerobot_to_openpi.py` is currently a conversion scaffold: it writes compressed `npz` episodes and still contains TODOs for openpi-native output. Confirm the openpi dataset loader interface before using its output for real training.
+
+## Training
+
+`scripts/train/` contains local LeRobot training entry points, currently focused on the AGI arm camera-pen-touch dataset. Before starting a new run, edit the common settings near the top of the script: `DATASET_ROOT`, `DATASET_REPO_ID`, `RUN_NAME`, `STEPS`, `BATCH_SIZE`, and `WANDB_PROJECT`.
+
+```bash
+./scripts/train/train_act_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_diffusion_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_pi0_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_vqbet_agi_arm_camera_pen_touch.sh --dry-run
+```
+
+Remove `--dry-run` to actually start training. The scripts refuse to overwrite an existing `OUTPUT_BASE/RUN_NAME`, so change `RUN_NAME` for every new run. AGI arm outputs default to:
+
+```text
+/home/phl/workspace/mymodels/agi_arm_bot/<RUN_NAME>
+/home/phl/workspace/mymodels/agi_arm_bot/_logs/<RUN_NAME>_<timestamp>.log
+```
+
+Checkpoint layout:
+
+```text
+<RUN_NAME>/checkpoints/<step>/pretrained_model
+```
+
+Other training helpers:
+
+```bash
+./scripts/train/gr2_train.sh
+screen -dmS watch_act_then_vqbet bash scripts/train/watch_act_then_train_vqbet.sh
+```
 
 ## Tests And Checks
 
@@ -369,14 +442,18 @@ python scripts/tools/convert_lerobot_to_openpi.py --input <lerobot_dir> --output
 # full Python regression suite
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests -q
 
+# root-level scripts / README checks
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q
+
 # common focused checks
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_readme_tool_commands.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_config.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_infer_save_path.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_single_arm_o10_trigger_gate.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_o10_trigger_gate.py -q
 ```
 
-The current full regression suite should be `103 passed, 1 skipped`. `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` avoids interference from ROS or external pytest plugins.
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` avoids interference from ROS or external pytest plugins. Some root-level `tests/` files are manual hardware demos; if `mediapipe`, CAN hardware, cameras, or gloves are unavailable, do not treat those demos as mandatory no-hardware CI tests.
 
 ## Troubleshooting
 

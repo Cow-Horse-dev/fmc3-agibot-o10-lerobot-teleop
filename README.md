@@ -6,10 +6,11 @@ Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense/USB 相机的遥操作
 
 ## 目录说明
 
-- `configs/`：控制、录制、推理、回放配置，以及复位姿态 JSON。
-- `scripts/`：日常启动脚本、HDService/HDWeb 服务脚本和工具脚本。
+- `configs/`：控制、录制、推理、回放配置，任务专用模型配置，以及复位姿态 JSON。
+- `scripts/`：日常启动脚本、HDService/HDWeb 服务脚本、训练脚本和工具脚本。
 - `qiuzhi/`：vendored `lerobot_play` 代码和 Python 回归测试。
 - `yudie/`：宇叠手套、OmniHand、HDService、HDWeb 相关代码和 SDK。
+- `tests/`：根目录手部、触觉、MediaPipe 和 README 命令检查脚本，部分是人工硬件 demo。
 - `run_lerobot_play.py`：项目统一入口，所有 O10 脚本都包装它。
 
 ## 环境与解释器
@@ -17,7 +18,7 @@ Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense/USB 相机的遥操作
 日常使用脚本时通常不需要手动 `conda activate`。`scripts/o10/` 和 `scripts/services/` 下的 shell 脚本会按以下顺序寻找 Python：
 
 ```text
-ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > python3
+ARM_HAND_TELEOP_PYTHON > .venv/bin/python > ~/miniconda3/envs/arm-hand-teleop/bin/python > /opt/conda/envs/arm-hand-teleop/bin/python > python3 > python
 ```
 
 需要手动运行 Python、装包或跑测试时再进入环境：
@@ -53,6 +54,10 @@ python run_lerobot_play.py control --config_path configs/right_arm/o10_right_con
 python run_lerobot_play.py record --yaml configs/right_arm/o10_right_record.yaml
 python run_lerobot_play.py replay --yaml configs/right_arm/o10_right_replay.yaml
 python run_lerobot_play.py infer  --yaml configs/right_arm/o10_right_infer.yaml
+
+# 训练和异步策略服务
+python run_lerobot_play.py train [lerobot-train args]
+python run_lerobot_play.py async_policy_server [args]
 
 # 其他工具入口
 python run_lerobot_play.py set_pose [args]
@@ -108,6 +113,7 @@ cd ~/workspace/arm-hand-teleop
 ./scripts/o10/dual_arm/record_o10_dual.sh          # 数据录制
 ./scripts/o10/dual_arm/replay_o10_dual.sh          # 轨迹回放
 ./scripts/o10/dual_arm/infer_o10_dual.sh           # 策略推理
+./scripts/o10/dual_arm/async_policy_server_o10_dual.sh # PI0/PI0.5 异步策略服务
 ```
 
 ## Pico 控制逻辑
@@ -188,6 +194,7 @@ cd ~/workspace/arm-hand-teleop
 - `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "none"`。
 - `configs/dual_arm/o10_dual_replay.yaml`：轨迹回放。
 - `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose: false`，`tactile_mode: "none"`，相机 `top + left_wrist + right_wrist`。
+- `configs/dual_arm/models/*.yaml`：任务专用双臂推理配置，当前包含 camera-pen-touch 的 `act`、`diffusion`、`pi0`、`pi05` 版本；这些文件固定了对应训练 schema 和本机模型路径。
 
 ### 复位姿态
 
@@ -270,16 +277,20 @@ O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。�
 
 当前双臂配置在 `configs/dual_arm/o10_dual_record.yaml` 和 `configs/dual_arm/o10_dual_replay.yaml`：左手使用 `tripod`，右手使用 `pinch`。20260427 数据集 replay 基本能对上，说明录制/回放映射链路没问题。
 
-`observation.state` 由 `robot.include_eef_pose` 和 `robot.tactile_mode` 决定：
+`observation.state` 由 `robot.hand_action_mode`、`robot.include_eef_pose` 和 `robot.tactile_mode` 共同决定。`gripper_1d` 模式只保留臂关节 + `gripper.pos`，不会额外写入 EEF pose。
 
-| include_eef_pose | tactile_mode | 单臂 state | 双臂 state |
-|---|---|---:|---:|
-| `false` | `none` | 16D（当前单臂 record 默认） | 32D |
-| `true` | `none` | 23D | 46D |
-| `false` | `7d` | 23D | 46D（当前双臂 record 默认） |
-| `true` | `7d` | 30D | 60D |
-| `false` | `80d` | 96D | 192D |
-| `false` | `130d` | 146D | 292D |
+| hand_action_mode | include_eef_pose | tactile_mode | 单臂 state | 双臂 state |
+|---|---|---|---:|---:|
+| `dexterous_10d` | `false` | `none` | 16D（当前单臂 record 默认） | 32D |
+| `dexterous_10d` | `true` | `none` | 23D | 46D |
+| `dexterous_10d` | `false` | `7d` | 23D | 46D |
+| `dexterous_10d` | `true` | `7d` | 30D | 60D |
+| `dexterous_10d` | `false` | `80d` | 96D | 192D |
+| `dexterous_10d` | `false` | `130d` | 146D | 292D |
+| `gripper_1d` | 任意 | `none` | 7D | 14D（当前双臂 record 默认） |
+| `gripper_1d` | 任意 | `7d` | 14D | 28D |
+| `gripper_1d` | 任意 | `80d` | 87D | 174D |
+| `gripper_1d` | 任意 | `130d` | 137D | 274D |
 
 ## 推理
 
@@ -289,8 +300,14 @@ O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。�
 - `diffusion`
 - `pi0`
 - `pi05`
+- `pi0_fast`
+- `sac`
 - `smolvla`
 - `groot`
+- `tdmpc`
+- `vqbet`
+- `wall_x`
+- `xvla`
 
 常用命令：
 
@@ -301,6 +318,20 @@ O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。�
 ./scripts/o10/dual_arm/infer_o10_dual.sh
 ```
 
+任务专用双臂推理脚本：
+
+```bash
+./scripts/o10/dual_arm/infer_o10_dual_act_camera_pen_touch_20260427.sh
+./scripts/o10/dual_arm/infer_o10_dual_diffusion_camera_pen_touch_20260427.sh
+./scripts/o10/dual_arm/infer_o10_dual_pi0_camera_pen_touch_20260427.sh
+```
+
+`pi0` / `pi05` 这类 `async_infer: true` 的配置需要先启动本项目适配过的异步策略服务端，服务默认监听 `localhost:8080`：
+
+```bash
+./scripts/o10/dual_arm/async_policy_server_o10_dual.sh
+```
+
 推理前检查：
 
 - `infer.model_path` 必须存在，且目录内必须有 `config.json`；权重通常是 `model.safetensors` 或 `pytorch_model.bin`。
@@ -308,6 +339,7 @@ O10 当前可使用 `hand_action_mode: gripper_1d` 录制更紧凑的 action。�
 - `infer.device` 可用 `cuda` 或 `cpu`；CPU 只适合小模型/调试。
 - `robot.include_eef_pose`、`robot.tactile_mode`、相机 key 必须与训练数据集一致，否则策略输入 schema 会不匹配。
 - `infer.save_data: true` 时推理过程会保存为 LeRobot 数据集；`save_path` 为空时自动写到 `~/.cache/huggingface/lerobot/...`。
+- flow-matching 策略（如 `pi0`、`pi05`、`smolvla`）可在 YAML 中使用 `rtc:` 配置 Real-Time Chunking；仅这些策略会读取该块。
 
 ## 回放
 
@@ -353,14 +385,54 @@ python scripts/tools/set_pose.py --from-json configs/reset_poses/o10_dual_reset.
 python scripts/tools/set_pose.py --arm 0 0 0 0 0 0
 python scripts/tools/set_pose.py --read-only
 
-# 检查录制数据集触觉通道是否采到数据
-python scripts/tools/check_tactile_success.py --dataset.root <dataset_dir>
+# 判断一次触觉成功条件：右手拇指/食指/中指均值都超过阈值
+python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 --threshold 30
+
+# 从 LeRobot v3.0 数据集 observation.state 中删除 tactile 列，默认输出 <input>_no_tactile
+python scripts/tools/strip_tactile.py --input <lerobot_dir>
+python scripts/tools/strip_tactile.py --input <lerobot_dir> --output <lerobot_no_tactile_dir>
 
 # 转换 LeRobot 数据集到 openpi 训练格式
 python scripts/tools/convert_lerobot_to_openpi.py --input <lerobot_dir> --output <openpi_dir>
+
+# 导出本地 Docker 镜像，默认镜像名 ARM_HAND_TELEOP_IMAGE 或 arm-hand-teleop:jazzy
+bash scripts/tools/docker_export_image.sh
 ```
 
 > `save_reset_pose.py` / `save_dual_reset_pose.py` / `save_gesture_reset_poses.py` 输出的是 legacy `groups.arm / groups.hand` 格式，**不能**直接覆盖 `configs/reset_poses/o10_dual_reset.json`。新的关节值请手动合并到集中式 JSON 的 `arm.<side>` / `gestures.<name>.<side>.open|closed` 字段里。
+
+`convert_lerobot_to_openpi.py` 目前是转换骨架：会把 LeRobot episode 转成压缩 `npz`，但脚本里仍有 openpi 原生格式写出相关 TODO。用于正式训练前需要先确认 openpi 数据加载接口。
+
+## 训练
+
+`scripts/train/` 里是本地 LeRobot 训练入口，当前主要面向 AGI arm camera-pen-touch 数据集。开始新训练前先编辑脚本顶部的 `DATASET_ROOT`、`DATASET_REPO_ID`、`RUN_NAME`、`STEPS`、`BATCH_SIZE` 和 `WANDB_PROJECT`。
+
+```bash
+./scripts/train/train_act_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_diffusion_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_pi0_agi_arm_camera_pen_touch.sh --dry-run
+./scripts/train/train_vqbet_agi_arm_camera_pen_touch.sh --dry-run
+```
+
+去掉 `--dry-run` 才会真正启动训练。脚本会拒绝覆盖已存在的 `OUTPUT_BASE/RUN_NAME`，每次新训练都要换新的 `RUN_NAME`。AGI arm 输出默认在：
+
+```text
+/home/phl/workspace/mymodels/agi_arm_bot/<RUN_NAME>
+/home/phl/workspace/mymodels/agi_arm_bot/_logs/<RUN_NAME>_<timestamp>.log
+```
+
+训练检查点目录格式：
+
+```text
+<RUN_NAME>/checkpoints/<step>/pretrained_model
+```
+
+其他训练辅助：
+
+```bash
+./scripts/train/gr2_train.sh
+screen -dmS watch_act_then_vqbet bash scripts/train/watch_act_then_train_vqbet.sh
+```
 
 ## 测试和检查
 
@@ -368,14 +440,18 @@ python scripts/tools/convert_lerobot_to_openpi.py --input <lerobot_dir> --output
 # 全量 Python 回归
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests -q
 
+# 根目录脚本/README 检查
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q
+
 # 常用聚焦检查
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_readme_tool_commands.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_config.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_infer_save_path.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_single_arm_o10_trigger_gate.py -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_o10_trigger_gate.py -q
 ```
 
-当前全量回归应为 `103 passed, 1 skipped`。`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` 用于避免 ROS/外部 pytest 插件污染。
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` 用于避免 ROS/外部 pytest 插件污染。根目录 `tests/` 里有部分人工硬件 demo；缺少 `mediapipe`、CAN/相机/手套硬件时，不要把这些 demo 当作无硬件 CI 必跑项。
 
 ## 常见问题
 
