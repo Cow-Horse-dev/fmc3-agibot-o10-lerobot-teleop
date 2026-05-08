@@ -388,6 +388,9 @@ python scripts/tools/set_pose.py --read-only
 # 判断一次触觉成功条件：右手拇指/食指/中指均值都超过阈值
 python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 --threshold 30
 
+# 实时查看 O10 130D 触觉热力图；无 matplotlib 时可加 --backend terminal
+python scripts/tools/o10_tactile_heatmap.py --hand left
+
 # 从 LeRobot v3.0 数据集 observation.state 中删除 tactile 列，默认输出 <input>_no_tactile
 python scripts/tools/strip_tactile.py --input <lerobot_dir>
 python scripts/tools/strip_tactile.py --input <lerobot_dir> --output <lerobot_no_tactile_dir>

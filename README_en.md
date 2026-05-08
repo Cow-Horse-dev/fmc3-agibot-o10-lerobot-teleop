@@ -389,6 +389,9 @@ python scripts/tools/set_pose.py --read-only
 # Judge one tactile success sample: right thumb/index/middle averages exceed threshold.
 python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 --threshold 30
 
+# Watch the O10 130D tactile heatmap live; add --backend terminal if matplotlib is unavailable.
+python scripts/tools/o10_tactile_heatmap.py --hand left
+
 # Strip tactile columns from LeRobot v3.0 observation.state.
 # Default output is <input>_no_tactile.
 python scripts/tools/strip_tactile.py --input <lerobot_dir>

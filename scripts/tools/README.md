@@ -48,6 +48,24 @@ python scripts/tools/set_pose.py --read-only   # 只读当前位置
 python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 --threshold 30
 ```
 
+### `o10_tactile_heatmap.py`
+把 OmniHand O10 的 130D 触觉拼成热力图：5 个指尖 `4x4` 横向排列，掌心 `5x5` 和手背 `5x5` 居中显示。
+默认读取左手；装了 `matplotlib` 时会弹出图形窗口，没装时可用终端字符热力图。
+
+```bash
+# 无硬件自检拼接效果
+python scripts/tools/o10_tactile_heatmap.py --demo --once --backend terminal
+
+# 明天接左手后实时看触觉；按 Ctrl+C 退出
+python scripts/tools/o10_tactile_heatmap.py --hand left
+
+# 只在终端显示，适合没装 matplotlib 的环境
+python scripts/tools/o10_tactile_heatmap.py --hand left --backend terminal
+
+# 双手一起看；multiChannel 默认 left=0, right=1
+python scripts/tools/o10_tactile_heatmap.py --hand both
+```
+
 ---
 
 ## 数据处理
