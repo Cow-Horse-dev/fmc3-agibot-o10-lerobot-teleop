@@ -56,7 +56,7 @@ robot:
   allow_camera_read_failures: true
 
   # 机械臂 CAN 口。
-  port: can0
+  port: can1
 
   # 机器人名字，仅用于日志显示。
   id: o10_right
