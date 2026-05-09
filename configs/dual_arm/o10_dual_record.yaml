@@ -43,7 +43,7 @@ robot:
   allow_camera_read_failures: true  # 可选: true, false
   tactile_mode: "none"  # 可选: none, 7d, 80d, 130d
   left:
-    port: can1  # CAN 口
+    port: can0  # CAN 口
     handedness: left  # 可选: left, right
     channel_mode: multiChannel  # 可选: multiChannel
     device_id: 1  # O10 设备 id
@@ -53,7 +53,7 @@ robot:
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
     reset_gesture: tripod  # 可选: pinch, tripod
   right:
-    port: can0  # CAN 口
+    port: can1  # CAN 口
     handedness: right  # 可选: left, right
     channel_mode: multiChannel  # 可选: multiChannel
     device_id: 1  # O10 设备 id

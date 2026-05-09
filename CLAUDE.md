@@ -104,7 +104,7 @@ Configs are the primary behavior knob — prefer editing YAML over code:
 
 Pico VR (WebRTC 8000/8001) → arm IK targets; Udexreal glove (UDP 7777) → hand joint
 mapping; hand CANFD over multiChannel (channel 0 = left, 1 = right); arms on CAN0
-(right) / CAN1 (left). Recorded tensor shapes: `action` 16D (6 arm + 10 hand),
+(left) / CAN1 (right). Recorded tensor shapes: `action` 16D (6 arm + 10 hand),
 `observation.state` 23D (6 arm + 10 hand + 7D end-effector pose), plus
 `observation.images.{right,top,...}`. Arm+hand states come from the same
 `get_observation()` call; cameras and glove use latest-value background threads.

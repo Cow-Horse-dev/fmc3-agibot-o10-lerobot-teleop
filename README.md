@@ -216,7 +216,7 @@ cd ~/workspace/arm-hand-teleop
   - 不要填 `127.0.0.1`、Docker、Tailscale 或 `198.18.*` 这类虚拟网卡地址。
   - IP 变化时用 `ip -br addr show wlo1 enp4s0` 重新确认。
 - 宇叠手套：HDService 由脚本设置 `HD_UDP_TARGET=127.0.0.1:5555`，O10 teleop 在本机 `5555` 接收；仅 `hand_mode: glove` 使用。
-- 臂 CAN：左臂默认 `can0`，右臂默认 `can1`，以各 YAML 的 `robot.port` 或 `robot.left/right.port` 为准。
+- 臂 CAN：当前硬件约定为左臂固定 `can0`、右臂固定 `can1`，单臂和双臂 YAML 都应保持这个映射。
 - 手 CANFD：`channel_mode: multiChannel`，`channel_id: null` 时自动按 handedness 选择，`left -> 0`，`right -> 1`。
 
 ## 相机配置
@@ -463,5 +463,5 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_o10_trigger_g
 - record 中相机失败：不建议容错，修相机后重新录，避免数据集混入全零/旧帧。
 - 手套连不上：确认 HDService 已启动、HDWeb 能看到配对、YAML `handedness` 正确。
 - 手 CANFD 超时：检查手电源、USB-CANFD 线和 `channel_id`。
-- 双臂视觉左右混淆：你面对机器人时，机器人自身左臂在视觉右侧；用单左/单右脚本分别确认 `can0/can1` 与硬件臂对应关系。
+- 双臂视觉左右混淆：你面对机器人时，机器人自身左臂在视觉右侧；当前 CAN 映射仍是左臂 `can0`、右臂 `can1`。
 - 录制目录已存在：换 `dataset.repo_id` 或删除旧空目录。
