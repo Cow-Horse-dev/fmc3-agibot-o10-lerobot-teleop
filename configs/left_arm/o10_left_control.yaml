@@ -60,7 +60,7 @@ robot:
   enable_hand: true
 
   # 机械臂 CAN 口。
-  port: can1
+  port: can0
 
   # 机器人名字，仅用于日志显示。
   id: o10_left
