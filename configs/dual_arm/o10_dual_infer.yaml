@@ -56,7 +56,7 @@ robot:
       height: 480  # 图像高度
       fps: 30  # 相机帧率
       fourcc: MJPG  # OpenCV 编码格式
-      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
+      rotation: ROTATE_180  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
     left_wrist:
       type: intelrealsense  # 可选: opencv, intelrealsense, realsense
       serial_number_or_name: "260322276846"  # RealSense 序列号或设备名
