@@ -7,9 +7,9 @@
 #   observation.state 维度/语义都会跟模型对不上
 
 infer:
-  policy: act  # 可选: act, diffusion, pi0, pi05, smolvla, groot
+  policy: pi05  # 可选: act, diffusion, pi0, pi05, smolvla, groot
   task_description: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch  # VLA/策略任务描述
-  model_path: ~/workspace/mymodels/qiuzhi_agibot/camera_pen_touch_clean_del_52_376/act/act_camera_pen_touch_clean_del_52_376_chunk100_te001/checkpoints/090000/pretrained_model  # 本机模型目录
+  model_path: ~/workspace/mymodels/qiuzhi_agibot/camera_pen_touch_clean_del_52_376/pi0/pi05_camera_pen_touch_clean_del_52_376_selected/120000/pretrained_model  # 本机模型目录
   save_data: false  # 可选: true, false
   display_data: true  # 可选: true, false
   async_infer: false  # 可选: true, false

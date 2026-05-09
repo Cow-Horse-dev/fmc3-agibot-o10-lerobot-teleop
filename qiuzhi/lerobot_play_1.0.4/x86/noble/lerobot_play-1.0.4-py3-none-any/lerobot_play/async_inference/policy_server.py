@@ -1,25 +1,125 @@
 import logging
+import os
 import pickle  # nosec
 import time
 from concurrent import futures
 from dataclasses import asdict
+from inspect import signature
 from pprint import pformat
 
 import draccus
 import grpc
+import torch
 
 from lerobot.async_inference.configs import PolicyServerConfig
 from lerobot.async_inference.constants import SUPPORTED_POLICIES
 from lerobot.async_inference.helpers import RemotePolicyConfig
+import lerobot.async_inference.policy_server as base_policy_server
 from lerobot.async_inference.policy_server import PolicyServer as BasePolicyServer
 from lerobot.async_inference.policy_server import make_pre_post_processors
+from lerobot.configs.types import RTCAttentionSchedule
+from lerobot.policies.rtc.configuration_rtc import RTCConfig
 from lerobot.transport import services_pb2, services_pb2_grpc
+
+
+RTC_ENABLED_ENV = "ARM_HAND_TELEOP_RTC_ENABLED"
+RTC_EXECUTION_HORIZON_ENV = "ARM_HAND_TELEOP_RTC_EXECUTION_HORIZON"
+RTC_MAX_GUIDANCE_WEIGHT_ENV = "ARM_HAND_TELEOP_RTC_MAX_GUIDANCE_WEIGHT"
+RTC_PREFIX_ATTENTION_SCHEDULE_ENV = "ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE"
+RTC_DEBUG_ENV = "ARM_HAND_TELEOP_RTC_DEBUG"
 
 
 def _load_policy(policy_type: str, model_path: str, device: str):
     from lerobot_play.infer import _load_policy as load_policy
 
     return load_policy(policy_type, model_path, device)
+
+
+def _build_policy_preprocessor_overrides(
+    policy_type: str,
+    device: str,
+    observation_rename_map: dict[str, str] | None = None,
+):
+    from lerobot_play.infer import (
+        _build_policy_preprocessor_overrides as build_overrides,
+    )
+
+    return build_overrides(policy_type, device, observation_rename_map)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _apply_rtc_env_config(policy) -> None:
+    if not _env_flag(RTC_ENABLED_ENV):
+        return
+
+    rtc_config = RTCConfig(
+        enabled=True,
+        execution_horizon=int(os.environ.get(RTC_EXECUTION_HORIZON_ENV, "10")),
+        max_guidance_weight=float(os.environ.get(RTC_MAX_GUIDANCE_WEIGHT_ENV, "10.0")),
+        prefix_attention_schedule=RTCAttentionSchedule(
+            os.environ.get(RTC_PREFIX_ATTENTION_SCHEDULE_ENV, "EXP")
+        ),
+        debug=_env_flag(RTC_DEBUG_ENV),
+    )
+    policy.config.rtc_config = rtc_config
+    if hasattr(policy, "init_rtc_processor"):
+        policy.init_rtc_processor()
+
+
+def _rename_observation_inputs_for_legacy_helper(
+    raw_observation: dict,
+    lerobot_features: dict,
+    observation_rename_map: dict[str, str],
+) -> tuple[dict, dict]:
+    if not observation_rename_map:
+        return raw_observation, lerobot_features
+
+    renamed_observation = dict(raw_observation)
+    renamed_features = dict(lerobot_features)
+
+    for source_key, target_key in observation_rename_map.items():
+        if source_key not in renamed_features:
+            continue
+
+        renamed_features[target_key] = renamed_features.pop(source_key)
+
+        image_prefix = "observation.images."
+        if source_key.startswith(image_prefix) and target_key.startswith(image_prefix):
+            source_raw_key = source_key.removeprefix(image_prefix)
+            target_raw_key = target_key.removeprefix(image_prefix)
+            if source_raw_key in renamed_observation:
+                renamed_observation[target_raw_key] = renamed_observation[source_raw_key]
+
+    return renamed_observation, renamed_features
+
+
+def _raw_observation_to_observation_compat(
+    raw_observation: dict,
+    lerobot_features: dict,
+    policy_image_features: dict,
+    observation_rename_map: dict[str, str],
+):
+    helper = base_policy_server.raw_observation_to_observation
+    if "observation_rename_map" in signature(helper).parameters:
+        return helper(
+            raw_observation,
+            lerobot_features,
+            policy_image_features,
+            observation_rename_map=observation_rename_map,
+        )
+
+    raw_observation, lerobot_features = _rename_observation_inputs_for_legacy_helper(
+        raw_observation,
+        lerobot_features,
+        observation_rename_map,
+    )
+    return helper(raw_observation, lerobot_features, policy_image_features)
 
 
 class PolicyServer(BasePolicyServer):
@@ -63,15 +163,17 @@ class PolicyServer(BasePolicyServer):
             policy_specs.pretrained_name_or_path,
             self.device,
         )
+        _apply_rtc_env_config(self.policy)
 
         device_override = {"device": self.device}
         self.preprocessor, self.postprocessor = make_pre_post_processors(
             self.policy.config,
             pretrained_path=policy_specs.pretrained_name_or_path,
-            preprocessor_overrides={
-                "device_processor": device_override,
-                "rename_observations_processor": {"rename_map": policy_specs.rename_map},
-            },
+            preprocessor_overrides=_build_policy_preprocessor_overrides(
+                self.policy_type,
+                self.device,
+                policy_specs.rename_map,
+            ),
             postprocessor_overrides={"device_processor": device_override},
         )
 
@@ -81,6 +183,115 @@ class PolicyServer(BasePolicyServer):
         )
 
         return services_pb2.Empty()
+
+    def _rtc_enabled(self) -> bool:
+        rtc_config = getattr(getattr(self.policy, "config", None), "rtc_config", None)
+        return bool(rtc_config is not None and getattr(rtc_config, "enabled", False))
+
+    def _rtc_predict_kwargs(self, observation_timestep: int) -> dict[str, object]:
+        if not self._rtc_enabled():
+            return {}
+
+        previous_chunk = getattr(self, "_rtc_previous_action_chunk", None)
+        previous_timestep = getattr(self, "_rtc_previous_timestep", None)
+        if previous_chunk is None or previous_timestep is None:
+            return {}
+
+        consumed_actions = max(observation_timestep - previous_timestep, 0)
+        if consumed_actions >= previous_chunk.shape[1]:
+            return {}
+
+        rtc_config = self.policy.config.rtc_config
+        inference_delay = max(
+            1,
+            round(float(getattr(self.config, "inference_latency", 0.0)) * self.config.fps),
+        )
+        return {
+            "prev_chunk_left_over": previous_chunk[:, consumed_actions:, :],
+            "inference_delay": inference_delay,
+            "execution_horizon": rtc_config.execution_horizon,
+        }
+
+    def _get_action_chunk(
+        self,
+        observation: dict[str, torch.Tensor],
+        observation_timestep: int | None = None,
+    ) -> torch.Tensor:
+        predict_kwargs = (
+            self._rtc_predict_kwargs(observation_timestep)
+            if observation_timestep is not None
+            else {}
+        )
+        chunk = self.policy.predict_action_chunk(observation, **predict_kwargs)
+        if chunk.ndim != 3:
+            chunk = chunk.unsqueeze(0)
+
+        chunk = chunk[:, : self.actions_per_chunk, :]
+        if self._rtc_enabled() and observation_timestep is not None:
+            self._rtc_previous_action_chunk = chunk.detach()
+            self._rtc_previous_timestep = observation_timestep
+
+        return chunk
+
+    def _predict_action_chunk(self, observation_t):
+        start_prepare = time.perf_counter()
+        observation = _raw_observation_to_observation_compat(
+            observation_t.get_observation(),
+            self.lerobot_features,
+            self.policy_image_features,
+            self.observation_rename_map,
+        )
+        prepare_time = time.perf_counter() - start_prepare
+
+        start_preprocess = time.perf_counter()
+        observation = self.preprocessor(observation)
+        self.last_processed_obs = observation_t
+        preprocessing_time = time.perf_counter() - start_preprocess
+
+        start_inference = time.perf_counter()
+        action_tensor = self._get_action_chunk(
+            observation,
+            observation_t.get_timestep(),
+        )
+        inference_time = time.perf_counter() - start_inference
+        self.logger.info(
+            f"Preprocessing and inference took {inference_time:.4f}s, "
+            f"action shape: {action_tensor.shape}"
+        )
+
+        start_postprocess = time.perf_counter()
+        _, chunk_size, _ = action_tensor.shape
+        processed_actions = []
+        for index in range(chunk_size):
+            single_action = action_tensor[:, index, :]
+            processed_actions.append(self.postprocessor(single_action))
+
+        action_tensor = torch.stack(processed_actions, dim=1).squeeze(0)
+        self.logger.debug(f"Postprocessed action shape: {action_tensor.shape}")
+        action_tensor = action_tensor.detach().cpu()
+
+        action_chunk = self._time_action_chunk(
+            observation_t.get_timestamp(),
+            list(action_tensor),
+            observation_t.get_timestep(),
+        )
+        postprocess_stops = time.perf_counter()
+        postprocessing_time = postprocess_stops - start_postprocess
+
+        self.logger.info(
+            f"Observation {observation_t.get_timestep()} | "
+            f"Total time: {1000 * (postprocess_stops - start_prepare):.2f}ms"
+        )
+        self.logger.debug(
+            f"Observation {observation_t.get_timestep()} | "
+            f"Prepare time: {1000 * prepare_time:.2f}ms | "
+            f"Preprocessing time: {1000 * preprocessing_time:.2f}ms | "
+            f"Inference time: {1000 * inference_time:.2f}ms | "
+            f"Postprocessing time: {1000 * postprocessing_time:.2f}ms | "
+            f"Total time: {1000 * (postprocess_stops - start_prepare):.2f}ms"
+        )
+
+        return action_chunk
 
 
 @draccus.wrap()

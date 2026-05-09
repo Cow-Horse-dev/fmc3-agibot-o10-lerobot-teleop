@@ -201,11 +201,22 @@ class RobotClient:
             if getattr(self.robot, "is_connected", False):
                 self.robot.disconnect()
                 self.logger.debug("Robot disconnected")
+        except KeyboardInterrupt:
+            self.logger.warning(
+                "Robot disconnect interrupted during shutdown; continuing cleanup"
+            )
         except Exception as exc:
             self.logger.warning("Robot disconnect during shutdown raised: %s", exc)
 
-        self.channel.close()
-        self.logger.debug("Client stopped, channel closed")
+        try:
+            self.channel.close()
+            self.logger.debug("Client stopped, channel closed")
+        except KeyboardInterrupt:
+            self.logger.warning(
+                "gRPC channel close interrupted during shutdown; ignoring extra interrupt"
+            )
+        except Exception as exc:
+            self.logger.warning("gRPC channel close during shutdown raised: %s", exc)
 
 
     def send_observation(

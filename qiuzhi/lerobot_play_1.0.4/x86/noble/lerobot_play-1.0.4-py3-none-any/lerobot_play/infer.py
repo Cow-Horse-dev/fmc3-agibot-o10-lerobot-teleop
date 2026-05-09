@@ -68,6 +68,11 @@ O10_ROBOT_TYPES = (
 POLICIES_WITHOUT_O10_TACTILE = ("pi0", "pi05")
 PEFT_ADAPTER_CONFIG_FILE = "adapter_config.json"
 PEFT_ADAPTER_WEIGHT_FILES = ("adapter_model.safetensors", "adapter_model.bin")
+PALIGEMMA_TOKENIZER_ENV = "ARM_HAND_TELEOP_PALIGEMMA_TOKENIZER"
+DEFAULT_PALIGEMMA_TOKENIZER_PATHS = (
+    "~/workspace/models/paligemma-tokenizer",
+    "/home/phl/FermiBotNas/models/paligemma-tokenizer",
+)
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
@@ -186,6 +191,24 @@ def _parse_cli_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Custom save path for inference results",
+    )
+    parser.add_argument(
+        "--actions_per_chunk",
+        type=int,
+        default=None,
+        help="Async inference actions requested from each policy chunk",
+    )
+    parser.add_argument(
+        "--chunk_size_threshold",
+        type=float,
+        default=None,
+        help="Async inference queue fullness threshold for sending observations",
+    )
+    parser.add_argument(
+        "--debug_visualize_queue_size",
+        action="store_true",
+        default=False,
+        help="Plot async action queue size when inference stops",
     )
 
     # 机器人配置参数（与 record.py 保持一致）
@@ -317,6 +340,12 @@ def _load_config(cli: argparse.Namespace) -> dict:
             infer_cfg["server_address"] = cli.server_address
         if cli.save_path is not None:
             infer_cfg["save_path"] = cli.save_path
+        if cli.actions_per_chunk is not None:
+            infer_cfg["actions_per_chunk"] = cli.actions_per_chunk
+        if cli.chunk_size_threshold is not None:
+            infer_cfg["chunk_size_threshold"] = cli.chunk_size_threshold
+        if cli.debug_visualize_queue_size:
+            infer_cfg["debug_visualize_queue_size"] = True
 
         robot_cfg = cfg.setdefault("robot", {})
         if cli.robot_type != "airbot_PTK_follower":
@@ -362,6 +391,11 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "device": cli.device,
             "server_address": cli.server_address,
             "save_path": cli.save_path,
+            "actions_per_chunk": cli.actions_per_chunk,
+            "chunk_size_threshold": cli.chunk_size_threshold
+            if cli.chunk_size_threshold is not None
+            else 0.5,
+            "debug_visualize_queue_size": cli.debug_visualize_queue_size,
         },
         "robot": {
             "type": cli.robot_type,
@@ -403,6 +437,11 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         device=infer_cfg.get("device", "cuda"),
         server_address=infer_cfg.get("server_address", "localhost:8080"),
         save_path=infer_cfg.get("save_path"),
+        actions_per_chunk=int(infer_cfg.get("actions_per_chunk", 0) or 0),
+        chunk_size_threshold=float(infer_cfg.get("chunk_size_threshold", 0.5)),
+        debug_visualize_queue_size=bool(
+            infer_cfg.get("debug_visualize_queue_size", False)
+        ),
         robot_type=robot_cfg.get("type", "airbot_PTK_follower"),
         robot_port=robot_cfg.get("port", "can0"),
         robot_left_arm_port=robot_cfg.get("left_arm_port", "can0"),
@@ -444,6 +483,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("infer.episode_time_sec must be positive")
     if args.fps <= 0:
         raise ValueError("infer.fps must be positive")
+    if args.actions_per_chunk < 0:
+        raise ValueError("infer.actions_per_chunk must be non-negative")
+    if not 0.0 <= args.chunk_size_threshold <= 1.0:
+        raise ValueError("infer.chunk_size_threshold must be in [0, 1]")
     args.model_path = os.path.expanduser(args.model_path)
     if args.save_path:
         args.save_path = os.path.expanduser(args.save_path)
@@ -505,6 +548,13 @@ def _validate_policy_robot_feature_compatibility(
     policy_config = getattr(policy_or_config, "config", policy_or_config)
     policy_input_features = getattr(policy_config, "input_features", {}) or {}
     policy_output_features = getattr(policy_config, "output_features", {}) or {}
+    policy_type = getattr(policy_config, "type", None)
+
+    def _allows_vla_padding(key: str, policy_dim: int, robot_dim: int) -> bool:
+        if policy_type not in {"pi0", "pi05"} or robot_dim > policy_dim:
+            return False
+        max_dim_name = "max_state_dim" if key == "observation.state" else "max_action_dim"
+        return policy_dim == getattr(policy_config, max_dim_name, None)
 
     mismatches: list[str] = []
     for key in ("observation.state", "action"):
@@ -514,7 +564,7 @@ def _validate_policy_robot_feature_compatibility(
 
         policy_dim = _feature_shape(policy_features[key])[0]
         robot_dim = _feature_shape(robot_features[key])[0]
-        if policy_dim != robot_dim:
+        if policy_dim != robot_dim and not _allows_vla_padding(key, policy_dim, robot_dim):
             mismatches.append(f"{key}: model expects {policy_dim}D, robot exposes {robot_dim}D")
 
     expected_image_keys = _policy_feature_names(policy_input_features, "VISUAL")
@@ -700,6 +750,49 @@ def _validate_policy_type_matches_checkpoint(
 
 def _load_observation_rename_map(model_path: str) -> dict[str, str]:
     return load_observation_rename_map(model_path, logger=log_say)
+
+
+def _resolve_local_paligemma_tokenizer_path() -> str | None:
+    configured_path = os.environ.get(PALIGEMMA_TOKENIZER_ENV)
+    candidate_paths = (
+        (configured_path,)
+        if configured_path
+        else DEFAULT_PALIGEMMA_TOKENIZER_PATHS
+    )
+
+    for candidate_path in candidate_paths:
+        if not candidate_path:
+            continue
+        tokenizer_path = Path(candidate_path).expanduser()
+        if tokenizer_path.is_dir():
+            return str(tokenizer_path)
+
+    return None
+
+
+def _build_policy_preprocessor_overrides(
+    policy_type: str,
+    device: str,
+    observation_rename_map: dict[str, str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    overrides: dict[str, dict[str, Any]] = {
+        "device_processor": {"device": str(device)}
+    }
+
+    if observation_rename_map is not None:
+        overrides["rename_observations_processor"] = {
+            "rename_map": observation_rename_map
+        }
+
+    if policy_type in {"pi0", "pi05"}:
+        tokenizer_path = _resolve_local_paligemma_tokenizer_path()
+        if tokenizer_path:
+            overrides["tokenizer_processor"] = {
+                "tokenizer_name": tokenizer_path
+            }
+            log_say(f"Using local PaliGemma tokenizer at {tokenizer_path}")
+
+    return overrides
 
 
 def _load_and_validate_policy_config(
@@ -967,9 +1060,10 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
         pretrained_path=args.model_path,
         dataset_stats=dataset.meta.stats,
         # The inference device is automatically set to match the detected hardware, overriding any previous device settings from training to ensure compatibility.
-        preprocessor_overrides={
-            "device_processor": {"device": str(policy.config.device)}
-        },
+        preprocessor_overrides=_build_policy_preprocessor_overrides(
+            args.policy,
+            str(policy.config.device),
+        ),
     )
 
     # 初始化键盘监听和可视化
@@ -1106,9 +1200,10 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         policy_device=args.device,
         policy_type=args.policy,
         pretrained_name_or_path=args.model_path,
-        chunk_size_threshold=0.5,
-        actions_per_chunk=100 if args.policy == "act" else 50,
-        debug_visualize_queue_size=False,
+        chunk_size_threshold=args.chunk_size_threshold,
+        actions_per_chunk=args.actions_per_chunk
+        or (100 if args.policy == "act" else 50),
+        debug_visualize_queue_size=args.debug_visualize_queue_size,
     )
 
     # 创建并启动客户端
@@ -1116,6 +1211,8 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     if not client.start():
         raise RuntimeError("Failed to start RobotClient")
+
+    action_receiver_thread = None
 
     try:
         # 启动动作接收线程
@@ -1164,16 +1261,15 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         }
 
     except KeyboardInterrupt:
-        client.stop()
-        # action_receiver_thread.join()
-        # (Optionally) plot the action queue size
-        visualize_action_queue_size(client.action_queue_size)
+        log_say("Inference interrupted by user")
 
     finally:
         # 清理资源
         client.stop()
-        # action_receiver_thread.join(timeout=5.0)
-        visualize_action_queue_size(client.action_queue_size)
+        if action_receiver_thread is not None:
+            action_receiver_thread.join(timeout=5.0)
+        if args.debug_visualize_queue_size:
+            visualize_action_queue_size(client.action_queue_size)
 
 
 def main():

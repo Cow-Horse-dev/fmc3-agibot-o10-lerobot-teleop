@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ARM_HAND_TELEOP_PYTHON="${ARM_HAND_TELEOP_PYTHON:-$HOME/miniconda3/envs/arm-hand-teleop-pi0/bin/python}"
+
 source "$(dirname "${BASH_SOURCE[0]}")/../../lib/common_env.sh"
 
 cd "$arm_hand_teleop_repo_root"
