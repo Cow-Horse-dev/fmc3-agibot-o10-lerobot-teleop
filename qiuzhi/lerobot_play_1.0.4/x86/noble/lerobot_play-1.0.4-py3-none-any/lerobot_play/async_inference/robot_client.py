@@ -68,6 +68,7 @@ from lerobot.transport import (
     services_pb2_grpc,
 )
 from lerobot.transport.utils import grpc_channel_options, send_bytes_in_chunks
+from lerobot.utils.visualization_utils import log_rerun_data
 from lerobot_play.robots.utils import make_robot_from_config
 from lerobot_play.utils.policy_preprocessor import load_observation_rename_map
 
@@ -456,6 +457,9 @@ class RobotClient:
 
             raw_observation: RawObservation = self.robot.get_observation()
             raw_observation["task"] = task
+
+            if getattr(self.config, "display_data", False):
+                log_rerun_data(observation=raw_observation)
 
             with self.latest_action_lock:
                 latest_action = self.latest_action

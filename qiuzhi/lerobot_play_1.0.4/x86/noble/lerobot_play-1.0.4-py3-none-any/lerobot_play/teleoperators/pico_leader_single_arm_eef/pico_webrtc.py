@@ -111,6 +111,8 @@ class PicoWebrtcVRTeleop(WebRTCServerBase):
         self.headInfoRecv = False
         self.leftInfoRecv = False
         self.rightInfoRecv = False
+        self._last_pose_device_log_time = 0.0
+        self._last_pose_device_summary = None
 
         self._server_task = None
         self._loop = None
@@ -209,6 +211,7 @@ class PicoWebrtcVRTeleop(WebRTCServerBase):
             pose_payload_str = data["payload"]
             pose_payload = json.loads(pose_payload_str)
             poses = pose_payload.get("poses", [])
+            self._log_pose_device_summary(poses)
             # client_timestamp = pose_payload.get("timeStamp", 0.0)
             # server_timestamp = time.time_ns()//1000000
             # self.net_delay = server_timestamp - client_timestamp
@@ -298,6 +301,41 @@ class PicoWebrtcVRTeleop(WebRTCServerBase):
 
         except Exception as e:
             self.log_error(f"[{pc_id}] Error processing pose data: {e}")
+
+    def _log_pose_device_summary(self, poses):
+        device_summaries = []
+        device_types = set()
+        for pose in poses:
+            device_type = pose.get("deviceType") or "<missing>"
+            device_types.add(device_type)
+            device_summaries.append(
+                f"{device_type}("
+                f"tracked={pose.get('isTracked')},"
+                f"battery={pose.get('batteryLevel')},"
+                f"pos={pose.get('position') is not None},"
+                f"rot={pose.get('rotation') is not None}"
+                ")"
+            )
+
+        summary = ", ".join(device_summaries) if device_summaries else "no pose devices"
+        expected_devices = {
+            "pico": ("left_controller", "right_controller"),
+            "quest": ("left_controller", "right_controller"),
+            "pico_wrist": ("left_wrist", "right_wrist"),
+        }.get(self.arm_device, ())
+        missing_devices = [
+            device_type for device_type in expected_devices if device_type not in device_types
+        ]
+        if missing_devices:
+            summary = f"{summary} | missing: {', '.join(missing_devices)}"
+
+        now = time.time()
+        last_summary = getattr(self, "_last_pose_device_summary", None)
+        last_log_time = getattr(self, "_last_pose_device_log_time", 0.0)
+        if summary != last_summary or now - last_log_time >= 1.0:
+            self.log_info(f"VR pose devices ({self.arm_device}): {summary}")
+            self._last_pose_device_summary = summary
+            self._last_pose_device_log_time = now
 
     async def _handle_controller_data(self, pc_id: str, data):
         """处理VR手柄数据"""

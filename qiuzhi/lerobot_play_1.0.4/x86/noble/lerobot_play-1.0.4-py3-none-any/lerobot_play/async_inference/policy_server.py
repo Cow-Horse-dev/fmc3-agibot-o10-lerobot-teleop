@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import pickle  # nosec
@@ -27,6 +28,7 @@ RTC_EXECUTION_HORIZON_ENV = "ARM_HAND_TELEOP_RTC_EXECUTION_HORIZON"
 RTC_MAX_GUIDANCE_WEIGHT_ENV = "ARM_HAND_TELEOP_RTC_MAX_GUIDANCE_WEIGHT"
 RTC_PREFIX_ATTENTION_SCHEDULE_ENV = "ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE"
 RTC_DEBUG_ENV = "ARM_HAND_TELEOP_RTC_DEBUG"
+TransferState = services_pb2.TransferState  # type: ignore[attr-defined]
 
 
 def _load_policy(policy_type: str, model_path: str, device: str):
@@ -122,7 +124,76 @@ def _raw_observation_to_observation_compat(
     return helper(raw_observation, lerobot_features, policy_image_features)
 
 
+def _receive_bytes_in_chunks_quiet(request_iterator, shutdown_event):
+    bytes_buffer = io.BytesIO()
+    step = 0
+
+    logging.debug("[POLICY_SERVER] Observation receiver starting")
+    for item in request_iterator:
+        logging.debug("[POLICY_SERVER] Received observation chunk")
+        if shutdown_event.is_set():
+            logging.debug("[POLICY_SERVER] Observation receiver shutting down")
+            return None
+
+        if item.transfer_state == TransferState.TRANSFER_BEGIN:
+            bytes_buffer.seek(0)
+            bytes_buffer.truncate(0)
+            bytes_buffer.write(item.data)
+            step = 0
+        elif item.transfer_state == TransferState.TRANSFER_MIDDLE:
+            bytes_buffer.write(item.data)
+            step += 1
+            logging.debug("[POLICY_SERVER] Received observation chunk %s", step)
+        elif item.transfer_state == TransferState.TRANSFER_END:
+            bytes_buffer.write(item.data)
+            return bytes_buffer.getvalue()
+        else:
+            raise ValueError(f"Received unknown transfer state {item.transfer_state}")
+
+    return None
+
+
 class PolicyServer(BasePolicyServer):
+    def SendObservations(self, request_iterator, context):  # noqa: N802
+        """Receive observations from the robot client without per-frame INFO spam."""
+        client_id = context.peer()
+        self.logger.debug(f"Receiving observations from {client_id}")
+
+        receive_time = time.time()
+        start_deserialize = time.perf_counter()
+        received_bytes = _receive_bytes_in_chunks_quiet(
+            request_iterator,
+            self.shutdown_event,
+        )
+        if received_bytes is None:
+            return services_pb2.Empty()
+
+        timed_observation = pickle.loads(received_bytes)  # nosec
+        deserialize_time = time.perf_counter() - start_deserialize
+
+        self.logger.debug(f"Received observation #{timed_observation.get_timestep()}")
+
+        obs_timestep = timed_observation.get_timestep()
+        obs_timestamp = timed_observation.get_timestamp()
+        fps_metrics = self.fps_tracker.calculate_fps_metrics(obs_timestamp)
+
+        self.logger.debug(
+            f"Received observation #{obs_timestep} | "
+            f"Avg FPS: {fps_metrics['avg_fps']:.2f} | "
+            f"Target: {fps_metrics['target_fps']:.2f} | "
+            f"One-way latency: {(receive_time - obs_timestamp) * 1000:.2f}ms"
+        )
+        self.logger.debug(
+            f"Server timestamp: {receive_time:.6f} | "
+            f"Client timestamp: {obs_timestamp:.6f} | "
+            f"Deserialization time: {deserialize_time:.6f}s"
+        )
+
+        if not self._enqueue_observation(timed_observation):
+            self.logger.debug(f"Observation #{obs_timestep} has been filtered out")
+
+        return services_pb2.Empty()
+
     def SendPolicyInstructions(self, request, context):  # noqa: N802
         """Receive policy instructions and load policies with local PEFT support."""
         if not self.running:

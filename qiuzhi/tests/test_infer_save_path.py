@@ -913,6 +913,87 @@ def test_async_inference_uses_configured_queue_tuning(tmp_path, monkeypatch):
     assert captured["cfg"].debug_visualize_queue_size is True
 
 
+def test_async_inference_initializes_rerun_when_display_data_enabled(
+    tmp_path, monkeypatch
+):
+    import lerobot_play.infer as infer_module
+
+    model_root = tmp_path / "model"
+    model_root.mkdir()
+    (model_root / "config.json").write_text("{}", encoding="utf-8")
+    (model_root / "model.safetensors").write_text("weights", encoding="utf-8")
+
+    captured = {"rerun_sessions": []}
+
+    class FakeRobot:
+        name = "fake_robot"
+        cameras = {}
+
+    class FakeClient:
+        def __init__(self, cfg):
+            captured["cfg"] = cfg
+            self.action_queue_size = []
+
+        def start(self):
+            return True
+
+        def receive_actions(self):
+            return None
+
+        def control_loop(self, task, control_time_s=None):
+            return None, None
+
+        def clear_action_queue(self, advance_action_watermark=False):
+            return None
+
+        def stop(self):
+            return None
+
+    monkeypatch.setattr(infer_module, "make_robot_from_config", lambda robot_config: FakeRobot())
+    monkeypatch.setattr(
+        infer_module,
+        "build_dataset_features",
+        lambda robot, use_videos: {
+            "observation.state": {"dtype": "float32", "shape": (1,), "names": ["joint"]},
+            "action": {"dtype": "float32", "shape": (1,), "names": ["joint"]},
+        },
+    )
+    monkeypatch.setattr(
+        infer_module,
+        "_load_and_validate_policy_config",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(infer_module, "RobotClient", FakeClient)
+    monkeypatch.setattr(
+        infer_module,
+        "init_rerun",
+        lambda session_name: captured["rerun_sessions"].append(session_name),
+    )
+    monkeypatch.setattr(infer_module, "visualize_action_queue_size", lambda *args, **kwargs: None)
+
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "pi05",
+                "task_description": "pick",
+                "model_path": str(model_root),
+                "display_data": True,
+                "num_episodes": 1,
+                "episode_time_sec": 1,
+                "fps": 15,
+                "device": "cpu",
+                "server_address": "localhost:8080",
+            },
+            "robot": {"cameras": {}},
+        }
+    )
+
+    _run_async_inference(args)
+
+    assert captured["rerun_sessions"] == ["inference"]
+    assert getattr(captured["cfg"], "display_data", None) is True
+
+
 def test_async_inference_does_not_visualize_queue_unless_debug_enabled(
     tmp_path, monkeypatch
 ):
@@ -1038,6 +1119,49 @@ def test_async_robot_client_control_loop_duration_does_not_rewait_start_barrier(
     client.control_loop("pick", control_time_s=0)
 
     assert barrier_waits == ["wait"]
+
+
+def test_async_robot_client_logs_observation_to_rerun_when_display_enabled(
+    monkeypatch,
+):
+    from lerobot_play.async_inference import robot_client as robot_client_module
+    from lerobot_play.async_inference.robot_client import RobotClient
+
+    logged = []
+
+    class FakeRobot:
+        def get_observation(self):
+            return {
+                "observation.state": np.array([1.0], dtype=np.float32),
+                "observation.images.top": np.zeros((2, 2, 3), dtype=np.uint8),
+            }
+
+    client = object.__new__(RobotClient)
+    client.robot = FakeRobot()
+    client.latest_action_lock = threading.Lock()
+    client.latest_action = 3
+    client.action_queue_lock = threading.Lock()
+    client.action_queue = Queue()
+    client.must_go = threading.Event()
+    client.must_go.set()
+    client.config = SimpleNamespace(display_data=True)
+    client.logger = SimpleNamespace(
+        debug=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+    )
+    client.send_observation = lambda observation: True
+
+    monkeypatch.setattr(
+        robot_client_module,
+        "log_rerun_data",
+        lambda **kwargs: logged.append(kwargs),
+        raising=False,
+    )
+
+    raw_observation = client.control_loop_observation("pick")
+
+    assert logged == [{"observation": raw_observation}]
+    assert raw_observation["task"] == "pick"
 
 
 def test_async_robot_client_clear_action_queue_advances_stale_action_watermark():

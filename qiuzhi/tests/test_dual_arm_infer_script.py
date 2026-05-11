@@ -54,6 +54,7 @@ def test_dual_pi05_async_rtc_script_uses_pi0_env_and_current_checkpoint():
 
     assert "arm-hand-teleop-pi0/bin/python" in source
     assert "ARM_HAND_TELEOP_RTC_ENABLED" in source
+    assert 'fps="${ARM_HAND_TELEOP_ASYNC_FPS:-15}"' in source
     assert "pi05_camera_pen_touch_clean_del_52_376_selected/120000/pretrained_model" in source
     assert "async_policy_server" in source
     assert "--policy pi05" in source

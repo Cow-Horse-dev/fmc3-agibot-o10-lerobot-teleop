@@ -39,8 +39,10 @@ teleop:
   # - false: 只控制机械臂
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
-  trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
+  trigger_gesture: cylindrical  # pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
   action_control_mode: joint  # joint, eef_delta
+  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
+  gripper_gesture: cylindrical  # pinch, tripod, cylindrical
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
@@ -48,7 +50,7 @@ teleop:
   #   ~/workspace/arm-hand-teleop/configs/o10_left_reset_pose.json
   # 文件不存在时会在第一次成功连到机器人/手套后自动创建。
   reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-  reset_gesture: pinch
+  reset_gesture: cylindrical  # pinch, tripod, cylindrical
 
 robot:
   # 机器人类型。
@@ -64,6 +66,7 @@ robot:
   # 选择“哪只 follower 手/臂”接收控制。
   handedness: right
   action_control_mode: joint  # joint, eef_delta
+  hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：
@@ -84,7 +87,8 @@ robot:
 
   # 当前起始姿态会在 connect 时自动写回这里，后续所有 reset 都回到这组关节。
   reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-  reset_gesture: pinch
+  gripper_gesture: cylindrical  # pinch, tripod, cylindrical
+  reset_gesture: cylindrical  # pinch, tripod, cylindrical
 
   cameras:
     top:

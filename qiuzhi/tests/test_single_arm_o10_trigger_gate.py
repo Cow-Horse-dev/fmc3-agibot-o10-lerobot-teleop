@@ -427,6 +427,23 @@ def test_single_arm_hand_control_requires_controller_side_trigger_gate(
     assert teleop._is_hand_control_enabled() is True
 
 
+def test_single_arm_trigger_gesture_accepts_cylindrical(monkeypatch):
+    module = _load_single_arm_agibot_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderSingleArmAgibotO10)
+    teleop.handedness = "right"
+    teleop.config = types.SimpleNamespace(
+        trigger_gesture="cylindrical",
+        reset_poses_path=None,
+    )
+
+    assert teleop._get_trigger_gesture_hand_pos("open") == pytest.approx(
+        [0.03, -1.51, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    )
+    assert teleop._get_trigger_gesture_hand_pos("closed") == pytest.approx(
+        [0.03, -1.51, 0.7, 0.0, 0.7, 0.7, 0.0, 0.7, 0.0, 0.7]
+    )
+
+
 @pytest.mark.parametrize(
     ("handedness", "controller_side", "wrist_pose_source", "matching_grip", "matching_grip_axis", "opposite_grip", "opposite_grip_axis"),
     [

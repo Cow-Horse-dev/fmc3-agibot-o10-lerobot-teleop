@@ -1,9 +1,11 @@
 import asyncio
 import importlib.machinery
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
+from types import SimpleNamespace
 
 
 def _new_stub_module(name: str) -> types.ModuleType:
@@ -195,3 +197,62 @@ def test_on_connection_established_prints_port_message(capsys):
     assert server.connection_status["is_connected"] is True
     assert server.connection_status["total_connections"] == 1
     assert "PC-test" in server.connection_status["connected_clients"]
+
+
+def test_handle_pose_data_logs_pose_device_summary(monkeypatch):
+    server = object.__new__(PicoWebrtcVRTeleop)
+    server.arm_device = "pico"
+    server.head_info = SimpleNamespace(data=[0.0] * 7)
+    server.left_info = SimpleNamespace(data=[0.0] * 7)
+    server.right_info = SimpleNamespace(data=[0.0] * 7)
+    server.vr_ctrl_state = {
+        "HBattery": 0.0,
+        "RIsTracked": False,
+        "RBattery": 0.0,
+        "LIsTracked": False,
+        "LBattery": 0.0,
+        "LWristTracked": False,
+        "LWristBattery": 0.0,
+        "RWristTracked": False,
+        "RWristBattery": 0.0,
+    }
+    log_messages = []
+    server.log_info = log_messages.append
+    server.log_error = lambda _message: None
+
+    async def fake_publish_pose_data():
+        return None
+
+    server._publish_pose_data = fake_publish_pose_data
+    monkeypatch.setattr(module.time, "time", lambda: 100.0)
+
+    asyncio.run(
+        PicoWebrtcVRTeleop._handle_pose_data(
+            server,
+            "PC-test",
+            {
+                "payload": json.dumps(
+                    {
+                        "poses": [
+                            {
+                                "deviceType": "right_controller",
+                                "position": {"x": 0.1, "y": 0.2, "z": 0.3},
+                                "rotation": {
+                                    "x": 0.0,
+                                    "y": 0.0,
+                                    "z": 0.0,
+                                    "w": 1.0,
+                                },
+                                "isTracked": True,
+                                "batteryLevel": 4.0,
+                            }
+                        ]
+                    }
+                )
+            },
+        )
+    )
+
+    assert len(log_messages) == 1
+    assert "right_controller(tracked=True,battery=4.0,pos=True,rot=True)" in log_messages[0]
+    assert "missing: left_controller" in log_messages[0]

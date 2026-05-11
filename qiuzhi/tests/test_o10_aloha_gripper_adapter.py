@@ -207,6 +207,42 @@ def test_hand_gripper_adapter_round_trips_trigger_gesture_poses():
     assert agibot_o10.agibot_o10_gripper_value_from_hand_joints(midpoint, "tripod", "left") == pytest.approx(0.5)
 
 
+@pytest.mark.parametrize("handedness", ["left", "right"])
+def test_cylindrical_gripper_1d_mapping_uses_reset_pose_gesture(handedness):
+    reset_poses_path = REPO_ROOT.parent / "configs" / "reset_poses" / "o10_dual_reset.json"
+    open_pose = agibot_o10.get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        "cylindrical",
+        handedness,
+        "open",
+    )
+    closed_pose = agibot_o10.get_agibot_o10_reset_pose_gesture_joint_angles(
+        reset_poses_path,
+        "cylindrical",
+        handedness,
+        "closed",
+    )
+
+    assert agibot_o10.agibot_o10_hand_joints_from_gripper_value(
+        0.0,
+        "cylindrical",
+        handedness,
+        reset_poses_path=reset_poses_path,
+    ) == pytest.approx(open_pose)
+    assert agibot_o10.agibot_o10_hand_joints_from_gripper_value(
+        1.0,
+        "cylindrical",
+        handedness,
+        reset_poses_path=reset_poses_path,
+    ) == pytest.approx(closed_pose)
+    assert agibot_o10.agibot_o10_gripper_value_from_hand_joints(
+        closed_pose,
+        "cylindrical",
+        handedness,
+        reset_poses_path=reset_poses_path,
+    ) == pytest.approx(1.0)
+
+
 def test_gripper_adapter_uses_reset_pose_gesture_open_as_pregrasp(tmp_path):
     reset_poses_path = tmp_path / "o10_reset.json"
     custom_open = [-0.11, 1.2, -0.45, 0.03, 0.31, 0.42, 0.07, 1.1, 0.08, 1.2]

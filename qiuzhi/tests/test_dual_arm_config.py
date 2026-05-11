@@ -105,15 +105,95 @@ def test_dual_infer_yaml_uses_gripper_state_without_eef_pose():
     assert config["robot"]["hand_action_mode"] == "gripper_1d"
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["tactile_mode"] == "none"
+    assert config["robot"]["left"]["gripper_gesture"] == "tripod"
+    assert config["robot"]["right"]["gripper_gesture"] == "pinch"
 
 
-def test_dual_record_yaml_keeps_left_trigger_mode_and_tripod_left_hand():
+def test_dual_infer_yaml_enables_display_at_15hz():
+    with open("configs/dual_arm/o10_dual_infer.yaml") as f:
+        config = yaml.safe_load(f)
+
+    assert config["infer"]["display_data"] is True
+    assert config["infer"]["fps"] == 15
+
+
+def test_dual_record_yaml_keeps_left_trigger_mode_and_original_gestures():
     with open("configs/dual_arm/o10_dual_record.yaml") as f:
         config = yaml.safe_load(f)
 
     assert config["teleop"]["arm_trigger_mode"] == "left"
     assert config["teleop"]["left"]["trigger_gesture"] == "tripod"
     assert config["teleop"]["right"]["trigger_gesture"] == "pinch"
+    assert config["teleop"]["left"]["gripper_gesture"] == "tripod"
+    assert config["teleop"]["right"]["gripper_gesture"] == "pinch"
+    assert config["robot"]["left"]["gripper_gesture"] == "tripod"
+    assert config["robot"]["right"]["gripper_gesture"] == "pinch"
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "configs/left_arm/o10_left_control.yaml",
+        "configs/left_arm/o10_left_record.yaml",
+    ],
+)
+def test_left_arm_control_and_record_configs_keep_original_trigger_gesture(config_path):
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    assert config["teleop"]["trigger_gesture"] == "pinch"
+    assert config["teleop"]["reset_gesture"] == "pinch"
+    assert "hand_action_mode" not in config["teleop"]
+    assert "gripper_gesture" not in config["teleop"]
+    assert "hand_action_mode" not in config["robot"]
+    assert "gripper_gesture" not in config["robot"]
+    assert config["robot"]["reset_gesture"] == "pinch"
+
+
+def test_left_arm_infer_config_keeps_original_reset_gesture():
+    with open("configs/left_arm/o10_left_infer.yaml") as f:
+        config = yaml.safe_load(f)
+
+    assert config["robot"]["reset_gesture"] == "pinch"
+    assert "hand_action_mode" not in config["robot"]
+    assert "gripper_gesture" not in config["robot"]
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "configs/right_arm/o10_right_control.yaml",
+        "configs/right_arm/o10_right_record.yaml",
+    ],
+)
+def test_right_arm_control_and_record_configs_use_cylindrical_gripper_1d(config_path):
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    assert config["teleop"]["hand_action_mode"] == "gripper_1d"
+    assert config["teleop"]["trigger_gesture"] == "cylindrical"
+    assert config["teleop"]["gripper_gesture"] == "cylindrical"
+    assert config["teleop"]["reset_gesture"] == "cylindrical"
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["gripper_gesture"] == "cylindrical"
+    assert config["robot"]["reset_gesture"] == "cylindrical"
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "configs/right_arm/o10_right_infer.yaml",
+        "configs/right_arm/o10_right_infer_cpu.yaml",
+        "configs/right_arm/o10_right_replay.yaml",
+    ],
+)
+def test_right_arm_infer_and_replay_configs_use_cylindrical_gripper_1d(config_path):
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["gripper_gesture"] == "cylindrical"
+    assert config["robot"]["reset_gesture"] == "cylindrical"
 
 
 def test_dual_arm_wrist_camera_rotations_are_no_rotation():

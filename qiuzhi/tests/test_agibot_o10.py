@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -5,6 +6,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 LEROBOT_PLAY_PACKAGE_ROOT = (
     REPO_ROOT
     / "lerobot_play_1.0.4"
@@ -17,6 +19,18 @@ if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
 
 from lerobot_play.utils import agibot_o10
+
+
+CYLINDRICAL_POSES = {
+    "left": {
+        "open": [-0.03, 1.51, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "closed": [-0.03, 1.51, -0.7, 0.0, 0.7, 0.7, 0.0, 0.7, 0.0, 0.7],
+    },
+    "right": {
+        "open": [0.03, -1.51, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "closed": [0.03, -1.51, 0.7, 0.0, 0.7, 0.7, 0.0, 0.7, 0.0, 0.7],
+    },
+}
 
 
 def test_build_agibot_o10_joint_action_dict_contains_only_arm_and_hand_joints():
@@ -48,6 +62,34 @@ def test_trigger_gesture_joint_angles_return_copies():
         "open",
     )
     assert fresh_open_pose[0] != 999.0
+
+
+@pytest.mark.parametrize("handedness", ["left", "right"])
+def test_cylindrical_trigger_gesture_has_perpendicular_open_and_linked_four_fingers(
+    handedness,
+):
+    open_pose = agibot_o10.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        handedness,
+        "open",
+    )
+    closed_pose = agibot_o10.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        handedness,
+        "closed",
+    )
+
+    assert open_pose == pytest.approx(CYLINDRICAL_POSES[handedness]["open"])
+    assert closed_pose == pytest.approx(CYLINDRICAL_POSES[handedness]["closed"])
+
+
+def test_o10_dual_reset_pose_json_contains_cylindrical_gesture():
+    reset_poses_path = WORKSPACE_ROOT / "configs" / "reset_poses" / "o10_dual_reset.json"
+    data = json.loads(reset_poses_path.read_text(encoding="utf-8"))
+
+    for handedness, states in CYLINDRICAL_POSES.items():
+        for state, pose in states.items():
+            assert data["gestures"]["cylindrical"][handedness][state] == pytest.approx(pose)
 
 
 def test_sdk_import_error_mentions_qiuzhi_omnihand_root(monkeypatch):

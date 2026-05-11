@@ -15,7 +15,7 @@ infer:
   async_infer: false  # 可选: true, false
   num_episodes: 100000  # 推理 episode 数；大数值用于持续循环执行
   episode_time_sec: 3600  # 单个 episode 最长时长，单位秒
-  fps: 30  # 推理频率，单位 Hz
+  fps: 15  # 推理频率，单位 Hz
   device: cuda  # 可选: cuda, cpu
   server_address: localhost:8080  # 仅 async_infer: true 时用
   save_path: null  # 可选: null 或数据保存目录
@@ -35,9 +35,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: tripod  # 可选: pinch, tripod；与录制一致
+    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical；与录制一致
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod
+    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
   right:
     port: can1  # CAN 口
     handedness: right  # 可选: left, right
@@ -45,9 +45,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: pinch  # 可选: pinch, tripod；与录制一致
+    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical；与录制一致
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod
+    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
   cameras:
     top:
       type: opencv  # 可选: opencv, intelrealsense, realsense

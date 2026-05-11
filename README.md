@@ -267,6 +267,19 @@ cd ~/workspace/arm-hand-teleop
 ./scripts/o10/dual_arm/infer_o10_dual.sh
 ```
 
+PI0.5 异步推理演示命令：
+
+```bash
+cd /home/phl/workspace/arm-hand-teleop
+conda activate arm-hand-teleop-pi0
+
+ARM_HAND_TELEOP_PI05_MODEL_PATH=/home/phl/workspace/mymodels/qiuzhi_agibot/camera_pen_touch_clean_del_52_376/pi0/pi05_camera_pen_touch_clean_del_52_376_selected/120000/pretrained_model \
+ARM_HAND_TELEOP_ASYNC_FPS=15 \
+ARM_HAND_TELEOP_ASYNC_INFERENCE_LATENCY=0.35 \
+ARM_HAND_TELEOP_ASYNC_ACTIONS_PER_CHUNK=50 \
+./scripts/o10/dual_arm/infer_o10_dual_pi05_async_rtc.sh
+```
+
 推理前检查：
 
 - `infer.model_path` 必须存在，且目录内必须有 `config.json`；权重通常是 `model.safetensors` 或 `pytorch_model.bin`。

@@ -40,7 +40,7 @@ teleop:
   # - false: 只控制机械臂
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
-  trigger_gesture: pinch  # pinch, tripod（仅 trigger_gesture 模式生效）
+  trigger_gesture: pinch  # pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
   action_control_mode: joint  # joint, eef_delta
 
   # 统一复位姿态 JSON 路径。

@@ -300,6 +300,66 @@ def test_trigger_gesture_grip_button_forces_closed_pose(monkeypatch, side):
     assert state[6:] == pytest.approx(expected_closed)
 
 
+def test_space_key_closes_left_cylindrical_grasp(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderDualArmAgibotO10)
+    teleop.config = SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="pinch",
+        arm_trigger_mode="split",
+        left={"trigger_gesture": "cylindrical"},
+        right={"trigger_gesture": "pinch"},
+    )
+    teleop.startflag = True
+    teleop.ctrl = {
+        "LTr": True,
+        "RTr": False,
+        "LG": False,
+        "RG": False,
+        "leftGrip": 0.0,
+        "rightGrip": 0.0,
+    }
+    teleop.left_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.left_hand_teleoperator = None
+
+    open_cylindrical_grasp = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        "left",
+        "open",
+    )
+    teleop.left_commanded_hand_joint_pos = open_cylindrical_grasp.copy()
+    teleop._get_commanded_hand_joint_pos = (
+        lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
+    )
+    teleop._set_commanded_hand_joint_pos = (
+        lambda requested_side, joint_pos: setattr(
+            teleop,
+            f"{requested_side}_commanded_hand_joint_pos",
+            joint_pos.copy(),
+        )
+    )
+
+    open_state = teleop._get_side_joint_pos("left")
+    assert open_state[6:] == pytest.approx(open_cylindrical_grasp)
+
+    space_key = object()
+
+    def on_press(key):
+        if key is space_key:
+            teleop.ctrl["leftGrip"] = 1.0
+
+    keyboard_listener = SimpleNamespace(on_press=on_press)
+    keyboard_listener.on_press(space_key)
+
+    closed_state = teleop._get_side_joint_pos("left")
+    expected_closed_cylindrical_grasp = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        "left",
+        "closed",
+    )
+    assert closed_state[6:] == pytest.approx(expected_closed_cylindrical_grasp)
+
+
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_trigger_gesture_grip_axis_sets_continuous_gripper_value(monkeypatch, side):
     module = _load_dual_arm_module(monkeypatch)

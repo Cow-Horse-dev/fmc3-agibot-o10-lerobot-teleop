@@ -892,6 +892,15 @@ def _should_reset_to_training_start(robot) -> bool:
     return getattr(robot, "name", None) != "pico_follower_dual_arm_agibot_o10"
 
 
+def _reset_robot_for_inference_start(robot, model_path: str) -> None:
+    if _should_reset_to_training_start(robot):
+        _reset_to_training_start(robot, model_path)
+        return
+
+    log_say("Resetting to configured reset pose for inference startup")
+    robot.return_zero()
+
+
 def _create_robot_config(args: argparse.Namespace):
     """创建机器人配置"""
     camera_config = {}
@@ -1079,10 +1088,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 连接机器人
     robot.connect()
-    if _should_reset_to_training_start(robot):
-        _reset_to_training_start(robot, args.model_path)
-    else:
-        log_say("Using configured reset pose for inference startup")
+    _reset_robot_for_inference_start(robot, args.model_path)
 
     try:
         episodes_completed = 0
@@ -1205,9 +1211,16 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         or (100 if args.policy == "act" else 50),
         debug_visualize_queue_size=args.debug_visualize_queue_size,
     )
+    client_cfg.display_data = args.display_data
+
+    if args.display_data:
+        init_rerun(session_name="inference")
 
     # 创建并启动客户端
     client = RobotClient(client_cfg)
+    client_robot = getattr(client, "robot", None)
+    if client_robot is not None:
+        _reset_robot_for_inference_start(client_robot, args.model_path)
 
     if not client.start():
         raise RuntimeError("Failed to start RobotClient")

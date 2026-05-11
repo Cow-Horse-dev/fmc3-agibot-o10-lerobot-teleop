@@ -39,6 +39,7 @@ robot:
   # 选择“哪只 follower 手/臂”执行回放。
   handedness: right
   action_control_mode: joint  # 与数据集 action schema 保持一致：joint, eef_delta
+  hand_action_mode: gripper_1d  # 与数据集 hand action schema 保持一致：dexterous_10d, gripper_1d
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：
@@ -58,4 +59,5 @@ robot:
   channel_id: null
 
   reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
-  reset_gesture: pinch
+  gripper_gesture: cylindrical  # pinch, tripod, cylindrical
+  reset_gesture: cylindrical  # pinch, tripod, cylindrical
