@@ -264,6 +264,12 @@ python scripts/tools/convert_o10_tactile_heatmap.py \
 
 输出会增加 `observation.tactile.left` / `observation.tactile.right`，shape 为 `float32[12, 32]`。默认保留 `*_raw`；如果只想保留 heatmap，用 `--drop-raw`。
 
+现场检查触觉空间映射时，可以直接连左右手看物理布局热力图：
+
+```bash
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand both --layout physical
+```
+
 详细字段顺序见 `docs/o10_tactile_raw_schema.md`。
 
 ## 推理

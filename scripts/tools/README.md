@@ -104,6 +104,69 @@ python scripts/tools/convert_o10_tactile_heatmap.py \
 
 脚本会写入 `meta/o10_tactile_heatmap_schema.json`，记录左/右/双手线路、raw 字段到 heatmap 字段的映射，以及 130D 在 12x32 网格中的布局。
 
+### `visualize_o10_tactile_heatmap.py`
+实时查看 O10 130D 触觉映射成 12x32 heatmap 后的空间效果。
+
+这个工具有两种布局：
+
+- `--layout training`：训练用的紧凑 `12x32` 布局，与 `convert_o10_tactile_heatmap.py` 输出一致。
+- `--layout physical`：默认布局，按 SDK 文档把五指显示成真实的 `8x2` 左右手镜像排列；掌心和手背仍按 `5x5` 近似显示。这个更适合现场按传感器检查映射。
+
+```bash
+# 不连硬件，先看模拟左右手热力图，并保存一张预览
+python scripts/tools/visualize_o10_tactile_heatmap.py \
+    --demo \
+    --no-window \
+    --save /tmp/o10_tactile_heatmap_demo.png
+
+# 只看左手，默认 left channel_id=0
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand left --layout physical
+
+# 只看右手，默认 right channel_id=1
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand right --layout physical
+
+# 同时看左右手，窗口里左右并排显示；按 q 或 Esc 退出
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand both --layout physical
+```
+
+如果现场通道和默认不一样，可以显式指定：
+
+```bash
+python scripts/tools/visualize_o10_tactile_heatmap.py \
+    --hand both \
+    --left-channel-id 0 \
+    --right-channel-id 1 \
+    --device-id 1 \
+    --canfd-id 0
+```
+
+实时模式默认会先采集 30 帧 baseline，请保持双手不受力；随后会减掉 baseline，并把小于 `3g` 的变化当噪声过滤掉。O10 触觉采样频率约 10Hz，所以刷新周期默认是 `0.1s`。
+
+```bash
+# 关闭 baseline，直接看原始值
+python scripts/tools/visualize_o10_tactile_heatmap.py \
+    --hand both \
+    --baseline-frames 0 \
+    --deadband 0
+
+# 每帧自动拉伸颜色范围，适合找微弱信号；默认固定色阶是 0..255g
+python scripts/tools/visualize_o10_tactile_heatmap.py \
+    --hand both \
+    --auto-range
+```
+
+录完数据后，也可以从 LeRobot 数据集中抽一帧检查：
+
+```bash
+python scripts/tools/visualize_o10_tactile_heatmap.py \
+    --dataset ~/workspace/dataset/.../my_raw_dataset \
+    --episode-index 0 \
+    --frame-index 10 \
+    --layout physical \
+    --save /tmp/o10_tactile_frame10.png \
+    --no-window
+```
+
 ### `convert_lerobot_to_openpi.py`
 LeRobot v3.0 格式 → openpi 训练格式的转换骨架（部分 TODO 待补全）。
 

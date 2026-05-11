@@ -103,7 +103,7 @@ python scripts/tools/convert_o10_tactile_heatmap.py \
     --drop-raw
 ```
 
-当前 130D 到 12x32 的布局：
+当前训练用的 130D 到 12x32 紧凑布局：
 
 | raw 段 | heatmap 位置 |
 |---|---|
@@ -116,3 +116,21 @@ python scripts/tools/convert_o10_tactile_heatmap.py \
 | `dorsum[0:25]` | rows `6:11`, cols `21:26` |
 
 输出目录会写入 `meta/o10_tactile_heatmap_schema.json`，记录来源线路、字段映射和具体布局。
+
+## 可视化检查
+
+现场检查左右手触觉映射时，优先用物理可视化布局：
+
+```bash
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand both --layout physical
+```
+
+`--layout physical` 会按 SDK 文档把五指显示成 `8x2`，并处理左右手编号镜像；掌心和手背仍按 `5x5` 近似显示。这个布局用于人工检查传感器位置，不改变训练数据集的 `12x32` schema。
+
+如果要看训练输入实际长什么样：
+
+```bash
+python scripts/tools/visualize_o10_tactile_heatmap.py --hand both --layout training
+```
+
+实时可视化默认会采集 30 帧 baseline，并用 `3g` deadband 过滤静止噪声；O10 触觉采样频率约 10Hz，因此默认刷新周期是 `0.1s`。
