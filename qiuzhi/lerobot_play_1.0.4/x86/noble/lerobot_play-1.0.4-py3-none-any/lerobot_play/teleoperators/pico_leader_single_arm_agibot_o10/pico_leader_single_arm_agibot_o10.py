@@ -19,6 +19,7 @@ from lerobot_play.utils.agibot_o10 import (
     build_agibot_o10_eef_delta_gripper_action_dict,
     build_agibot_o10_gripper_action_dict,
     build_agibot_o10_joint_action_dict,
+    agibot_o10_hand_joints_from_gripper_value,
     get_agibot_o10_reset_pose_gesture_joint_angles,
     get_agibot_o10_trigger_gesture_joint_angles,
     normalize_agibot_o10_action_control_mode,
@@ -336,6 +337,17 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             state_key,
         )
 
+    def _get_trigger_gesture_hand_pos_from_gripper_value(
+        self,
+        gripper_value: float,
+    ) -> list[float]:
+        return agibot_o10_hand_joints_from_gripper_value(
+            gripper_value,
+            getattr(self.config, "trigger_gesture", "pinch"),
+            self.handedness,
+            reset_poses_path=self._reset_poses_path(),
+        )
+
     def _reset_trigger_gesture_hand_to_open(self) -> None:
         self._set_reset_hand_joint_pos(
             self._get_trigger_gesture_hand_pos("open"),
@@ -343,13 +355,15 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             sync_commanded=True,
         )
 
-    def _is_trigger_gesture_grasp_pressed(self) -> bool:
+    def _get_trigger_gesture_gripper_value(self) -> float:
         grip_side = getattr(self, "wrist_pose_source", "auto")
         if grip_side not in {"left", "right"}:
             grip_side = getattr(self, "handedness", "right")
         button_key = "RG" if grip_side == "right" else "LG"
+        if bool(self.ctrl.get(button_key, False)):
+            return 1.0
         grip_key = "rightGrip" if grip_side == "right" else "leftGrip"
-        return bool(self.ctrl[button_key]) or float(self.ctrl.get(grip_key, 0.0)) >= 0.2
+        return min(1.0, max(0.0, float(self.ctrl.get(grip_key, 0.0))))
 
     def reset_pose(self):
         self._refresh_reset_targets_from_store()
@@ -384,12 +398,9 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
 
         if self._is_trigger_gesture_mode():
             if self._is_hand_control_enabled():
-                state_key = (
-                    "closed"
-                    if self._is_trigger_gesture_grasp_pressed()
-                    else "open"
+                hand_ctrl_data = self._get_trigger_gesture_hand_pos_from_gripper_value(
+                    self._get_trigger_gesture_gripper_value()
                 )
-                hand_ctrl_data = self._get_trigger_gesture_hand_pos(state_key)
                 self._set_commanded_hand_joint_pos(hand_ctrl_data)
             else:
                 hand_ctrl_data = self._get_commanded_hand_joint_pos()

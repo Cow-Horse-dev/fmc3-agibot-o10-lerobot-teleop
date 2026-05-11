@@ -468,13 +468,53 @@ def test_single_arm_trigger_gesture_grasp_uses_wrist_pose_source(
     teleop.wrist_pose_source = wrist_pose_source
 
     teleop.ctrl = _build_ctrl(**{opposite_grip: True})
-    assert teleop._is_trigger_gesture_grasp_pressed() is False
+    assert teleop._get_trigger_gesture_gripper_value() == pytest.approx(0.0)
 
     teleop.ctrl = _build_ctrl(**{opposite_grip_axis: 1.0})
-    assert teleop._is_trigger_gesture_grasp_pressed() is False
+    assert teleop._get_trigger_gesture_gripper_value() == pytest.approx(0.0)
 
     teleop.ctrl = _build_ctrl(**{matching_grip: True})
-    assert teleop._is_trigger_gesture_grasp_pressed() is True
+    assert teleop._get_trigger_gesture_gripper_value() == pytest.approx(1.0)
 
     teleop.ctrl = _build_ctrl(**{matching_grip_axis: 0.2})
-    assert teleop._is_trigger_gesture_grasp_pressed() is True
+    assert teleop._get_trigger_gesture_gripper_value() == pytest.approx(0.2)
+
+
+def test_single_arm_trigger_gesture_grip_axis_sets_continuous_gripper_value(monkeypatch):
+    module = _load_single_arm_agibot_module(monkeypatch)
+    teleop = object.__new__(module.PicoLeaderSingleArmAgibotO10)
+    teleop.handedness = "right"
+    teleop.controller_side = "left"
+    teleop.wrist_pose_source = "right"
+    teleop.startflag = True
+    teleop.config = types.SimpleNamespace(
+        hand_mode="trigger_gesture",
+        trigger_gesture="cylindrical",
+        reset_poses_path=None,
+    )
+    teleop.ctrl = _build_ctrl(LTr=True, rightGrip=0.5)
+    teleop.lpfs = [types.SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
+    teleop.hand_teleoperator = None
+    open_pose = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        "right",
+        "open",
+    )
+    closed_pose = module.get_agibot_o10_trigger_gesture_joint_angles(
+        "cylindrical",
+        "right",
+        "closed",
+    )
+    teleop.commanded_hand_joint_pos = open_pose.copy()
+    teleop._get_commanded_hand_joint_pos = lambda: teleop.commanded_hand_joint_pos.copy()
+    teleop._set_commanded_hand_joint_pos = (
+        lambda joint_pos: setattr(teleop, "commanded_hand_joint_pos", joint_pos.copy())
+    )
+
+    state = teleop.get_joint_pos()
+    expected_half_closed = [
+        open_value + 0.5 * (closed_value - open_value)
+        for open_value, closed_value in zip(open_pose, closed_pose, strict=True)
+    ]
+
+    assert state[6:] == pytest.approx(expected_half_closed)
