@@ -6,6 +6,61 @@
 # - 数据保存在 ~/workspace/dataset/Robot/agi_arm_bot 下面
 # - 目录名自动按"任务名 + 当天日期"生成
 # 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
+#
+# 参数速查：
+# 可选值速查（本文件字段）：
+# - teleop.type: pico_leader_single_arm_agibot_o10；robot.type: pico_follower_single_arm_agibot_o10。
+# - id/task_description/single_task/repo_id: 普通字符串；port: can0/can1 或实际 CAN 口。
+# - handedness/controller_side: left, right；wrist_pose_source: auto, left, right；vr_device: pico, pico_wrist。
+# - enable_hand/include_eef_pose/display_data/auto_name_from_task_date/video/mcap/is_ssh/use_depth: true, false。
+# - hand_mode: glove, trigger_gesture；trigger_gesture/reset_gesture: pinch, tripod, cylindrical。
+# - action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - tactile_mode: none, 130d；channel_mode: multiChannel。
+# - channel_id: null 或整数，null 自动 left->0、right->1。
+# - reset_poses_path/root/index_or_path/serial_number_or_name: 路径或设备名字符串。
+# - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
+# - fourcc: null 或 4 字符编码，常见 MJPG/YUYV/YUY2/I420/H264，是否可用取决于相机驱动。
+# - rotation: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270。
+# - vr_pose_port/vr_ctrl_port/fps/width/height/device_id/canfd_id/num_episodes/*_time_sec/写入线程和批量大小: 整数。
+# - date_format: Python strftime 格式，例如 "%Y%m%d" 或 "%Y-%m-%d"。
+# - robot: 实际被录制和被控制的 follower 机器人端配置。
+# - robot.type/id: 机器人类型和日志名；单臂 O10 固定使用 pico_follower_single_arm_agibot_o10。
+# - robot.port: 机械臂 CAN 接口；左臂通常是 can0。
+# - robot.handedness: 当前录制的物理手/臂方向。
+# - robot.enable_hand: 是否连接并录制 O10 手。
+# - robot.include_eef_pose: 是否把末端位姿额外加入 observation.state；必须与训练/推理一致。
+# - robot.action_control_mode: joint 录关节目标；eef_delta 录末端增量。
+# - robot.tactile_mode: 触觉特征维度；none/130d 必须与训练一致。
+# - robot.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
+# - robot.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
+# - robot.reset_poses_path / reset_gesture: reset 使用的 JSON 和手势。
+# - robot.cameras: 录入数据集的相机配置；key 名会成为 observation.images.<key>。
+# - camera.type: realsense/intelrealsense 读 RealSense；opencv 读普通 USB 相机。
+# - camera.index_or_path / serial_number_or_name: OpenCV 设备路径或 RealSense 序列号。
+# - camera.width/height/fps/fourcc/use_depth/color_mode/rotation: 图像尺寸、帧率、编码、深度、颜色顺序和旋转。
+# - teleop: 录制时的遥操作端配置，决定 Pico 输入如何变成 action。
+# - teleop.type/id: 遥操作器类型和日志名；单臂 O10 固定使用 pico_leader_single_arm_agibot_o10。
+# - teleop.handedness: 遥操作输出对应的手/臂方向。
+# - teleop.controller_side: 哪只 Pico 手柄负责开始、复位和按住使能；左臂这里使用右手柄。
+# - teleop.vr_pose_port / vr_ctrl_port: Pico 位姿流和按键/扳机流的 UDP 端口。
+# - teleop.vr_device: VR 数据来源；pico 表示使用 Pico 手柄/腕部数据。
+# - teleop.wrist_pose_source: 机械臂读取哪个 wrist pose；left/right 强制指定，auto 自动选择。
+# - teleop.enable_hand: 是否把手部动作写入 action。
+# - teleop.hand_mode: glove 使用手套 10D 数据；trigger_gesture 使用 Pico grip 映射预设手势。
+# - teleop.trigger_gesture: trigger_gesture 模式下 grip 控制的预设手势。
+# - teleop.action_control_mode: 必须和 robot.action_control_mode 保持一致。
+# - teleop.reset_poses_path / reset_gesture: 遥操作 reset 使用的 JSON 和手势。
+# - run.fps: 录制主循环频率。
+# - run.display_data: 是否打开本地预览窗口。
+# - run.num_episodes / episode_time_sec / reset_time_sec: episode 数、单条时长和 reset 时长字段。
+# - run.single_task: 任务文本；也会用于自动生成数据集目录名。
+# - dataset.auto_name_from_task_date / date_format: 是否按任务名+日期自动命名数据集目录。
+# - dataset.repo_id: 手动数据集目录名；auto_name_from_task_date=false 时使用。
+# - dataset.root: 数据集根目录；最终数据会写到 root/repo_id 或 root/自动目录名。
+# - dataset.video / mcap: 相机保存为视频还是 MCAP。
+# - dataset.is_ssh: SSH/无桌面环境提示开关。
+# - dataset.num_image_writer_threads_per_camera / num_image_writer_processes: 图像写入并发数。
+# - dataset.video_encoding_batch_size: 每多少个 episode 批量编码一次视频。
 
 robot:
   # 机器人类型。

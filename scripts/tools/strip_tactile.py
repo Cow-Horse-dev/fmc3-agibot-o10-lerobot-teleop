@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""从 LeRobot v3.0 数据集的 observation.state 中删除触觉列。
+"""从 LeRobot v3.0 数据集中删除 O10 触觉信息。
 
-读输入数据集，把 observation.state 里名字包含 "tactile" 的维度去掉，
-写到输出目录。videos / images 目录用符号链接代替复制以节省磁盘空间。
+支持两种 raw 格式：
+- 新格式：删除 observation.tactile.left_raw / right_raw 独立列。
+- 旧格式：把 observation.state 里名字包含 "tactile" 的维度切掉。
+
+写到输出目录后，videos / images 目录用符号链接代替复制以节省磁盘空间。
 
 用法：
     python scripts/tools/strip_tactile.py --input ~/workspace/dataset/.../my_dataset
@@ -21,6 +24,36 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+TACTILE_FEATURE_PREFIX = "observation.tactile"
+NO_TACTILE_SCHEMA = "o10_no_tactile_schema.json"
+
+
+def _is_tactile_feature_key(key: str) -> bool:
+    return key.startswith(TACTILE_FEATURE_PREFIX)
+
+
+def _mentions_hand(text: str, hand: str) -> bool:
+    return (
+        text.startswith(f"{hand}.")
+        or f".{hand}." in text
+        or f".{hand}_" in text
+        or f"/{hand}_" in text
+    )
+
+
+def infer_tactile_route(keys_or_names: list[str]) -> str:
+    has_left = any(_mentions_hand(item, "left") for item in keys_or_names)
+    has_right = any(_mentions_hand(item, "right") for item in keys_or_names)
+    if has_left and has_right:
+        return "dual"
+    if has_left:
+        return "left"
+    if has_right:
+        return "right"
+    if any("tactile" in item for item in keys_or_names):
+        return "single"
+    return "none"
 
 
 def _tactile_keep_indices(names: list[str]) -> tuple[list[int], list[int]]:
@@ -41,6 +74,66 @@ def _slice_stat(value, keep: list[int]):
     return value
 
 
+def _drop_tactile_columns(df: pd.DataFrame, tactile_feature_keys: list[str]) -> pd.DataFrame:
+    columns_to_drop = [
+        column
+        for column in df.columns
+        if column in tactile_feature_keys or TACTILE_FEATURE_PREFIX in column
+    ]
+    if columns_to_drop:
+        df = df.drop(columns=columns_to_drop)
+    return df
+
+
+def _copy_meta_without_tactile(input_meta: Path, output_meta: Path, tactile_feature_keys: list[str]) -> None:
+    for item in input_meta.iterdir():
+        if item.name in ("info.json", "stats.json", NO_TACTILE_SCHEMA):
+            continue
+        dest = output_meta / item.name
+        if item.is_dir():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(item, dest)
+            for pq_path in dest.rglob("*.parquet"):
+                df = pd.read_parquet(pq_path)
+                df = _drop_tactile_columns(df, tactile_feature_keys)
+                df.to_parquet(pq_path, index=False)
+        else:
+            shutil.copy2(item, dest)
+            if dest.suffix == ".parquet":
+                df = pd.read_parquet(dest)
+                df = _drop_tactile_columns(df, tactile_feature_keys)
+                df.to_parquet(dest, index=False)
+
+
+def _write_no_tactile_schema(
+    output_meta: Path,
+    *,
+    input_dir: Path,
+    route: str,
+    removed_tactile_features: list[str],
+    removed_state_names: list[str],
+    info: dict,
+) -> None:
+    state_feature = info["features"].get("observation.state", {})
+    action_feature = info["features"].get("action", {})
+    schema = {
+        "schema_version": "o10_no_tactile_v1",
+        "source_dataset": input_dir.name,
+        "source_tactile_route": route,
+        "removed_tactile_features": removed_tactile_features,
+        "removed_state_tactile_names": removed_state_names,
+        "state_key": "observation.state",
+        "state_dim": state_feature.get("shape", [None])[0],
+        "action_key": "action",
+        "action_dim": action_feature.get("shape", [None])[0],
+    }
+    (output_meta / NO_TACTILE_SCHEMA).write_text(
+        json.dumps(schema, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def strip_tactile(input_dir: Path, output_dir: Path) -> None:
     # ------------------------------------------------------------------
     # 读 meta/info.json
@@ -52,18 +145,25 @@ def strip_tactile(input_dir: Path, output_dir: Path) -> None:
     if state_feat is None:
         raise ValueError("info.json 里没有 observation.state 特征")
 
-    names: list[str] = state_feat.get("names", [])
+    names: list[str] = state_feat.get("names") or []
     keep_idx, drop_idx = _tactile_keep_indices(names)
+    tactile_feature_keys = [
+        key for key in list(info["features"]) if _is_tactile_feature_key(key)
+    ]
+    tactile_route = infer_tactile_route(tactile_feature_keys + [names[i] for i in drop_idx])
 
-    if not drop_idx:
-        logger.warning("observation.state 里没有 tactile 列，无需处理，退出。")
+    if not drop_idx and not tactile_feature_keys:
+        logger.warning("数据集里没有 tactile 特征，无需处理，退出。")
         return
 
     logger.info(
-        "将删除 %d 个 tactile 维度（索引 %s），保留 %d 维",
-        len(drop_idx), drop_idx, len(keep_idx),
+        "识别到 %s 触觉数据；将删除 %d 个独立 tactile 特征、%d 个 state 触觉维度",
+        tactile_route, len(tactile_feature_keys), len(drop_idx),
     )
-    logger.info("删除的列名: %s", [names[i] for i in drop_idx])
+    if drop_idx:
+        logger.info("state 内删除的列名: %s", [names[i] for i in drop_idx])
+    if tactile_feature_keys:
+        logger.info("删除的独立 tactile 特征: %s", tactile_feature_keys)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -81,23 +181,30 @@ def strip_tactile(input_dir: Path, output_dir: Path) -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         df = pd.read_parquet(pq_path)
-        if "observation.state" in df.columns:
+        if drop_idx and "observation.state" in df.columns:
             df["observation.state"] = df["observation.state"].apply(
                 lambda arr: np.array(arr, dtype=np.float32)[keep_idx]
             )
+        df = _drop_tactile_columns(df, tactile_feature_keys)
         df.to_parquet(out_path, index=False)
         logger.info("  写出 %s", rel)
 
     # ------------------------------------------------------------------
     # 更新 meta/info.json
     # ------------------------------------------------------------------
-    new_names = [names[i] for i in keep_idx]
-    state_feat["names"] = new_names
-    state_feat["shape"] = [len(keep_idx)]
+    if drop_idx:
+        new_names = [names[i] for i in keep_idx]
+        state_feat["names"] = new_names
+        state_feat["shape"] = [len(keep_idx)]
+    for key in tactile_feature_keys:
+        info["features"].pop(key, None)
 
     out_meta = output_dir / "meta"
     out_meta.mkdir(parents=True, exist_ok=True)
-    (out_meta / "info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False))
+    (out_meta / "info.json").write_text(
+        json.dumps(info, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     logger.info("meta/info.json 已更新：observation.state shape=%s", state_feat["shape"])
 
     # ------------------------------------------------------------------
@@ -106,27 +213,31 @@ def strip_tactile(input_dir: Path, output_dir: Path) -> None:
     stats_path = input_dir / "meta" / "stats.json"
     if stats_path.exists():
         stats = json.loads(stats_path.read_text())
-        if "observation.state" in stats:
+        if drop_idx and "observation.state" in stats:
             s = stats["observation.state"]
             for key in ("min", "max", "mean", "std", "q01", "q10", "q50", "q90", "q99"):
                 if key in s:
                     s[key] = _slice_stat(s[key], keep_idx)
-        (out_meta / "stats.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
+        for key in tactile_feature_keys:
+            stats.pop(key, None)
+        (out_meta / "stats.json").write_text(
+            json.dumps(stats, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         logger.info("meta/stats.json 已更新")
 
     # ------------------------------------------------------------------
     # 复制其他 meta 文件（episodes/, tasks.parquet 等）
     # ------------------------------------------------------------------
-    for item in (input_dir / "meta").iterdir():
-        if item.name in ("info.json", "stats.json"):
-            continue
-        dest = out_meta / item.name
-        if item.is_dir():
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(item, dest)
-        else:
-            shutil.copy2(item, dest)
+    _copy_meta_without_tactile(input_dir / "meta", out_meta, tactile_feature_keys)
+    _write_no_tactile_schema(
+        out_meta,
+        input_dir=input_dir,
+        route=tactile_route,
+        removed_tactile_features=tactile_feature_keys,
+        removed_state_names=[names[i] for i in drop_idx],
+        info=info,
+    )
     logger.info("meta/ 其余文件已复制")
 
     # ------------------------------------------------------------------

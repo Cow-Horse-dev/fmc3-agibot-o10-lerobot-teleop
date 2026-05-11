@@ -7,11 +7,6 @@ from pathlib import Path
 import re
 from typing import Any
 
-try:
-    from lerobot.datasets.feature_utils import hw_to_dataset_features
-except ImportError:
-    from lerobot.datasets.utils import hw_to_dataset_features
-
 from lerobot.datasets.utils import INFO_PATH
 from lerobot.utils.constants import HF_LEROBOT_HOME
 
@@ -120,9 +115,88 @@ def resolve_record_dataset_target(
     return resolve_dataset_target(repo_id=candidate_repo_id, root=root)
 
 
+def validate_o10_tactile_mode(mode: str | None) -> str:
+    normalized = str(mode or "none").strip().lower()
+    if normalized in {"none", "130d"}:
+        return normalized
+    raise ValueError(
+        f"Unsupported O10 tactile_mode={mode!r}. Supported values are 'none' and '130d'."
+    )
+
+
+def _is_dataset_feature_spec(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and "dtype" in value
+        and "shape" in value
+    )
+
+
+def _normalise_shape(shape: Any) -> tuple[int, ...]:
+    if isinstance(shape, tuple):
+        return shape
+    if isinstance(shape, list):
+        return tuple(int(item) for item in shape)
+    return (int(shape),)
+
+
+def _normalise_dataset_feature_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    feature = dict(spec)
+    feature["shape"] = _normalise_shape(feature["shape"])
+    if "names" in feature and feature["names"] is not None:
+        feature["names"] = list(feature["names"])
+    return feature
+
+
+def _hw_to_dataset_features(
+    hw_features: dict[str, Any], prefix: str, use_videos: bool
+) -> dict[str, dict[str, Any]]:
+    features: dict[str, dict[str, Any]] = {}
+    scalar_features = {
+        key: value for key, value in hw_features.items() if value is float
+    }
+    camera_features = {
+        key: value
+        for key, value in hw_features.items()
+        if isinstance(value, tuple)
+    }
+    dataset_feature_specs = {
+        key: value
+        for key, value in hw_features.items()
+        if _is_dataset_feature_spec(value)
+    }
+
+    if scalar_features and prefix == "action":
+        features["action"] = {
+            "dtype": "float32",
+            "shape": (len(scalar_features),),
+            "names": list(scalar_features),
+        }
+
+    if scalar_features and prefix == "observation":
+        features["observation.state"] = {
+            "dtype": "float32",
+            "shape": (len(scalar_features),),
+            "names": list(scalar_features),
+        }
+
+    for key, shape in camera_features.items():
+        features[f"{prefix}.images.{key}"] = {
+            "dtype": "video" if use_videos else "image",
+            "shape": shape,
+            "names": ["height", "width", "channels"],
+        }
+
+    for key, spec in dataset_feature_specs.items():
+        dataset_key = key if key.startswith(f"{prefix}.") else f"{prefix}.{key}"
+        features[dataset_key] = _normalise_dataset_feature_spec(spec)
+
+    return features
+
+
 def build_dataset_features(robot, use_videos: bool) -> dict[str, Any]:
-    action_features = hw_to_dataset_features(robot.action_features, "action", use_videos)
-    observation_features = hw_to_dataset_features(
+    action_features = _hw_to_dataset_features(robot.action_features, "action", use_videos)
+    observation_features = _hw_to_dataset_features(
         robot.observation_features, "observation", use_videos
     )
     return {**action_features, **observation_features}

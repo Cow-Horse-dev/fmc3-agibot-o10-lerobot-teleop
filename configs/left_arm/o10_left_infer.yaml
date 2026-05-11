@@ -4,6 +4,46 @@
 # - infer 只读 `infer:` 和 `robot:` 两个块
 # - `model_path` 必须指向本机真实存在的模型目录
 # - `robot.include_eef_pose` / `tactile_mode` 必须与训练数据集一致
+#
+# 参数速查：
+# 可选值速查（本文件字段）：
+# - infer.policy: act, diffusion, pi0, pi05, smolvla, groot；infer.device: cuda, cpu。
+# - infer.save_data/display_data/async_infer 和 robot.enable_hand/include_eef_pose/use_depth: true, false。
+# - infer.model_path/save_path/root/reset_poses_path/index_or_path: null 或路径字符串；server_address: host:port。
+# - infer.task_description/id/serial_number_or_name: 普通字符串。
+# - infer.num_episodes/episode_time_sec/fps 和 camera width/height/fps/device_id/canfd_id: 整数。
+# - robot.type: pico_follower_single_arm_agibot_o10；port: can0/can1 或实际 CAN 口。
+# - handedness: left, right；action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - tactile_mode: none, 130d；channel_mode: multiChannel。
+# - channel_id: null 或整数，null 自动 left->0、right->1。
+# - gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
+# - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
+# - fourcc: null 或 4 字符编码，常见 MJPG/YUYV/YUY2/I420/H264，是否可用取决于相机驱动。
+# - rotation: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270。
+# - infer.policy: 策略类型；act/diffusion/pi0/pi05/smolvla/groot。
+# - infer.task_description: VLA/策略任务文本，需和训练任务语义一致。
+# - infer.model_path: 本机模型目录或 checkpoint 目录。
+# - infer.save_data: 是否把推理过程另存为数据集。
+# - infer.display_data: 是否显示推理时相机/状态可视化。
+# - infer.async_infer: true 时通过策略服务器异步推理；false 时本进程直接跑模型。
+# - infer.num_episodes / episode_time_sec: 推理执行轮数和单轮最长时长。
+# - infer.fps: 推理控制频率。
+# - infer.device: cuda 或 cpu。
+# - infer.server_address: async_infer=true 时连接的策略服务器地址。
+# - infer.save_path: save_data=true 时的数据保存路径；null 使用默认路径。
+# - robot: 推理时连接的 follower 机器人配置。
+# - robot.type/id: 机器人类型和日志名；单臂 O10 固定使用 pico_follower_single_arm_agibot_o10。
+# - robot.port: 机械臂 CAN 接口；左臂通常是 can0。
+# - robot.handedness: 推理执行的物理手/臂方向。
+# - robot.enable_hand: 是否执行模型输出里的手部动作。
+# - robot.include_eef_pose: observation.state 是否包含末端位姿，必须与训练数据一致。
+# - robot.action_control_mode: 必须与训练数据集 action schema 一致。
+# - robot.tactile_mode: 触觉特征维度；none/130d 必须与训练一致。
+# - robot.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
+# - robot.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
+# - robot.reset_poses_path / reset_gesture: reset 使用的 JSON 和手势。
+# - robot.cameras: 推理 observation 图像来源；key 名、数量和训练数据必须一致。
+# - camera.type/index_or_path/serial_number_or_name/width/height/fps/fourcc/use_depth/color_mode/rotation: 相机类型、设备、尺寸、帧率、编码、深度、颜色顺序和旋转。
 
 infer:
   policy: diffusion

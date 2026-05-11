@@ -34,6 +34,7 @@ from lerobot_play.utils.agibot_o10 import (
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
 from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
+from lerobot_play.utils.runtime_helpers import validate_o10_tactile_mode
 
 from .config_pico_follower_single_arm_agibot_o10 import (
     PicoFollowerSingleArmAgibotO10Config,
@@ -73,16 +74,6 @@ def _solve_ik(arm_kdl, target_pose: np.ndarray, seed_joints: list[float]) -> lis
     return [float(value) for value in result[0][: len(AGIBOT_O10_ARM_FEATURE_NAMES)]]
 
 
-TACTILE_REGION_NAMES = (
-    "tactile.thumb_avg",
-    "tactile.index_avg",
-    "tactile.middle_avg",
-    "tactile.ring_avg",
-    "tactile.little_avg",
-    "tactile.palm_avg",
-    "tactile.dorsum_avg",
-)
-
 TACTILE_FINGERTIP_NAMES = tuple(
     f"tactile.{finger}_{index}"
     for finger in ("thumb", "index", "middle", "ring", "little")
@@ -94,6 +85,18 @@ TACTILE_FULL_NAMES = TACTILE_FINGERTIP_NAMES + tuple(
 ) + tuple(
     f"tactile.dorsum_{index}" for index in range(25)
 )
+
+
+def _tactile_raw_key(handedness: str) -> str:
+    return f"observation.tactile.{handedness}_raw"
+
+
+def _tactile_raw_feature_spec(names: tuple[str, ...]) -> dict[str, object]:
+    return {
+        "dtype": "float32",
+        "shape": (len(names),),
+        "names": list(names),
+    }
 
 
 class PicoFollowerSingleArmAgibotO10(Robot):
@@ -375,14 +378,14 @@ class PicoFollowerSingleArmAgibotO10(Robot):
 
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        tactile_mode = validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none"))
         tactile_ft: dict[str, type] = {}
-        if tactile_mode == "7d":
-            tactile_ft = {name: float for name in TACTILE_REGION_NAMES}
-        elif tactile_mode == "80d":
-            tactile_ft = {name: float for name in TACTILE_FINGERTIP_NAMES}
-        elif tactile_mode == "130d":
-            tactile_ft = {name: float for name in TACTILE_FULL_NAMES}
+        if tactile_mode == "130d":
+            tactile_ft = {
+                _tactile_raw_key(self.config.handedness): _tactile_raw_feature_spec(
+                    TACTILE_FULL_NAMES
+                )
+            }
         return {**self._motors_ft, **tactile_ft, **self._cameras_ft}
 
     def calibrate(self):
@@ -479,17 +482,9 @@ class PicoFollowerSingleArmAgibotO10(Robot):
             for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
                 obs_dict[feature_name] = pose[index]
 
-        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        tactile_mode = validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none"))
         if self.hand is not None and tactile_mode != "none":
-            if tactile_mode == "7d":
-                tactile_avg = self.hand.read_tactile_avg()
-                for index, feature_name in enumerate(TACTILE_REGION_NAMES):
-                    obs_dict[feature_name] = tactile_avg[index]
-            elif tactile_mode == "80d":
-                tactile_fingertip = self.hand.read_tactile_fingertip()
-                for index, feature_name in enumerate(TACTILE_FINGERTIP_NAMES):
-                    obs_dict[feature_name] = tactile_fingertip[index]
-            elif tactile_mode == "130d":
+            if tactile_mode == "130d":
                 tactile_full = self.hand.read_tactile_full()
                 for index, feature_name in enumerate(TACTILE_FULL_NAMES):
                     obs_dict[feature_name] = tactile_full[index]

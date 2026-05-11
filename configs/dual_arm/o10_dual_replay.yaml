@@ -3,6 +3,30 @@
 #
 # 这份文件用于把已经录好的 LeRobot 数据集动作回放到 O10 双臂上。
 # 使用前最重要的是改 `dataset.root` 到你要回放的那个具体数据集目录。
+#
+# 参数速查：
+# 可选值速查（本文件字段）：
+# - dataset.repo_id: null 或数据集名字符串；dataset.root/reset_poses_path: 路径字符串。
+# - replay.episode_index/fps/device_id/canfd_id: 整数。
+# - robot.type: pico_follower_dual_arm_agibot_o10；id: 任意日志名字符串。
+# - left/right.port: can0/can1 或实际 CAN 口；handedness: left, right。
+# - enable_hand: true, false；action_control_mode: joint, eef_delta；hand_action_mode: dexterous_10d, gripper_1d。
+# - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
+# - gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
+# - dataset.repo_id: 数据集名字；当 root 已经指向具体目录时可保持 null。
+# - dataset.root: 要回放的 LeRobot 数据集目录，必须指向实际存在的数据集。
+# - replay.episode_index: 回放第几个 episode，从 0 开始。
+# - replay.fps: 回放频率，通常与录制 fps 一致。
+# - robot: 回放时连接的 follower 机器人配置。
+# - robot.type/id: 机器人类型和日志名；双臂 O10 固定使用 pico_follower_dual_arm_agibot_o10。
+# - robot.enable_hand: 是否回放手部动作。
+# - robot.action_control_mode / hand_action_mode: 必须与数据集 action schema 一致。
+# - robot.left/right.port: 左右机械臂 CAN 接口，通常 left=can0、right=can1。
+# - robot.left/right.handedness: 该侧物理手/臂的左右属性。
+# - robot.left/right.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
+# - robot.left/right.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
+# - robot.left/right.gripper_gesture: gripper.pos 回放成 open/closed 手势时使用的手势，必须与录制一致。
+# - robot.left/right.reset_poses_path / reset_gesture: 回放前后 reset 使用的 JSON 和手势。
 
 dataset:
   # 数据集名字。

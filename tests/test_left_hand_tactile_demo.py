@@ -8,8 +8,7 @@
 
 示例：
     python tests/test_left_hand_tactile_demo.py
-    python tests/test_left_hand_tactile_demo.py --mode 80d
-    python tests/test_left_hand_tactile_demo.py --mode 130d --interval 0.2
+    python tests/test_left_hand_tactile_demo.py --interval 0.2
 """
 
 from __future__ import annotations
@@ -37,25 +36,8 @@ if str(LEROBOT_PLAY_ROOT) not in sys.path:
 from lerobot_play.utils.agibot_o10 import AgibotO10Hand
 
 
-TACTILE_REGION_NAMES = (
-    "thumb",
-    "index",
-    "middle",
-    "ring",
-    "little",
-    "palm",
-    "dorsum",
-)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="左手触觉实时打印 demo")
-    parser.add_argument(
-        "--mode",
-        choices=("7d", "80d", "130d"),
-        default="7d",
-        help="7d 打印区域均值，80d 打印五指点阵，130d 打印全手点阵",
-    )
     parser.add_argument(
         "--interval",
         type=float,
@@ -88,15 +70,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def format_7d(values: list[float]) -> str:
-    short_names = ("T", "I", "M", "R", "L", "P", "D")
-    pairs = [
-        f"{short_name}:{value:5.1f}"
-        for short_name, value in zip(short_names, values, strict=True)
-    ]
-    return " ".join(pairs)
-
-
 def format_dense(values: list[float], preview_count: int = 12) -> str:
     head = " ".join(f"{value:5.1f}" for value in values[:preview_count])
     peak = max(values) if values else 0.0
@@ -107,11 +80,7 @@ def format_dense(values: list[float], preview_count: int = 12) -> str:
     )
 
 
-def read_tactile(hand: AgibotO10Hand, mode: str) -> list[float]:
-    if mode == "7d":
-        return hand.read_tactile_avg()
-    if mode == "80d":
-        return hand.read_tactile_fingertip()
+def read_tactile(hand: AgibotO10Hand) -> list[float]:
     return hand.read_tactile_full()
 
 
@@ -134,13 +103,10 @@ def main() -> int:
 
     try:
         while True:
-            values = read_tactile(hand, args.mode)
+            values = read_tactile(hand)
             timestamp = time.strftime("%H:%M:%S")
-            if args.mode == "7d":
-                line = format_7d(values)
-            else:
-                line = format_dense(values)
-            output = f"[{timestamp}] {args.mode} {line}"
+            line = format_dense(values)
+            output = f"[{timestamp}] 130d {line}"
             if args.no_refresh:
                 print(output, flush=True)
             else:

@@ -17,14 +17,10 @@ HAND_SRC_FILE = (
 def test_dual_arm_robot_source_uses_cached_tactile_reads():
     source = DUAL_ARM_SRC_FILE.read_text(encoding="utf-8")
 
-    assert "read_tactile_avg_cached()" in source
-    assert "read_tactile_fingertip_cached()" in source
     assert "read_tactile_full_cached()" in source
 
 
 def test_agibot_hand_source_defines_cached_tactile_helpers():
     source = HAND_SRC_FILE.read_text(encoding="utf-8")
 
-    assert "def read_tactile_avg_cached(" in source
-    assert "def read_tactile_fingertip_cached(" in source
     assert "def read_tactile_full_cached(" in source

@@ -19,11 +19,10 @@ def _load_tactile_constants():
     """Extract and exec only the tactile constant block from source."""
     src = SRC_FILE.read_text()
     # The constants depend on nothing except each other.
-    # Extract lines 55-97 (TACTILE_REGION_NAMES through DUAL_ARM_TACTILE_FULL_FEATURE_NAMES).
     block = []
     capture = False
     for line in src.splitlines():
-        if "TACTILE_REGION_NAMES" in line and not capture:
+        if "TACTILE_FINGERTIP_NAMES" in line and not capture:
             capture = True
         if capture:
             block.append(line)
@@ -35,44 +34,29 @@ def _load_tactile_constants():
 
 
 _NS = _load_tactile_constants()
-TACTILE_REGION_NAMES = _NS["TACTILE_REGION_NAMES"]
 TACTILE_FINGERTIP_NAMES = _NS["TACTILE_FINGERTIP_NAMES"]
 TACTILE_FULL_NAMES = _NS["TACTILE_FULL_NAMES"]
-DUAL_ARM_TACTILE_AVG_FEATURE_NAMES = _NS["DUAL_ARM_TACTILE_AVG_FEATURE_NAMES"]
-DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES = _NS["DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES"]
 DUAL_ARM_TACTILE_FULL_FEATURE_NAMES = _NS["DUAL_ARM_TACTILE_FULL_FEATURE_NAMES"]
 
 
-def test_tactile_region_names_count():
-    assert len(TACTILE_REGION_NAMES) == 7
-
-
-def test_tactile_fingertip_names_count():
+def test_tactile_full_names_are_built_from_fingertips_palm_and_dorsum():
     assert len(TACTILE_FINGERTIP_NAMES) == 80
-
-
-def test_tactile_full_names_count():
     assert len(TACTILE_FULL_NAMES) == 130
-
-
-def test_dual_arm_tactile_avg_count():
-    assert len(DUAL_ARM_TACTILE_AVG_FEATURE_NAMES) == 14
-
-
-def test_dual_arm_tactile_fingertip_count():
-    assert len(DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES) == 160
+    assert TACTILE_FULL_NAMES[:16] == tuple(f"tactile.thumb_{i}" for i in range(16))
+    assert TACTILE_FULL_NAMES[80:105] == tuple(f"tactile.palm_{i}" for i in range(25))
+    assert TACTILE_FULL_NAMES[105:130] == tuple(f"tactile.dorsum_{i}" for i in range(25))
 
 
 def test_dual_arm_tactile_full_count():
     assert len(DUAL_ARM_TACTILE_FULL_FEATURE_NAMES) == 260
 
 
-def test_dual_arm_tactile_avg_has_both_sides():
-    names = DUAL_ARM_TACTILE_AVG_FEATURE_NAMES
+def test_dual_arm_tactile_full_has_both_sides():
+    names = DUAL_ARM_TACTILE_FULL_FEATURE_NAMES
     left_names = [n for n in names if n.startswith("left.")]
     right_names = [n for n in names if n.startswith("right.")]
-    assert len(left_names) == 7
-    assert len(right_names) == 7
+    assert len(left_names) == 130
+    assert len(right_names) == 130
 
 
 def test_no_duplicate_feature_names():

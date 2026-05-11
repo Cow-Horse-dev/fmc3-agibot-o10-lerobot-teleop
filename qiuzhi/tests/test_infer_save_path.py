@@ -320,7 +320,7 @@ def test_dual_arm_o10_infer_passes_schema_fields_to_robot_config():
                 "enable_hand": True,
                 "allow_camera_read_failures": True,
                 "include_eef_pose": False,
-                "tactile_mode": "7d",
+                "tactile_mode": "130d",
                 "left": {"port": "can0", "handedness": "left"},
                 "right": {"port": "can1", "handedness": "right"},
                 "cameras": {},
@@ -333,7 +333,7 @@ def test_dual_arm_o10_infer_passes_schema_fields_to_robot_config():
     assert robot_config.enable_hand is True
     assert robot_config.allow_camera_read_failures is True
     assert robot_config.include_eef_pose is False
-    assert robot_config.tactile_mode == "7d"
+    assert robot_config.tactile_mode == "130d"
     assert robot_config.left == {"port": "can0", "handedness": "left"}
     assert robot_config.right == {"port": "can1", "handedness": "right"}
 
@@ -366,7 +366,7 @@ def test_pi0_dual_arm_o10_infer_forces_tactile_off_for_robot_schema():
             },
             "robot": {
                 "type": "pico_follower_dual_arm_agibot_o10",
-                "tactile_mode": "7d",
+                "tactile_mode": "130d",
                 "left": {"port": "can0", "handedness": "left"},
                 "right": {"port": "can1", "handedness": "right"},
                 "cameras": {},
@@ -389,7 +389,7 @@ def test_diffusion_dual_arm_o10_infer_keeps_configured_tactile_schema():
             },
             "robot": {
                 "type": "pico_follower_dual_arm_agibot_o10",
-                "tactile_mode": "7d",
+                "tactile_mode": "130d",
                 "left": {"port": "can0", "handedness": "left"},
                 "right": {"port": "can1", "handedness": "right"},
                 "cameras": {},
@@ -399,7 +399,7 @@ def test_diffusion_dual_arm_o10_infer_keeps_configured_tactile_schema():
 
     _apply_policy_robot_schema_defaults(args)
 
-    assert args.robot_tactile_mode == "7d"
+    assert args.robot_tactile_mode == "130d"
 
 
 def test_validate_policy_robot_feature_compatibility_rejects_state_action_mismatch(tmp_path):

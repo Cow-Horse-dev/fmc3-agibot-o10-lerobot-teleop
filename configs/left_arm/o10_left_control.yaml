@@ -3,6 +3,49 @@
 #
 # 这份文件只负责"实时控制"，不负责录制数据。
 # 虽然文件名里还叫 `left`，但现在可以直接靠 YAML 里的 handedness 切左右。
+#
+# 参数速查：
+# 可选值速查（本文件字段）：
+# - teleop.type: pico_leader_single_arm_agibot_o10；robot.type: pico_follower_single_arm_agibot_o10。
+# - id: 任意日志名字符串；port: can0/can1 或实际 CAN 口。
+# - handedness/controller_side: left, right；wrist_pose_source: auto, left, right。
+# - vr_device: pico, pico_wrist；vr_pose_port/vr_ctrl_port/fps/width/height/device_id/canfd_id 为整数。
+# - enable_hand/allow_camera_read_failures/display_data/use_depth: true, false。
+# - hand_mode: glove, trigger_gesture；trigger_gesture/reset_gesture: pinch, tripod, cylindrical。
+# - action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
+# - reset_poses_path/index_or_path/serial_number_or_name: 路径或设备名字符串。
+# - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
+# - fourcc: null 或 4 字符编码，常见 MJPG/YUYV/YUY2/I420/H264，是否可用取决于相机驱动。
+# - rotation: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270。
+# - teleop: Pico/VR 遥操作端配置，决定手柄、手腕位姿和手势如何生成 action。
+# - teleop.type/id: 遥操作器类型和日志名；单臂 O10 固定使用 pico_leader_single_arm_agibot_o10。
+# - teleop.handedness: 当前要控制的物理手/臂方向。
+# - teleop.controller_side: 哪只 Pico 手柄负责开始、复位和按住使能；左臂这里使用右手柄。
+# - teleop.vr_pose_port / vr_ctrl_port: Pico 位姿流和按键/扳机流的 UDP 端口。
+# - teleop.vr_device: VR 数据来源；pico 表示使用 Pico 手柄/腕部数据。
+# - teleop.wrist_pose_source: 机械臂读取哪个 wrist pose；left/right 强制指定，auto 自动选择。
+# - teleop.enable_hand: 是否让遥操作端生成手部控制。
+# - teleop.hand_mode: glove 使用手套 10D 数据；trigger_gesture 使用 Pico grip 映射预设手势。
+# - teleop.trigger_gesture: trigger_gesture 模式下 grip 控制的预设手势。
+# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量。
+# - teleop.reset_poses_path / reset_gesture: reset 使用的 JSON 和手势。
+# - robot: follower 机器人端配置，决定实际 CAN、手、相机和 action schema。
+# - robot.type/id: 机器人类型和日志名；单臂 O10 固定使用 pico_follower_single_arm_agibot_o10。
+# - robot.allow_camera_read_failures: true 时相机偶发读帧失败不中断控制。
+# - robot.enable_hand: 是否连接并控制 O10 手；arm-only 时这里也要改 false。
+# - robot.port: 机械臂 CAN 接口；左臂通常是 can0。
+# - robot.handedness: follower 侧物理手/臂方向，需和实际 CAN/hand 通道一致。
+# - robot.action_control_mode: 必须和 teleop 生成的 action schema 一致。
+# - robot.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
+# - robot.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
+# - robot.reset_poses_path / reset_gesture: 机器人 reset 使用的 JSON 和手势。
+# - robot.cameras: control 可视化读取的相机配置；key 名会进入 observation/camera 名称。
+# - camera.type: opencv 读普通 USB 相机；intelrealsense/realsense 读 RealSense。
+# - camera.index_or_path / serial_number_or_name: OpenCV 设备路径或 RealSense 序列号。
+# - camera.width/height/fps/fourcc/use_depth/color_mode/rotation: 图像尺寸、帧率、编码、深度、颜色顺序和旋转。
+# - fps: 控制循环频率。
+# - display_data: 是否打开图像/状态可视化。
 
 teleop:
   # 遥操作器类型。

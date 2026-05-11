@@ -720,10 +720,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ik-only", action="store_true", help="Only solve IK from reset/seed joints; no CAN and no movement")
     parser.add_argument(
         "--ik-method",
-        choices=("analytical", "numerical", "both"),
+        choices=("analytical", "numerical", "local", "both"),
         default="analytical",
-        help="IK solver to show in --ik-only mode",
+        help="IK solver to use; both is only for --ik-only comparison",
     )
+    parser.add_argument("--local-ik-iterations", type=int, default=200, help="Max iterations for local numerical IK")
+    parser.add_argument("--local-ik-damping", type=float, default=0.05, help="Damping term for local numerical IK")
+    parser.add_argument("--local-ik-max-step", type=float, default=0.05, help="Max joint step per local IK iteration")
+    parser.add_argument("--local-ik-rotation-weight", type=float, default=0.25, help="Rotation error weight for local IK")
+    parser.add_argument("--max-ik-position-error", type=float, default=0.01, help="Max accepted local IK position error in meters")
+    parser.add_argument("--max-ik-rotation-error", type=float, default=0.10, help="Max accepted local IK rotation error in radians")
     parser.add_argument("--show-all-ik", action="store_true", help="Print all IK candidates in --ik-only mode")
     parser.add_argument("--skip-start-reset", action="store_true", help="Skip the default reset before moving")
     parser.add_argument("--reset-settle", type=float, default=0.5, help="Seconds to wait after start reset")

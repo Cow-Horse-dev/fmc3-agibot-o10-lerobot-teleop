@@ -81,11 +81,10 @@ from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.datasets.image_writer import safe_stop_image_writer
 from .lerobot_dataset import LeRobotDataset
-from lerobot.datasets.pipeline_features import (
-    aggregate_pipeline_dataset_features,
-    create_initial_features,
-)
-from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
+try:
+    from lerobot.datasets.feature_utils import build_dataset_frame
+except ImportError:
+    from lerobot.datasets.utils import build_dataset_frame
 from lerobot.datasets.video_utils import VideoEncodingManager
 from lerobot.policies.factory import make_policy, make_pre_post_processors
 from lerobot.policies.pretrained import PreTrainedPolicy
@@ -110,6 +109,7 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
+from .runtime_helpers import build_dataset_features
 from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import (
@@ -593,20 +593,7 @@ def record_loop(
     if dataset is not None:
         loop_dataset_features = dataset.features
     else:
-        loop_dataset_features = combine_feature_dicts(
-            aggregate_pipeline_dataset_features(
-                pipeline=teleop_action_processor,
-                initial_features=create_initial_features(action=robot.action_features),
-                use_videos=True,
-            ),
-            aggregate_pipeline_dataset_features(
-                pipeline=robot_observation_processor,
-                initial_features=create_initial_features(
-                    observation=robot.observation_features
-                ),
-                use_videos=True,
-            ),
-        )
+        loop_dataset_features = build_dataset_features(robot, use_videos=True)
 
     teleop_arm = teleop_keyboard = None
     if isinstance(teleop, list):
@@ -791,22 +778,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         robot_observation_processor,
     ) = make_default_processors()
 
-    dataset_features = combine_feature_dicts(
-        aggregate_pipeline_dataset_features(
-            pipeline=teleop_action_processor,
-            initial_features=create_initial_features(
-                action=robot.action_features
-            ),  # TODO(steven, pepijn): in future this should be come from teleop or policy
-            use_videos=cfg.dataset.video,
-        ),
-        aggregate_pipeline_dataset_features(
-            pipeline=robot_observation_processor,
-            initial_features=create_initial_features(
-                observation=robot.observation_features
-            ),
-            use_videos=cfg.dataset.video,
-        ),
-    )
+    dataset_features = build_dataset_features(robot, use_videos=cfg.dataset.video)
 
     if cfg.resume:
         dataset = LeRobotDataset(

@@ -164,9 +164,9 @@ cd ~/workspace/arm-hand-teleop
 ### 双臂
 
 - `configs/dual_arm/o10_dual_control.yaml`：实时控制。`arm_trigger_mode: left`，左右 wrist pose 分别来自 `left/right`。
-- `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "7d"`。
+- `configs/dual_arm/o10_dual_record.yaml`：数据录制。默认 `include_eef_pose: false`，`tactile_mode: "none"`。
 - `configs/dual_arm/o10_dual_replay.yaml`：轨迹回放。
-- `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose: false`，`tactile_mode: "7d"`，相机 `top + left_wrist + right_wrist`。
+- `configs/dual_arm/o10_dual_infer.yaml`：策略推理。必须与双臂录制 schema 对齐：`include_eef_pose`、`tactile_mode`、`hand_action_mode` 和相机 key 都要与训练数据集一致。
 
 ### 复位姿态
 
@@ -221,12 +221,14 @@ cd ~/workspace/arm-hand-teleop
   --dataset.repo_id my_dataset
 ```
 
-`action` 固定只含关节指令：
+`action` 固定只含关节/夹爪指令：
 
-| 模式 | action 维度 | 组成 |
-|---|---:|---|
-| 单臂 | 16D | 臂 6 + 手 10 |
-| 双臂 | 32D | `left.*` 16D + `right.*` 16D |
+| 模式 | `hand_action_mode` | action 维度 | 组成 |
+|---|---|---:|---|
+| 单臂 | `gripper_1d` | 7D | 臂 6 + `gripper.pos` |
+| 单臂 | `dexterous_10d` | 16D | 臂 6 + 手 10 |
+| 双臂 | `gripper_1d` | 14D | `left.*` 7D + `right.*` 7D |
+| 双臂 | `dexterous_10d` | 32D | `left.*` 16D + `right.*` 16D |
 
 ### O10 双臂 gripper_1d 映射
 
@@ -236,16 +238,24 @@ cd ~/workspace/arm-hand-teleop
 
 当前双臂配置在 `configs/dual_arm/o10_dual_record.yaml` 和 `configs/dual_arm/o10_dual_replay.yaml`：左手使用 `tripod`，右手使用 `pinch`。20260427 数据集 replay 基本能对上，说明录制/回放映射链路没问题。
 
-`observation.state` 由 `robot.include_eef_pose` 和 `robot.tactile_mode` 决定：
+`robot.tactile_mode` 只支持 `none` 和 `130d`：
 
-| include_eef_pose | tactile_mode | 单臂 state | 双臂 state |
-|---|---|---:|---:|
-| `false` | `none` | 16D（当前单臂 record 默认） | 32D |
-| `true` | `none` | 23D | 46D |
-| `false` | `7d` | 23D | 46D（当前双臂 record 默认） |
-| `true` | `7d` | 30D | 60D |
-| `false` | `80d` | 96D | 192D |
-| `false` | `130d` | 146D | 292D |
+- `none`：与旧的无触觉数据集一致，只录 `observation.state`、`action` 和相机。
+- `130d`：触觉不再塞进 `observation.state`，而是作为 raw 传感器列独立保存。
+
+推荐三条 raw 采集线路分开存：
+
+| 线路 | `observation.state` | 触觉 raw key |
+|---|---:|---|
+| 左手单臂 `gripper_1d` | 7D | `observation.tactile.left_raw`，130D |
+| 右手单臂 `gripper_1d` | 7D | `observation.tactile.right_raw`，130D |
+| 双手 `gripper_1d` | 14D | `observation.tactile.left_raw` + `observation.tactile.right_raw`，各 130D |
+
+`dexterous_10d` 线路仍可用：单臂 `observation.state` 为 16D，双臂为 32D；如果 `include_eef_pose: true`，非 `gripper_1d` 模式会额外加入 7D 末端位姿。触觉 raw key 仍保持独立。
+
+需要训练 π0/π0.5 等不支持触觉输入的模型时，用 `scripts/tools/strip_tactile.py` 从 raw 数据集生成 `_no_tactile` 版本。
+
+详细字段顺序见 `docs/o10_tactile_raw_schema.md`。
 
 ## 推理
 

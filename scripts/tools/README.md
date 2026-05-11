@@ -53,10 +53,10 @@ python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 
 ## 数据处理
 
 ### `strip_tactile.py`
-从 LeRobot v3.0 数据集的 `observation.state` 中删除触觉列，生成新数据集。
+从 LeRobot v3.0 数据集中删除 O10 触觉信息，生成新数据集。
 `videos/` 和 `images/` 用符号链接代替复制，不占额外磁盘空间。
 
-适用场景：录制时带触觉（供 diffusion 训练），处理后去掉触觉（供 π0 等 ALOHA 系预训练模型微调）。
+适用场景：录制时带 `tactile_mode: 130d` 触觉 raw 列，处理后去掉触觉，供 π0/π0.5 等不支持触觉输入的模型训练。
 
 ```bash
 # 默认在同级目录生成 <数据集名>_no_tactile
@@ -68,9 +68,12 @@ python scripts/tools/strip_tactile.py \
     --output ~/workspace/dataset/.../my_dataset_aloha
 ```
 
-处理后 `observation.state` 维度变化示例：
-- `dexterous_10d` + `tactile_mode: 7d`：46D → 32D
-- `gripper_1d` + `tactile_mode: 7d`：28D → 14D（与 ALOHA 对齐）
+脚本会自动识别左手、右手或双手触觉列：
+
+- 新 raw schema：删除 `observation.tactile.left_raw` / `observation.tactile.right_raw`，`observation.state` 维度不变。
+- 旧 raw schema：如果触觉曾被拼进 `observation.state`，会按 feature name 中的 `tactile` 维度切掉。
+
+输出数据集会额外写入 `meta/o10_no_tactile_schema.json`，记录来源线路和被删除的触觉字段。
 
 ### `convert_lerobot_to_openpi.py`
 LeRobot v3.0 格式 → openpi 训练格式的转换骨架（部分 TODO 待补全）。

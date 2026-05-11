@@ -14,5 +14,9 @@ def test_single_arm_observation_source_supports_optional_eef_pose_and_tactile():
 
     assert "agibot_o10_joint_action_feature_types()" in source
     assert "if self.config.include_eef_pose:" in source
-    assert 'tactile_mode = getattr(self.config, "tactile_mode", "none")' in source
+    assert "validate_o10_tactile_mode" in source
+    assert 'tactile_mode == "130d"' in source
+    assert 'tactile_mode == "7d"' not in source
+    assert 'tactile_mode == "80d"' not in source
+    assert "observation.tactile." in source
     assert 'if self.hand is not None and tactile_mode != "none":' in source

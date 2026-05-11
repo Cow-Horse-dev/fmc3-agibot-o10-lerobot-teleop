@@ -24,6 +24,7 @@ from lerobot_play.utils.agibot_o10 import (
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
 from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
+from lerobot_play.utils.runtime_helpers import validate_o10_tactile_mode
 
 from .config_pico_follower_dual_arm_agibot_o10 import (
     PicoFollowerDualArmAgibotO10Config,
@@ -135,49 +136,41 @@ DUAL_ARM_STATE_FEATURE_NAMES = (
     )
 )
 
-# 7D 触觉均值 feature names（每区域 1 个均值）
-TACTILE_REGION_NAMES = (
-    "tactile.thumb_avg",
-    "tactile.index_avg",
-    "tactile.middle_avg",
-    "tactile.ring_avg",
-    "tactile.little_avg",
-    "tactile.palm_avg",
-    "tactile.dorsum_avg",
-)
-
-# 80D 指尖触觉 feature names（5 指 × 16 点）
+# 130D 全手触觉 feature names：5 指 × 16 + 手掌 25 + 手背 25。
 TACTILE_FINGERTIP_NAMES = tuple(
     f"tactile.{finger}_{i}"
     for finger in ("thumb", "index", "middle", "ring", "little")
     for i in range(16)
 )
 
-# 130D 全手触觉 feature names（5 指 × 16 + 手掌 25 + 手背 25）
 TACTILE_FULL_NAMES = TACTILE_FINGERTIP_NAMES + tuple(
     f"tactile.palm_{i}" for i in range(25)
 ) + tuple(
     f"tactile.dorsum_{i}" for i in range(25)
 )
 
-# 双臂触觉 feature names（带 left./right. 前缀）
-DUAL_ARM_TACTILE_AVG_FEATURE_NAMES = tuple(
-    f"{side}.{name}"
-    for side in ("left", "right")
-    for name in TACTILE_REGION_NAMES
-)  # 14D
-
-DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES = tuple(
-    f"{side}.{name}"
-    for side in ("left", "right")
-    for name in TACTILE_FINGERTIP_NAMES
-)  # 160D
-
+# 双臂 raw 130D 触觉 feature names（带 left./right. 前缀）
 DUAL_ARM_TACTILE_FULL_FEATURE_NAMES = tuple(
     f"{side}.{name}"
     for side in ("left", "right")
     for name in TACTILE_FULL_NAMES
 )  # 260D
+
+LEFT_TACTILE_RAW_KEY = "observation.tactile.left_raw"
+RIGHT_TACTILE_RAW_KEY = "observation.tactile.right_raw"
+
+
+def _tactile_raw_key(side: str) -> str:
+    return LEFT_TACTILE_RAW_KEY if side == "left" else RIGHT_TACTILE_RAW_KEY
+
+
+def _tactile_raw_feature_spec(side: str) -> dict[str, object]:
+    return {
+        "dtype": "float32",
+        "shape": (len(TACTILE_FULL_NAMES),),
+        "names": [f"{side}.{name}" for name in TACTILE_FULL_NAMES],
+    }
+
 
 def _make_arm() -> ah.Play:
     return ah.Play.create(
@@ -589,14 +582,13 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 else DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES
             )
         state_ft = {name: float for name in state_feature_names}
-        tactile_mode = getattr(self.config, "tactile_mode", "none")
-        tactile_ft: dict[str, type] = {}
-        if tactile_mode == "7d":
-            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_AVG_FEATURE_NAMES}
-        elif tactile_mode == "80d":
-            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES}
-        elif tactile_mode == "130d":
-            tactile_ft = {name: float for name in DUAL_ARM_TACTILE_FULL_FEATURE_NAMES}
+        tactile_mode = validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none"))
+        tactile_ft: dict[str, type | dict[str, object]] = {}
+        if tactile_mode == "130d":
+            tactile_ft = {
+                _tactile_raw_key("left"): _tactile_raw_feature_spec("left"),
+                _tactile_raw_key("right"): _tactile_raw_feature_spec("right"),
+            }
         return {**state_ft, **tactile_ft, **self._cameras_ft}
 
     def calibrate(self):
@@ -703,19 +695,11 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 for idx, feat in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
                     obs_dict[f"{side}.{feat}"] = pose[idx]
 
-        # 触觉数据（按 tactile_mode 选择粒度）
-        tactile_mode = getattr(self.config, "tactile_mode", "none")
+        # 触觉数据（raw 130D）
+        tactile_mode = validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none"))
         if self.config.enable_hand and tactile_mode != "none":
             for side, hand_obj in (("left", self.left_hand), ("right", self.right_hand)):
-                if tactile_mode == "7d":
-                    tactile_avg = hand_obj.read_tactile_avg_cached()
-                    for idx, name in enumerate(TACTILE_REGION_NAMES):
-                        obs_dict[f"{side}.{name}"] = tactile_avg[idx]
-                elif tactile_mode == "80d":
-                    tactile_fingertip = hand_obj.read_tactile_fingertip_cached()
-                    for idx, name in enumerate(TACTILE_FINGERTIP_NAMES):
-                        obs_dict[f"{side}.{name}"] = tactile_fingertip[idx]
-                elif tactile_mode == "130d":
+                if tactile_mode == "130d":
                     tactile_full = hand_obj.read_tactile_full_cached()
                     for idx, name in enumerate(TACTILE_FULL_NAMES):
                         obs_dict[f"{side}.{name}"] = tactile_full[idx]

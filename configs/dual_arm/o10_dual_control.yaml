@@ -1,5 +1,51 @@
 # O10 双臂控制配置
 # 供脚本 `./scripts/o10/dual_arm/control_o10_dual.sh` 使用。
+#
+# 参数速查：
+# 可选值速查（本文件字段）：
+# - teleop.type: pico_leader_dual_arm_agibot_o10；robot.type: pico_follower_dual_arm_agibot_o10。
+# - id: 任意日志名字符串；left/right.port: can0/can1 或实际 CAN 口。
+# - handedness: left, right；wrist_pose_source: auto, left, right；vr_device: pico, pico_wrist。
+# - enable_hand/allow_camera_read_failures/display_data/display_terminal/use_depth: true, false。
+# - arm_trigger_mode: split, left, right, both；hand_mode: glove, trigger_gesture。
+# - trigger_gesture/gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
+# - action_control_mode: joint, eef_delta；hand_action_mode: dexterous_10d, gripper_1d。
+# - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
+# - reset_poses_path/index_or_path/serial_number_or_name: 路径或设备名字符串。
+# - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
+# - fourcc: null 或 4 字符编码，常见 MJPG/YUYV/YUY2/I420/H264，是否可用取决于相机驱动。
+# - rotation: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270。
+# - vr_pose_port/vr_ctrl_port/fps/width/height/device_id/canfd_id: 整数。
+# - teleop: Pico/VR 遥操作端配置，决定手柄、手腕位姿和手势如何生成 action。
+# - teleop.type/id: 遥操作器类型和日志名；双臂 O10 固定使用 pico_leader_dual_arm_agibot_o10。
+# - teleop.vr_pose_port / vr_ctrl_port: Pico 位姿流和按键/扳机流的 UDP 端口。
+# - teleop.vr_device: VR 数据来源；pico 表示使用 Pico 手柄/腕部数据。
+# - teleop.enable_hand: 是否让遥操作端生成手部控制。
+# - teleop.arm_trigger_mode: 控臂门控模式，决定 LTr/RTr 如何使能左右臂跟随。
+# - teleop.hand_mode: glove 使用手套 10D 数据；trigger_gesture 使用 Pico grip 映射预设手势。
+# - teleop.trigger_gesture: 默认手势；每侧 left/right 可单独覆盖。
+# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量。
+# - teleop.hand_action_mode: dexterous_10d 输出 10 个手关节；gripper_1d 输出 1 个 gripper.pos。
+# - teleop.left/right.handedness: 该侧物理手/臂的左右属性。
+# - teleop.left/right.wrist_pose_source: 该侧机械臂读取哪个 Pico wrist pose。
+# - teleop.left/right.gripper_gesture: gripper_1d 的 0..1 值映射到哪种 open/closed 手势。
+# - teleop.left/right.reset_poses_path / reset_gesture: 复位姿态 JSON 和复位手势。
+# - robot: follower 机器人端配置，决定实际 CAN、手、相机和 action schema。
+# - robot.type/id: 机器人类型和日志名；双臂 O10 固定使用 pico_follower_dual_arm_agibot_o10。
+# - robot.enable_hand: 是否连接并控制 O10 手。
+# - robot.action_control_mode / hand_action_mode: 必须和 teleop 生成的 action schema 保持一致。
+# - robot.allow_camera_read_failures: true 时相机偶发读帧失败不中断控制。
+# - robot.left/right.port: 左右机械臂 CAN 接口，通常 left=can0、right=can1。
+# - robot.left/right.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
+# - robot.left/right.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
+# - robot.left/right.gripper_gesture / reset_gesture: 回放 gripper.pos 和 reset 时用的手势。
+# - robot.cameras: control 可视化读取的相机配置；key 名会进入 observation/camera 名称。
+# - camera.type: opencv 读普通 USB 相机；intelrealsense/realsense 读 RealSense。
+# - camera.index_or_path / serial_number_or_name: OpenCV 设备路径或 RealSense 序列号。
+# - camera.width/height/fps/fourcc/use_depth/color_mode/rotation: 图像尺寸、帧率、编码、深度、颜色顺序和旋转。
+# - fps: 控制循环频率。
+# - display_data: 是否打开图像/状态可视化。
+# - display_terminal: 是否在终端持续打印控制状态。
 
 teleop:
   type: pico_leader_dual_arm_agibot_o10  # 可选: pico_leader_dual_arm_agibot_o10

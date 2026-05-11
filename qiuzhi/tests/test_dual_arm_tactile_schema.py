@@ -12,12 +12,12 @@ SRC_FILE = (
 def test_observation_features_source_references_dual_arm_tactile_feature_sets():
     source = SRC_FILE.read_text(encoding="utf-8")
 
-    assert 'if tactile_mode == "7d":' in source
-    assert "DUAL_ARM_TACTILE_AVG_FEATURE_NAMES" in source
-    assert 'elif tactile_mode == "80d":' in source
-    assert "DUAL_ARM_TACTILE_FINGERTIP_FEATURE_NAMES" in source
-    assert 'elif tactile_mode == "130d":' in source
+    assert 'tactile_mode == "7d"' not in source
+    assert 'tactile_mode == "80d"' not in source
+    assert 'tactile_mode == "130d"' in source
     assert "DUAL_ARM_TACTILE_FULL_FEATURE_NAMES" in source
+    assert '"observation.tactile.left_raw"' in source
+    assert '"observation.tactile.right_raw"' in source
     assert "return {**state_ft, **tactile_ft, **self._cameras_ft}" in source
 
 
