@@ -255,6 +255,15 @@ cd ~/workspace/arm-hand-teleop
 
 需要训练 π0/π0.5 等不支持触觉输入的模型时，用 `scripts/tools/strip_tactile.py` 从 raw 数据集生成 `_no_tactile` 版本。
 
+需要训练支持二维触觉输入的模型，或模仿 `/home/phl/workspace/lerobot_tactile` 的 tactile 输入格式时，用 `scripts/tools/convert_o10_tactile_heatmap.py` 从 raw 130D 数据集生成 `_tactile_heatmap` 版本：
+
+```bash
+python scripts/tools/convert_o10_tactile_heatmap.py \
+  --input ~/workspace/dataset/Robot/agi_arm_bot/my_raw_dataset
+```
+
+输出会增加 `observation.tactile.left` / `observation.tactile.right`，shape 为 `float32[12, 32]`。默认保留 `*_raw`；如果只想保留 heatmap，用 `--drop-raw`。
+
 详细字段顺序见 `docs/o10_tactile_raw_schema.md`。
 
 ## 推理

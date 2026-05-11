@@ -75,3 +75,44 @@ python scripts/tools/strip_tactile.py \
 - 旧格式中混在 `observation.state` 内的 tactile 维度
 
 输出目录会写入 `meta/o10_no_tactile_schema.json`，记录来源线路和被删除的触觉字段。
+
+## 转成触觉热力图
+
+需要训练或可视化支持二维触觉输入的模型时，先从 raw 数据集生成 heatmap 数据集：
+
+```bash
+python scripts/tools/convert_o10_tactile_heatmap.py \
+    --input  ~/workspace/dataset/Robot/agi_arm_bot/my_raw_dataset \
+    --output ~/workspace/dataset/Robot/agi_arm_bot/my_raw_dataset_tactile_heatmap
+```
+
+输出字段兼容 `lerobot_tactile` 的二维 tactile 约定：
+
+```text
+observation.tactile.left           float32[12, 32]
+observation.tactile.right          float32[12, 32]
+```
+
+默认会保留 `observation.tactile.left_raw` / `right_raw`，方便以后改布局后重新转换。
+如果只想保留热力图字段：
+
+```bash
+python scripts/tools/convert_o10_tactile_heatmap.py \
+    --input  ~/workspace/dataset/Robot/agi_arm_bot/my_raw_dataset \
+    --output ~/workspace/dataset/Robot/agi_arm_bot/my_heatmap_only_dataset \
+    --drop-raw
+```
+
+当前 130D 到 12x32 的布局：
+
+| raw 段 | heatmap 位置 |
+|---|---|
+| `thumb[0:16]` | rows `0:4`, cols `0:4` |
+| `index[0:16]` | rows `0:4`, cols `7:11` |
+| `middle[0:16]` | rows `0:4`, cols `14:18` |
+| `ring[0:16]` | rows `0:4`, cols `21:25` |
+| `little[0:16]` | rows `0:4`, cols `28:32` |
+| `palm[0:25]` | rows `6:11`, cols `6:11` |
+| `dorsum[0:25]` | rows `6:11`, cols `21:26` |
+
+输出目录会写入 `meta/o10_tactile_heatmap_schema.json`，记录来源线路、字段映射和具体布局。

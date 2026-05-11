@@ -75,6 +75,35 @@ python scripts/tools/strip_tactile.py \
 
 输出数据集会额外写入 `meta/o10_no_tactile_schema.json`，记录来源线路和被删除的触觉字段。
 
+### `convert_o10_tactile_heatmap.py`
+把 O10 raw 130D 触觉列转成 `lerobot_tactile` 风格的二维触觉热力图字段，生成新数据集。
+输出字段 shape 固定为 `float32[12, 32]`：
+
+- `observation.tactile.left_raw`  → `observation.tactile.left`
+- `observation.tactile.right_raw` → `observation.tactile.right`
+
+默认保留 `*_raw`，这样以后如果要换热力图布局还能重新转换；加 `--drop-raw` 时只保留热力图字段。
+`videos/` 和 `images/` 同样用符号链接代替复制。
+
+```bash
+# 默认在同级目录生成 <数据集名>_tactile_heatmap
+python scripts/tools/convert_o10_tactile_heatmap.py \
+    --input ~/workspace/dataset/.../my_raw_dataset
+
+# 只保留 heatmap，删除 raw 130D
+python scripts/tools/convert_o10_tactile_heatmap.py \
+    --input    ~/workspace/dataset/.../my_raw_dataset \
+    --output   ~/workspace/dataset/.../my_heatmap_dataset \
+    --drop-raw
+
+# 覆盖已有输出目录
+python scripts/tools/convert_o10_tactile_heatmap.py \
+    --input ~/workspace/dataset/.../my_raw_dataset \
+    --overwrite
+```
+
+脚本会写入 `meta/o10_tactile_heatmap_schema.json`，记录左/右/双手线路、raw 字段到 heatmap 字段的映射，以及 130D 在 12x32 网格中的布局。
+
 ### `convert_lerobot_to_openpi.py`
 LeRobot v3.0 格式 → openpi 训练格式的转换骨架（部分 TODO 待补全）。
 
