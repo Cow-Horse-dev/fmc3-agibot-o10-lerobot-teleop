@@ -35,7 +35,6 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     cameras: dict[str, Any] = field(default_factory=dict)
     camera_controls: dict[str, dict] = field(default_factory=dict)
     camera_config_path: str | None = None
-    camera_profile: str | None = None
     use_degrees: bool = False
     arm_joints_num: int = 7
     serial_freq: int = 500
@@ -48,7 +47,6 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
             {
                 "robot": {
                     "camera_config_path": self.camera_config_path,
-                    "camera_profile": self.camera_profile,
                     "cameras": self.cameras,
                     "camera_controls": self.camera_controls,
                 }

@@ -2,6 +2,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -95,6 +96,48 @@ camera_controls:
         "exposure_us": 14000,
         "gain": 8,
     }
+
+
+def test_shared_camera_config_rejects_removed_camera_profile(tmp_path):
+    from lerobot_play.utils.shared_camera_config import apply_shared_camera_config
+
+    shared_config = tmp_path / "o10_cameras.yaml"
+    shared_config.write_text("wrist_cameras: {}\n", encoding="utf-8")
+
+    config = {
+        "robot": {
+            "camera_config_path": str(shared_config),
+            "camera_profile": "right_arm_dataset",
+            "cameras": {},
+        }
+    }
+
+    with pytest.raises(ValueError, match="robot.camera_profile is no longer used"):
+        apply_shared_camera_config(config)
+
+
+def test_shared_camera_config_reports_unknown_wrist_reference(tmp_path):
+    from lerobot_play.utils.shared_camera_config import apply_shared_camera_config
+
+    shared_config = tmp_path / "o10_cameras.yaml"
+    shared_config.write_text(
+        """
+wrist_cameras:
+  right_wrist:
+    serial_number_or_name: "260322273018"
+""",
+        encoding="utf-8",
+    )
+
+    config = {
+        "robot": {
+            "camera_config_path": str(shared_config),
+            "cameras": {"left": "left_wrist"},
+        }
+    }
+
+    with pytest.raises(KeyError, match="available wrist cameras: right_wrist"):
+        apply_shared_camera_config(config)
 
 
 def test_o10_configs_reference_shared_camera_file():

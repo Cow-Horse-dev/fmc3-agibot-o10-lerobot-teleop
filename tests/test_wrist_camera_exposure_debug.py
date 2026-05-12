@@ -172,8 +172,9 @@ def test_wrist_realsense_exposure_is_not_over_saturated() -> None:
 
     assert stats.saturated_ratio <= settings.max_saturated_ratio, (
         f"{settings.camera_name} appears over-exposed: {stats.saturated_ratio:.4%} pixels "
-        f"are >= {settings.saturated_threshold}. Try lowering robot.camera_controls."
-        f"{settings.camera_name}.exposure_us or gain in {settings.config_path}."
+        f"are >= {settings.saturated_threshold}. Try lowering the shared wrist "
+        "camera_controls exposure_us or gain in configs/cameras/o10_cameras.yaml, "
+        f"or an inline override for {settings.camera_name} in {settings.config_path}."
     )
 
 

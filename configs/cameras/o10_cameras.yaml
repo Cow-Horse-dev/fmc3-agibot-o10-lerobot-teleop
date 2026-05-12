@@ -3,6 +3,13 @@
 # This file only stores parameters shared by the physical wrist RealSense
 # cameras. Scene-specific camera keys such as top/left/right/right_wrist live in
 # the control/record/infer YAML files.
+#
+# Reference from a scene YAML with:
+#   robot:
+#     camera_config_path: configs/cameras/o10_cameras.yaml
+#     cameras:
+#       right: right_wrist
+#       left_wrist: left_wrist
 
 wrist_camera_defaults:
   type: intelrealsense

@@ -191,6 +191,7 @@ cd ~/workspace/arm-hand-teleop
   `wrist_camera_defaults`、`wrist_cameras.left_wrist/right_wrist` 和 `camera_controls`。
 - 各 control/record/infer YAML 自己声明场景 camera key；腕部相机用 `left_wrist` / `right_wrist`
   引用共享设备，加载时会自动展开成完整 RealSense 配置和对应曝光控制。
+- 这套结构按 registry 模式组织：共享文件只做“物理腕部相机注册表”，具体 YAML 只描述当前运行场景，避免把单臂/双臂/top 相机路由塞进共享文件。
 - 单臂 control 使用双臂配置里的 wrist 相机命名：
   - 左臂：`top + left_wrist`
   - 右臂：`top + right_wrist`
