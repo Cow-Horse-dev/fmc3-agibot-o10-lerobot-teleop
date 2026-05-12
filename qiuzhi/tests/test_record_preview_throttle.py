@@ -14,31 +14,26 @@ RECORD_ENTRYPOINT_SRC_FILE = (
 )
 
 
-def test_record_preview_source_uses_async_worker_for_local_preview():
+def test_record_display_source_uses_async_worker_for_rerun_only():
     source = LEROBOT_RECORD_SRC_FILE.read_text(encoding="utf-8")
 
     assert "class _RecordPreviewWorker" in source
     assert "threading.Thread(" in source
     assert "preview_worker.submit(" in source
-    assert "def render_latest(" in source
-    assert "def _pump_record_preview_events(events: dict[str, Any])" in source
-    assert "_pump_record_preview_events(events)" in source
-    assert 'events["stop_recording"] = True' in source
-    assert 'events["exit_early"] = True' in source
-    assert "preview_worker.render_latest()" in source
+    assert "log_rerun_data(" in source
     assert "preview_worker.stop()" in source
+    assert "def render_latest(" not in source
+    assert "preview_worker.render_latest()" not in source
+    assert "def _pump_record_preview_events(" not in source
+    assert "cv2.imshow" not in source
+    assert "cv2.waitKey" not in source
 
 
-def test_record_preview_main_thread_gui_updates_are_throttled():
+def test_record_display_does_not_pump_gui_events_on_main_thread():
     source = LEROBOT_RECORD_SRC_FILE.read_text(encoding="utf-8")
 
-    assert "class _RecordPreviewPump" in source
-    assert "_RecordPreviewPump(preview_fps=DEFAULT_RECORD_PREVIEW_FPS)" in source
-    assert "preview_pump.maybe_render(preview_worker, events)" in source
-    assert (
-        "preview_worker.render_latest()\n"
-        "                _pump_record_preview_events(events)"
-    ) not in source
+    assert "class _RecordPreviewPump" not in source
+    assert "preview_pump" not in source
 
 
 def test_record_entrypoint_configures_rerun_blueprint_from_current_cameras():

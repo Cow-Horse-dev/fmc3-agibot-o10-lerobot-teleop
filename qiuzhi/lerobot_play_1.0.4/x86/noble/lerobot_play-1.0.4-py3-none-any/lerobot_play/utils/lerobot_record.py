@@ -67,9 +67,6 @@ from pathlib import Path
 from pprint import pformat
 from typing import Any
 
-import cv2
-import numpy as np
-
 from lerobot.cameras import (  # noqa: F401
     CameraConfig,  # noqa: F401
 )
@@ -257,188 +254,6 @@ class RecordConfig:
                   ( Rerun Log / Loop Wait )
 """
 
-PREVIEW_WINDOW_NAME = "LeRobot Record Preview"
-PREVIEW_WINDOW_ENABLED = True
-PREVIEW_WINDOW_WARNING_EMITTED = False
-
-
-def _is_image_like(value: Any) -> bool:
-    return isinstance(value, np.ndarray) and value.ndim in (2, 3)
-
-
-def _to_bgr_image(image: np.ndarray) -> np.ndarray:
-    frame = np.asarray(image)
-
-    if frame.ndim == 2:
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-    else:
-        if frame.shape[0] in (1, 3, 4) and frame.shape[-1] not in (1, 3, 4):
-            frame = np.transpose(frame, (1, 2, 0))
-
-        if frame.dtype != np.uint8:
-            frame = frame.astype(np.float32)
-            if frame.max() <= 1.0 and frame.min() >= 0.0:
-                frame = frame * 255.0
-            frame = np.clip(frame, 0, 255).astype(np.uint8)
-
-        if frame.ndim == 2:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        elif frame.shape[-1] == 1:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        elif frame.shape[-1] == 4:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-        else:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-    return frame
-
-
-def _resize_keep_ratio(image: np.ndarray, target_height: int) -> np.ndarray:
-    if image.shape[0] == target_height:
-        return image
-
-    scale = target_height / image.shape[0]
-    target_width = max(1, int(round(image.shape[1] * scale)))
-    return cv2.resize(image, (target_width, target_height), interpolation=cv2.INTER_AREA)
-
-
-def _draw_tile_label(image: np.ndarray, label: str) -> np.ndarray:
-    tile = image.copy()
-    cv2.rectangle(tile, (0, 0), (tile.shape[1], 34), (0, 0, 0), thickness=-1)
-    cv2.putText(
-        tile,
-        label,
-        (10, 24),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-    return tile
-
-
-def _build_record_preview_canvas(
-    observation: dict[str, Any],
-    camera_keys: list[str],
-    episode_index: int | None,
-    total_episodes: int | None,
-    frame_index: int,
-    timestamp_s: float,
-) -> np.ndarray | None:
-
-    observation = filter_display_observation(observation, camera_keys)
-
-    tiles: list[np.ndarray] = []
-
-    for key in camera_keys:
-        value = observation.get(key)
-        if _is_image_like(value):
-            tiles.append(_draw_tile_label(_to_bgr_image(value), key))
-
-    if not tiles:
-        return None
-
-    target_height = min(360, min(tile.shape[0] for tile in tiles))
-    resized_tiles = [_resize_keep_ratio(tile, target_height) for tile in tiles]
-    gap = 8
-    total_width = sum(tile.shape[1] for tile in resized_tiles) + gap * (len(resized_tiles) - 1)
-
-    header_height = 52
-    canvas = np.zeros((target_height + header_height, total_width, 3), dtype=np.uint8)
-
-    x = 0
-    for tile in resized_tiles:
-        canvas[header_height:, x : x + tile.shape[1]] = tile
-        x += tile.shape[1] + gap
-
-    if episode_index is not None and total_episodes is not None:
-        header = f"Episode {episode_index}/{total_episodes}"
-    elif episode_index is not None:
-        header = f"Episode {episode_index}"
-    else:
-        header = "Episode"
-    header += f" | Frame {frame_index} | Timestamp {timestamp_s:.2f}s"
-
-    cv2.putText(
-        canvas,
-        header,
-        (12, 33),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.85,
-        (0, 220, 255),
-        2,
-        cv2.LINE_AA,
-    )
-
-    return canvas
-
-
-def _show_record_preview(canvas: np.ndarray) -> None:
-    global PREVIEW_WINDOW_ENABLED
-    global PREVIEW_WINDOW_WARNING_EMITTED
-
-    if not PREVIEW_WINDOW_ENABLED:
-        return
-
-    if is_headless():
-        return
-
-    try:
-        cv2.imshow(PREVIEW_WINDOW_NAME, canvas)
-    except cv2.error as exc:
-        PREVIEW_WINDOW_ENABLED = False
-        if not PREVIEW_WINDOW_WARNING_EMITTED:
-            PREVIEW_WINDOW_WARNING_EMITTED = True
-            logging.warning(
-                "OpenCV preview window is unavailable in this environment. "
-                "Disabling local record preview and continuing recording. "
-                "Original error: %s",
-                exc,
-            )
-
-
-def _pump_record_preview_events(events: dict[str, Any]) -> None:
-    global PREVIEW_WINDOW_ENABLED
-    global PREVIEW_WINDOW_WARNING_EMITTED
-
-    if not PREVIEW_WINDOW_ENABLED:
-        return
-
-    if is_headless():
-        return
-
-    try:
-        key = cv2.waitKey(1)
-        if key == 27:
-            if not events.get("keyboard_exit_requested", False):
-                print("Escape key pressed in preview window. Stopping data recording...")
-                events["keyboard_exit_requested"] = True
-                events["stop_recording"] = True
-                events["exit_early"] = True
-        elif key in (81, 2424832):
-            if events.get("start", False) and not events.get("keyboard_exit_requested", False):
-                print("Left arrow key pressed in preview window. Exiting loop and rerecord the last episode...")
-                events["keyboard_exit_requested"] = True
-                events["rerecord_episode"] = True
-                events["exit_early"] = True
-        elif key in (83, 2555904):
-            if events.get("start", False) and not events.get("keyboard_exit_requested", False):
-                print("Right arrow key pressed in preview window. Exiting loop...")
-                events["keyboard_exit_requested"] = True
-                events["exit_early"] = True
-    except cv2.error as exc:
-        PREVIEW_WINDOW_ENABLED = False
-        if not PREVIEW_WINDOW_WARNING_EMITTED:
-            PREVIEW_WINDOW_WARNING_EMITTED = True
-            logging.warning(
-                "OpenCV preview event pump failed. "
-                "Disabling local record preview and continuing recording. "
-                "Original error: %s",
-                exc,
-            )
-
-
 class _RecordPreviewWorker:
     def __init__(self, preview_fps: float = DEFAULT_RECORD_PREVIEW_FPS):
         self.preview_fps = preview_fps
@@ -448,7 +263,6 @@ class _RecordPreviewWorker:
         self._thread: threading.Thread | None = None
         self._latest_payload: dict[str, Any] | None = None
         self._last_preview_timestamp_s: float | None = None
-        self._latest_canvas: np.ndarray | None = None
 
     def start(self) -> None:
         if self.preview_fps <= 0 or is_headless():
@@ -481,22 +295,10 @@ class _RecordPreviewWorker:
         with self._lock:
             self._latest_payload = {
                 "observation": observation,
-                "camera_keys": list(camera_keys),
-                "episode_index": episode_index,
-                "total_episodes": total_episodes,
-                "frame_index": frame_index,
                 "timestamp_s": timestamp_s,
                 "action": action,
             }
             self._wake_event.set()
-
-    def render_latest(self) -> None:
-        with self._lock:
-            canvas = self._latest_canvas
-            self._latest_canvas = None
-
-        if canvas is not None:
-            _show_record_preview(canvas)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -504,10 +306,6 @@ class _RecordPreviewWorker:
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
-        try:
-            cv2.destroyWindow(PREVIEW_WINDOW_NAME)
-        except cv2.error:
-            pass
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -528,17 +326,6 @@ class _RecordPreviewWorker:
                 observation=payload["observation"],
                 action=payload["action"],
             )
-            canvas = _build_record_preview_canvas(
-                observation=payload["observation"],
-                camera_keys=payload["camera_keys"],
-                episode_index=payload["episode_index"],
-                total_episodes=payload["total_episodes"],
-                frame_index=payload["frame_index"],
-                timestamp_s=timestamp_s,
-            )
-            if canvas is not None:
-                with self._lock:
-                    self._latest_canvas = canvas
             self._last_preview_timestamp_s = timestamp_s
 
     def _consume_latest_payload(self) -> dict[str, Any] | None:
@@ -557,35 +344,6 @@ class _RecordPreviewWorker:
         return (timestamp_s - self._last_preview_timestamp_s) >= (
             1.0 / self.preview_fps
         )
-
-
-class _RecordPreviewPump:
-    def __init__(
-        self,
-        preview_fps: float = DEFAULT_RECORD_PREVIEW_FPS,
-        clock: Any = time.perf_counter,
-    ):
-        self.preview_fps = preview_fps
-        self._clock = clock
-        self._last_update_s: float | None = None
-
-    def maybe_render(
-        self,
-        preview_worker: _RecordPreviewWorker,
-        events: dict[str, Any],
-    ) -> None:
-        if self.preview_fps <= 0:
-            return
-
-        now_s = self._clock()
-        if self._last_update_s is not None and (now_s - self._last_update_s) < (
-            1.0 / self.preview_fps
-        ):
-            return
-
-        self._last_update_s = now_s
-        preview_worker.render_latest()
-        _pump_record_preview_events(events)
 
 
 @safe_stop_image_writer
@@ -661,11 +419,6 @@ def record_loop(
     start_episode_t = time.perf_counter()
     camera_keys = list(getattr(robot, "cameras", {}).keys())
     preview_worker = _RecordPreviewWorker() if display_data else None
-    preview_pump = (
-        _RecordPreviewPump(preview_fps=DEFAULT_RECORD_PREVIEW_FPS)
-        if preview_worker is not None
-        else None
-    )
     if preview_worker is not None:
         preview_worker.start()
     try:
@@ -782,8 +535,6 @@ def record_loop(
                     timestamp_s=frame_index / fps,
                     action=sent_action,
                 )
-                if preview_pump is not None:
-                    preview_pump.maybe_render(preview_worker, events)
 
             dt_s = time.perf_counter() - start_loop_t
             precise_sleep(1 / fps - dt_s)
