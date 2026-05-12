@@ -12,11 +12,22 @@ def _resolve_config_path(path: str | Path, base_path: str | Path | None = None) 
     if config_path.is_absolute():
         return config_path
 
+    if config_path.exists():
+        return config_path
+
     if base_path is not None:
         base = Path(base_path).expanduser()
         if base.is_file():
             base = base.parent
-        return base / config_path
+        for parent in (base, *base.parents):
+            candidate = parent / config_path
+            if candidate.exists():
+                return candidate
+
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / config_path
+        if candidate.exists():
+            return candidate
 
     return config_path
 

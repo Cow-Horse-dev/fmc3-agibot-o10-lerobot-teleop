@@ -1,10 +1,12 @@
-from pathlib import Path
+import importlib.util
 import sys
+from pathlib import Path
 
 import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = REPO_ROOT.parent
 LEROBOT_PLAY_PACKAGE_ROOT = (
     REPO_ROOT
     / "lerobot_play_1.0.4"
@@ -15,6 +17,28 @@ LEROBOT_PLAY_PACKAGE_ROOT = (
 
 if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
+
+
+def _load_o10_single_arm_config_class():
+    from lerobot.robots.config import RobotConfig
+
+    robot_type = "pico_follower_single_arm_agibot_o10"
+    registered_class = RobotConfig._choice_registry.get(robot_type)
+    if registered_class is not None:
+        return registered_class, False
+
+    config_path = (
+        LEROBOT_PLAY_PACKAGE_ROOT
+        / "lerobot_play"
+        / "robots"
+        / "pico_follower_single_arm_agibot_o10"
+        / "config_pico_follower_single_arm_agibot_o10.py"
+    )
+    spec = importlib.util.spec_from_file_location("test_o10_single_arm_config", config_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.PicoFollowerSingleArmAgibotO10Config, True
 
 
 def test_shared_camera_config_materializes_profile_with_aliases(tmp_path):
@@ -98,3 +122,36 @@ def test_o10_configs_reference_shared_camera_file():
         assert "camera_profile" in robot
         assert "cameras" not in robot
         assert "camera_controls" not in robot
+
+
+def test_shared_camera_config_resolves_repo_relative_path_from_absolute_yaml(monkeypatch, tmp_path):
+    from lerobot_play.utils.shared_camera_config import load_yaml_with_shared_camera_config
+
+    monkeypatch.chdir(tmp_path)
+
+    config = load_yaml_with_shared_camera_config(
+        WORKSPACE_ROOT / "configs" / "right_arm" / "o10_right_record.yaml"
+    )
+
+    assert set(config["robot"]["cameras"]) == {"right", "top"}
+    assert config["robot"]["camera_controls"]["right"]["exposure_us"] == 14000
+
+
+def test_o10_robot_config_classes_materialize_shared_cameras():
+    from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+    from lerobot.robots.config import RobotConfig
+
+    config_class, loaded_for_test = _load_o10_single_arm_config_class()
+    try:
+        config = config_class(
+            port="can1",
+            camera_config_path="configs/cameras/o10_cameras.yaml",
+            camera_profile="right_arm_control",
+        )
+
+        assert set(config.cameras) == {"top", "right_wrist"}
+        assert isinstance(config.cameras["right_wrist"], RealSenseCameraConfig)
+        assert config.camera_controls["right_wrist"]["exposure_us"] == 14000
+    finally:
+        if loaded_for_test:
+            RobotConfig._choice_registry.pop("pico_follower_single_arm_agibot_o10", None)

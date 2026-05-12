@@ -187,6 +187,8 @@ cd ~/workspace/arm-hand-teleop
 
 ## 相机配置
 
+- 所有 O10 control/record/infer 的相机参数统一放在 `configs/cameras/o10_cameras.yaml`。
+  各运行配置只保留 `robot.camera_config_path` 和 `robot.camera_profile`，用 profile 选择左臂、右臂或双臂场景。
 - 单臂 control 使用双臂配置里的 wrist 相机命名：
   - 左臂：`top + left_wrist`
   - 右臂：`top + right_wrist`
@@ -194,7 +196,8 @@ cd ~/workspace/arm-hand-teleop
   - 左臂：`top + left`
   - 右臂：`top + right`
 - 双臂 control/record/infer 使用：`top + left_wrist + right_wrist`。
-- 顶部 USB 相机默认使用 `fourcc: MJPG`，避免 OpenCV 自动协商到不稳定格式。
+- 顶部 USB 相机默认使用 `fourcc: MJPG`，避免 OpenCV 自动协商到不稳定格式；右臂 control 目前在共享配置里用 `top_h264` profile，需要改回 MJPG 时只改 `right_arm_control` 的 `top` 映射。
+- 腕部 RealSense 的曝光、增益等参数也在共享配置的 `camera_controls` 里，例如右腕是 `camera_controls.right_wrist.exposure_us`。
 - `robot.allow_camera_read_failures: true` 适合 control/infer 场景：相机启动失败会跳过该相机，读帧失败时有缓存用缓存、无缓存用全零帧。record 建议保持 `false`，避免录进残缺数据。
 
 ## 数据录制

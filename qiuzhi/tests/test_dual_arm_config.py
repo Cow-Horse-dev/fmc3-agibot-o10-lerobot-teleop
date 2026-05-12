@@ -1,8 +1,28 @@
 import sys
 import types
+from pathlib import Path
 
 import pytest
 import yaml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LEROBOT_PLAY_PACKAGE_ROOT = (
+    REPO_ROOT
+    / "lerobot_play_1.0.4"
+    / "x86"
+    / "noble"
+    / "lerobot_play-1.0.4-py3-none-any"
+)
+
+if str(LEROBOT_PLAY_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(LEROBOT_PLAY_PACKAGE_ROOT))
+
+from lerobot_play.utils.shared_camera_config import load_yaml_with_shared_camera_config
+
+
+def _load_config(path: str) -> dict:
+    return load_yaml_with_shared_camera_config(path)
 
 
 def test_dual_control_yaml_parses():
@@ -39,8 +59,7 @@ def test_dual_control_yaml_parses():
     ],
 )
 def test_o10_top_camera_configs_rotate_physical_camera_upright(config_path):
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    config = _load_config(config_path)
 
     top_camera = config["robot"]["cameras"]["top"]
 
@@ -59,8 +78,7 @@ def test_dual_record_yaml_keeps_local_preview_disabled():
 
 
 def test_left_control_yaml_parses():
-    with open("configs/left_arm/o10_left_control.yaml") as f:
-        config = yaml.safe_load(f)
+    config = _load_config("configs/left_arm/o10_left_control.yaml")
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
@@ -74,8 +92,7 @@ def test_left_control_yaml_parses():
 
 
 def test_right_control_yaml_parses():
-    with open("configs/right_arm/o10_right_control.yaml") as f:
-        config = yaml.safe_load(f)
+    config = _load_config("configs/right_arm/o10_right_control.yaml")
     assert config["teleop"]["type"] == "pico_leader_single_arm_agibot_o10"
     assert config["robot"]["type"] == "pico_follower_single_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
@@ -100,13 +117,12 @@ def test_right_control_yaml_parses():
     ],
 )
 def test_right_wrist_realsense_configs_use_manual_exposure(config_path, camera_key):
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    config = _load_config(config_path)
 
     controls = config["robot"]["camera_controls"][camera_key]
 
     assert controls["auto_exposure"] is False
-    assert controls["exposure_us"] == 8000
+    assert controls["exposure_us"] == 14000
     assert controls["gain"] == 16
 
 
@@ -248,15 +264,11 @@ def test_right_arm_infer_and_replay_configs_use_cylindrical_gripper_1d(config_pa
 
 
 def test_dual_arm_wrist_camera_rotations_are_no_rotation():
-    with open("configs/dual_arm/o10_dual_record.yaml") as f:
-        dual_record = yaml.safe_load(f)
-    with open("configs/dual_arm/o10_dual_control.yaml") as f:
-        dual_control = yaml.safe_load(f)
+    dual_record = _load_config("configs/dual_arm/o10_dual_record.yaml")
+    dual_control = _load_config("configs/dual_arm/o10_dual_control.yaml")
 
-    with open("configs/left_arm/o10_left_record.yaml") as f:
-        left_record = yaml.safe_load(f)
-    with open("configs/right_arm/o10_right_record.yaml") as f:
-        right_record = yaml.safe_load(f)
+    left_record = _load_config("configs/left_arm/o10_left_record.yaml")
+    right_record = _load_config("configs/right_arm/o10_right_record.yaml")
 
     assert (
         dual_record["robot"]["cameras"]["left_wrist"]["rotation"]
@@ -294,8 +306,7 @@ def test_dual_replay_yaml_builds_o10_dual_robot_config():
 
 
 def test_left_record_yaml_has_dataset_section():
-    with open("configs/left_arm/o10_left_record.yaml") as f:
-        config = yaml.safe_load(f)
+    config = _load_config("configs/left_arm/o10_left_record.yaml")
     assert "dataset" in config
     assert "run" in config
     assert config["robot"]["port"] == "can0"
@@ -308,8 +319,7 @@ def test_left_record_yaml_has_dataset_section():
 
 
 def test_right_record_yaml_uses_joint_only_state_without_tactile():
-    with open("configs/right_arm/o10_right_record.yaml") as f:
-        config = yaml.safe_load(f)
+    config = _load_config("configs/right_arm/o10_right_record.yaml")
 
     assert config["robot"]["port"] == "can1"
     assert config["robot"]["include_eef_pose"] is False
@@ -320,18 +330,12 @@ def test_right_record_yaml_uses_joint_only_state_without_tactile():
 
 
 def test_single_arm_realsense_rotations_are_no_rotation():
-    with open("configs/left_arm/o10_left_control.yaml") as f:
-        left_control_config = yaml.safe_load(f)
-    with open("configs/left_arm/o10_left_record.yaml") as f:
-        left_record_config = yaml.safe_load(f)
-    with open("configs/left_arm/o10_left_infer.yaml") as f:
-        left_infer_config = yaml.safe_load(f)
-    with open("configs/right_arm/o10_right_control.yaml") as f:
-        control_config = yaml.safe_load(f)
-    with open("configs/right_arm/o10_right_record.yaml") as f:
-        record_config = yaml.safe_load(f)
-    with open("configs/right_arm/o10_right_infer.yaml") as f:
-        infer_config = yaml.safe_load(f)
+    left_control_config = _load_config("configs/left_arm/o10_left_control.yaml")
+    left_record_config = _load_config("configs/left_arm/o10_left_record.yaml")
+    left_infer_config = _load_config("configs/left_arm/o10_left_infer.yaml")
+    control_config = _load_config("configs/right_arm/o10_right_control.yaml")
+    record_config = _load_config("configs/right_arm/o10_right_record.yaml")
+    infer_config = _load_config("configs/right_arm/o10_right_infer.yaml")
 
     left_control_rotation = left_control_config["robot"]["cameras"]["left_wrist"]["rotation"]
     left_record_rotation = left_record_config["robot"]["cameras"]["left"]["rotation"]

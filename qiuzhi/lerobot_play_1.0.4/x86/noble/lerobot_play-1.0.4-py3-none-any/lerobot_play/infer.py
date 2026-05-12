@@ -968,7 +968,7 @@ def _create_robot_config(args: argparse.Namespace):
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
-            camera_controls=args.robot_camera_controls,
+            camera_controls=getattr(args, "robot_camera_controls", {}),
         )
     elif args.robot_type == "pico_follower_dual_arm_agibot_o10":
         return PicoFollowerDualArmAgibotO10Config(
@@ -982,7 +982,7 @@ def _create_robot_config(args: argparse.Namespace):
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
-            camera_controls=args.robot_camera_controls,
+            camera_controls=getattr(args, "robot_camera_controls", {}),
         )
     else:
         raise ValueError(f"Unsupported robot type: {args.robot_type}")

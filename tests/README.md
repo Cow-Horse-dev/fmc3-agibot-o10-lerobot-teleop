@@ -14,7 +14,8 @@ These tests should not require CAN hardware, cameras, or RealSense devices.
 ## Wrist camera exposure diagnostic
 
 `test_wrist_camera_exposure_debug.py` checks whether a wrist RealSense camera is
-still over-exposed after applying `robot.camera_controls` from a YAML config. It
+still over-exposed after applying shared O10 camera controls from
+`configs/cameras/o10_cameras.yaml`. It
 opens one wrist camera, applies `auto_exposure`, `exposure_us`, and `gain`, reads
 frames, and prints brightness statistics:
 
@@ -42,19 +43,18 @@ pytest tests/test_wrist_camera_exposure_debug.py -s
 ```
 
 If the test fails, lower the matching camera controls in the config, usually
-`robot.camera_controls.<camera>.exposure_us` first and `gain` second. For the
-current right wrist config, start near:
+`camera_controls.<camera>.exposure_us` first and `gain` second. For the current
+right wrist config, edit `configs/cameras/o10_cameras.yaml`:
 
 ```yaml
-robot:
-  camera_controls:
-    right_wrist:
-      auto_exposure: false
-      exposure_us: 4000
-      gain: 16
+camera_controls:
+  right_wrist:
+    auto_exposure: false
+    exposure_us: 14000
+    gain: 16
 ```
 
-For left wrist diagnostics, add or adjust `robot.camera_controls.left_wrist` and
+For left wrist diagnostics, add or adjust `camera_controls.left_wrist` and
 run with `WRIST_CAMERA_NAME=left_wrist`.
 
 ## Other manual hardware tests

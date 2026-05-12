@@ -79,7 +79,9 @@ def settings_from_env(environ: dict[str, str] | None = None) -> ExposureDebugSet
 
 
 def load_robot_camera_config(config_path: Path, camera_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    from lerobot_play.utils.shared_camera_config import load_yaml_with_shared_camera_config
+
+    config = load_yaml_with_shared_camera_config(config_path)
     robot_config = config.get("robot") or {}
     cameras = robot_config.get("cameras") or {}
     controls = robot_config.get("camera_controls") or {}
