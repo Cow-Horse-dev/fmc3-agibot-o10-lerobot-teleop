@@ -85,6 +85,15 @@ def _drop_tactile_columns(df: pd.DataFrame, tactile_feature_keys: list[str]) -> 
     return df
 
 
+def _uses_video_observation_storage(info: dict) -> bool:
+    image_features = [
+        feature
+        for key, feature in info.get("features", {}).items()
+        if key.startswith("observation.images.")
+    ]
+    return bool(image_features) and all(feature.get("dtype") == "video" for feature in image_features)
+
+
 def _copy_meta_without_tactile(input_meta: Path, output_meta: Path, tactile_feature_keys: list[str]) -> None:
     for item in input_meta.iterdir():
         if item.name in ("info.json", "stats.json", NO_TACTILE_SCHEMA):
@@ -241,17 +250,25 @@ def strip_tactile(input_dir: Path, output_dir: Path) -> None:
     logger.info("meta/ 其余文件已复制")
 
     # ------------------------------------------------------------------
-    # videos/ 和 images/ 用符号链接，不复制大文件
+    # 复制视频资源；video 数据集不再额外保留空 images/ 壳目录
     # ------------------------------------------------------------------
-    for big_dir_name in ("videos", "images"):
-        src = input_dir / big_dir_name
-        if not src.exists():
-            continue
-        dst = output_dir / big_dir_name
-        if dst.exists() or dst.is_symlink():
-            dst.unlink() if dst.is_symlink() else shutil.rmtree(dst)
-        dst.symlink_to(src.resolve())
-        logger.info("%s/ → 符号链接到 %s", big_dir_name, src.resolve())
+    videos_src = input_dir / "videos"
+    videos_dst = output_dir / "videos"
+    if videos_src.exists():
+        if videos_dst.exists() or videos_dst.is_symlink():
+            videos_dst.unlink() if videos_dst.is_symlink() else shutil.rmtree(videos_dst)
+        shutil.copytree(videos_src, videos_dst)
+        logger.info("videos/ 已复制到 %s", videos_dst)
+
+    images_src = input_dir / "images"
+    images_dst = output_dir / "images"
+    if images_dst.exists() or images_dst.is_symlink():
+        images_dst.unlink() if images_dst.is_symlink() else shutil.rmtree(images_dst)
+    if images_src.exists() and not _uses_video_observation_storage(info):
+        shutil.copytree(images_src, images_dst)
+        logger.info("images/ 已复制到 %s", images_dst)
+    elif images_src.exists():
+        logger.info("检测到 video 数据集，跳过 images/ 目录")
 
     logger.info(
         "完成。输出目录: %s\nobservation.state: %dD → %dD",

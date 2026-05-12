@@ -54,7 +54,7 @@ python scripts/tools/check_tactile_success.py --thumb 50 --index 40 --middle 45 
 
 ### `strip_tactile.py`
 从 LeRobot v3.0 数据集中删除 O10 触觉信息，生成新数据集。
-`videos/` 和 `images/` 用符号链接代替复制，不占额外磁盘空间。
+`videos/` 会真实复制，输出数据集完全独立；如果是 `video` 型数据集，则不再额外生成空的 `images/` 目录。
 
 适用场景：录制时带 `tactile_mode: 130d` 触觉 raw 列，处理后去掉触觉，供 π0/π0.5 等不支持触觉输入的模型训练。
 

@@ -18,6 +18,8 @@ def _write_minimal_dataset(root: Path) -> None:
     (root / "data" / "chunk-000").mkdir(parents=True)
     (root / "meta" / "episodes" / "chunk-000").mkdir(parents=True)
     (root / "videos" / "observation.images.right").mkdir(parents=True)
+    (root / "images" / "observation.images.right").mkdir(parents=True)
+    (root / "videos" / "observation.images.right" / "dummy.mp4").write_bytes(b"video")
 
     info = {
         "features": {
@@ -35,6 +37,11 @@ def _write_minimal_dataset(root: Path) -> None:
                 "dtype": "float32",
                 "shape": [7],
                 "names": [*(f"joint{i}.pos" for i in range(1, 7)), "gripper.pos"],
+            },
+            "observation.images.right": {
+                "dtype": "video",
+                "shape": [480, 640, 3],
+                "names": None,
             },
             "timestamp": {"dtype": "float32", "shape": [1], "names": None},
             "frame_index": {"dtype": "int64", "shape": [1], "names": None},
@@ -113,3 +120,7 @@ def test_strip_tactile_removes_independent_tactile_features(tmp_path):
 
     schema = json.loads((output_dir / "meta" / "o10_no_tactile_schema.json").read_text(encoding="utf-8"))
     assert schema["source_tactile_route"] == "right"
+    assert (output_dir / "videos").exists()
+    assert not (output_dir / "videos").is_symlink()
+    assert (output_dir / "videos" / "observation.images.right" / "dummy.mp4").read_bytes() == b"video"
+    assert not (output_dir / "images").exists()
