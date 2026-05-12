@@ -63,6 +63,7 @@ from .teleoperators.pico_leader_single_arm_eef.config_pico_leader_single_arm_eef
 )
 from .teleoperators.utils import make_teleoperator_from_config
 from .utils.display_filter import filter_display_observation
+from .utils.rerun_control_display import configure_control_rerun_display
 
 
 @dataclass
@@ -185,6 +186,8 @@ def teleoperate(cfg: TeleoperateConfig):
 
     teleop = make_teleoperator_from_config(cfg.teleop)
     robot = make_robot_from_config(cfg.robot)
+    if cfg.display_data:
+        configure_control_rerun_display(robot)
     (
         teleop_action_processor,
         robot_action_processor,

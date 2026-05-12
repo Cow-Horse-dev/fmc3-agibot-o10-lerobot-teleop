@@ -75,22 +75,5 @@ robot:
   reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
   reset_gesture: pinch
 
-  cameras:
-    left:                          # 单左臂录制时腕相机 key 就叫 left，推理要一致
-      type: realsense
-      serial_number_or_name: "260322276846"
-      width: 640
-      height: 480
-      fps: 30
-      use_depth: false
-      color_mode: RGB
-      rotation: NO_ROTATION
-
-    top:
-      type: opencv
-      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-      width: 640
-      height: 480
-      fps: 30
-      fourcc: MJPG
-      rotation: NO_ROTATION
+  camera_config_path: configs/cameras/o10_cameras.yaml
+  camera_profile: left_arm_dataset

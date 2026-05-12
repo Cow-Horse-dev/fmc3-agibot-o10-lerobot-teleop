@@ -23,6 +23,34 @@ def test_dual_control_yaml_parses():
     assert config["teleop"]["right"]["handedness"] == "right"
 
 
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "configs/left_arm/o10_left_control.yaml",
+        "configs/left_arm/o10_left_record.yaml",
+        "configs/left_arm/o10_left_infer.yaml",
+        "configs/right_arm/o10_right_control.yaml",
+        "configs/right_arm/o10_right_record.yaml",
+        "configs/right_arm/o10_right_infer.yaml",
+        "configs/right_arm/o10_right_infer_cpu.yaml",
+        "configs/dual_arm/o10_dual_control.yaml",
+        "configs/dual_arm/o10_dual_record.yaml",
+        "configs/dual_arm/o10_dual_infer.yaml",
+    ],
+)
+def test_o10_top_camera_configs_rotate_physical_camera_upright(config_path):
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    top_camera = config["robot"]["cameras"]["top"]
+
+    assert (
+        top_camera["index_or_path"]
+        == "/dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0"
+    )
+    assert top_camera["rotation"] == "ROTATE_180"
+
+
 def test_dual_record_yaml_keeps_local_preview_disabled():
     with open("configs/dual_arm/o10_dual_record.yaml") as f:
         config = yaml.safe_load(f)
@@ -57,6 +85,29 @@ def test_right_control_yaml_parses():
     assert config["teleop"]["wrist_pose_source"] == "right"
     assert set(config["robot"]["cameras"]) == {"top", "right_wrist"}
     assert config["robot"]["cameras"]["right_wrist"]["serial_number_or_name"] == "260322273018"
+
+
+@pytest.mark.parametrize(
+    ("config_path", "camera_key"),
+    [
+        ("configs/right_arm/o10_right_control.yaml", "right_wrist"),
+        ("configs/right_arm/o10_right_record.yaml", "right"),
+        ("configs/right_arm/o10_right_infer.yaml", "right"),
+        ("configs/right_arm/o10_right_infer_cpu.yaml", "right"),
+        ("configs/dual_arm/o10_dual_control.yaml", "right_wrist"),
+        ("configs/dual_arm/o10_dual_record.yaml", "right_wrist"),
+        ("configs/dual_arm/o10_dual_infer.yaml", "right_wrist"),
+    ],
+)
+def test_right_wrist_realsense_configs_use_manual_exposure(config_path, camera_key):
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    controls = config["robot"]["camera_controls"][camera_key]
+
+    assert controls["auto_exposure"] is False
+    assert controls["exposure_us"] == 8000
+    assert controls["gain"] == 16
 
 
 def test_dual_arm_feature_dimensions():

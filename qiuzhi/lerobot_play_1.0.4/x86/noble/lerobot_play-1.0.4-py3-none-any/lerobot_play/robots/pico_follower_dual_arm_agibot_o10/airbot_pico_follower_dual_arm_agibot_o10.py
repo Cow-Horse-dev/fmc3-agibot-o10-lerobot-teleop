@@ -24,6 +24,7 @@ from lerobot_play.utils.agibot_o10 import (
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
 from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
+from lerobot_play.utils.realsense_controls import apply_realsense_controls
 from lerobot_play.utils.runtime_helpers import validate_o10_tactile_mode
 
 from .config_pico_follower_dual_arm_agibot_o10 import (
@@ -314,6 +315,11 @@ class PicoFollowerDualArmAgibotO10(Robot):
                         raise
                     logger.warning("Skipping unavailable camera %s: %s", camera_name, exc)
                     continue
+                apply_realsense_controls(
+                    camera_name,
+                    cam,
+                    getattr(self.config, "camera_controls", None),
+                )
                 connected_cameras[camera_name] = cam
         except Exception:
             for cam in connected_cameras.values():

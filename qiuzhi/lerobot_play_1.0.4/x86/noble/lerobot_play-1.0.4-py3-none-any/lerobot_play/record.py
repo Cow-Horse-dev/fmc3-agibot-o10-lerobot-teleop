@@ -65,6 +65,7 @@ from .utils.runtime_helpers import (
     resolve_record_dataset_target,
 )
 from .utils.camera_config_parser import parse_camera_configs
+from .utils.shared_camera_config import load_yaml_with_shared_camera_config
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
@@ -72,8 +73,7 @@ def _parse_cameras(cameras_obj: dict) -> dict:
 
 
 def _load_yaml(path: str) -> dict:
-    with open(Path(path).expanduser(), encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return load_yaml_with_shared_camera_config(path)
 
 
 def _parse_cli_args() -> argparse.Namespace:
@@ -753,6 +753,7 @@ def main():
             action_control_mode=cfg["robot"].get("action_control_mode", "joint"),
             hand_action_mode=cfg["robot"].get("hand_action_mode", "dexterous_10d"),
             cameras=camera_cfgs,
+            camera_controls=cfg["robot"].get("camera_controls", {}),
             id=cfg["robot"]["id"],
         )
     elif robot_type == "pico_follower_dual_arm_agibot_o10":
@@ -768,6 +769,7 @@ def main():
             action_control_mode=cfg["robot"].get("action_control_mode", "joint"),
             hand_action_mode=cfg["robot"].get("hand_action_mode", "dexterous_10d"),
             cameras=camera_cfgs,
+            camera_controls=cfg["robot"].get("camera_controls", {}),
             id=cfg["robot"]["id"],
         )
     else:

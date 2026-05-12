@@ -58,6 +58,7 @@ from .robots.utils import make_robot_from_config
 from .utils.policy_preprocessor import load_observation_rename_map
 from .utils.runtime_helpers import build_dataset_features
 from .utils.camera_config_parser import parse_camera_configs
+from .utils.shared_camera_config import load_yaml_with_shared_camera_config
 
 
 SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
@@ -307,8 +308,7 @@ def _parse_cli_args() -> argparse.Namespace:
 
 
 def _load_yaml(path: str) -> dict:
-    with open(Path(path).expanduser(), encoding="utf-8") as file:
-        return yaml.safe_load(file) or {}
+    return load_yaml_with_shared_camera_config(path)
 
 
 def _load_config(cli: argparse.Namespace) -> dict:
@@ -448,6 +448,7 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         robot_right_arm_port=robot_cfg.get("right_arm_port", "can1"),
         robot_id=robot_cfg.get("id", "PTK_follower"),
         robot_cameras=json.dumps(robot_cameras) if robot_cameras is not None else None,
+        robot_camera_controls=robot_cfg.get("camera_controls", {}),
         robot_handedness=robot_cfg.get("handedness"),
         robot_channel_mode=robot_cfg.get("channel_mode"),
         robot_device_id=robot_cfg.get("device_id"),
@@ -967,6 +968,7 @@ def _create_robot_config(args: argparse.Namespace):
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
+            camera_controls=args.robot_camera_controls,
         )
     elif args.robot_type == "pico_follower_dual_arm_agibot_o10":
         return PicoFollowerDualArmAgibotO10Config(
@@ -980,6 +982,7 @@ def _create_robot_config(args: argparse.Namespace):
             tactile_mode=args.robot_tactile_mode,
             id=args.robot_id,
             cameras=camera_config,
+            camera_controls=args.robot_camera_controls,
         )
     else:
         raise ValueError(f"Unsupported robot type: {args.robot_type}")

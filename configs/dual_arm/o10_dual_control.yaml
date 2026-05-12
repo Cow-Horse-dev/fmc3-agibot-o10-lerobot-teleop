@@ -101,33 +101,8 @@ robot:
     gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
     reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
-  cameras:
-    top:
-      type: opencv  # 可选: opencv, intelrealsense, realsense
-      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0  # OpenCV 相机设备路径
-      width: 640  # 图像宽度
-      height: 480  # 图像高度
-      fps: 30  # 相机帧率
-      fourcc: MJPG  # OpenCV 编码格式
-      rotation: ROTATE_180  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
-    left_wrist:
-      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
-      serial_number_or_name: "260322276846"  # RealSense 序列号或设备名
-      width: 640  # 图像宽度
-      height: 480  # 图像高度
-      fps: 30  # 相机帧率
-      use_depth: false  # 可选: true, false
-      color_mode: rgb  # 可选: rgb, bgr
-      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
-    right_wrist:
-      type: intelrealsense  # 可选: opencv, intelrealsense, realsense
-      serial_number_or_name: "260322273018"  # RealSense 序列号或设备名
-      width: 640  # 图像宽度
-      height: 480  # 图像高度
-      fps: 30  # 相机帧率
-      use_depth: false  # 可选: true, false
-      color_mode: rgb  # 可选: rgb, bgr
-      rotation: NO_ROTATION  # 可选: NO_ROTATION, ROTATE_90, ROTATE_180, ROTATE_270
+  camera_config_path: configs/cameras/o10_cameras.yaml
+  camera_profile: dual_arm
 
 fps: 30  # 控制频率，单位 Hz
 display_data: true  # 可选: true, false
