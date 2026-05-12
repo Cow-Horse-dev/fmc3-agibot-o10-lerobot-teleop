@@ -40,6 +40,16 @@ python scripts/tools/set_pose.py --arm 0 0 0 0 0 0 --hand 0 -1.14 0.37 0 0.22 0.
 python scripts/tools/set_pose.py --read-only   # 只读当前位置
 ```
 
+### `switch_lora_task.py`
+给正在运行的 multi-LoRA 推理进程发送任务切换请求。命令只写入配置里的
+`command_file`，推理进程会在当前 action chunk 执行完后读取并切换 active LoRA。
+
+```bash
+python run_lerobot_play.py switch_lora_task \
+    --config configs/right_arm/o10_right_pi05_lora_tasks.yaml \
+    --profile yellow_to_black
+```
+
 ### `check_tactile_success.py`
 判断"笔触摄像头"任务是否成功：右手拇指/食指/中指触觉均值均超过阈值则视为成功。
 可作为函数导入，也可独立运行验证阈值。

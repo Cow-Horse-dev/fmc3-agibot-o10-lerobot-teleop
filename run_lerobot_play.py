@@ -29,6 +29,7 @@ SCRIPT_COMMANDS = {
     "set_pose": "scripts.tools.set_pose",
     "save_reset_pose": "scripts.tools.save_reset_pose",
     "save_dual_reset_pose": "scripts.tools.save_dual_reset_pose",
+    "switch_lora_task": "scripts.tools.switch_lora_task",
 }
 
 

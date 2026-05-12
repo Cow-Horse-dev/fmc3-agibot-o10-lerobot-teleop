@@ -90,6 +90,7 @@ cd ~/workspace/arm-hand-teleop
 ./scripts/o10/right_arm/replay_o10_right.sh        # 轨迹回放
 ./scripts/o10/right_arm/infer_o10_right.sh         # GPU 策略推理
 ./scripts/o10/right_arm/infer_o10_right_cpu.sh     # CPU 策略推理示例
+./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh  # PI0.5 多 LoRA 动态切换推理
 ```
 
 ### 单左臂
@@ -160,6 +161,7 @@ cd ~/workspace/arm-hand-teleop
 - `configs/right_arm/o10_right_replay.yaml`：轨迹回放。
 - `configs/right_arm/o10_right_infer.yaml`：GPU 策略推理。相机 key 与右臂录制 schema 保持一致：`top + right`。
 - `configs/right_arm/o10_right_infer_cpu.yaml`：CPU 推理示例，默认 `policy: act`。
+- `configs/right_arm/o10_right_pi05_lora_tasks.yaml`：右臂 PI0.5 多 LoRA profile 配置，绑定 adapter 路径、任务文本和切换命令文件。
 
 ### 双臂
 
@@ -311,9 +313,32 @@ ARM_HAND_TELEOP_ASYNC_ACTIONS_PER_CHUNK=50 \
 ./scripts/o10/dual_arm/infer_o10_dual_pi05_async_rtc.sh
 ```
 
+右臂 PI0.5 多 LoRA 动态切换：
+
+```bash
+# 1. 训练两个无触觉数据集对应的 LoRA adapter
+/home/phl/workspace/lerobot-versions/fmc3-lerobot/scripts/train/train_pi05_o10_right_tissue_loras.sh --dry-run
+/home/phl/workspace/lerobot-versions/fmc3-lerobot/scripts/train/train_pi05_o10_right_tissue_loras.sh
+
+# 2. 启动右臂 multi-LoRA 推理；默认启用 async + RTC
+./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh
+
+# 3. 另开终端切任务。切换会等当前 action chunk 执行完再生效
+./scripts/o10/right_arm/switch_o10_right_lora_task.sh yellow_to_black
+./scripts/o10/right_arm/switch_o10_right_lora_task.sh black_to_yellow
+```
+
+multi-LoRA 推理使用单个 PI0.5 base policy，启动时预加载
+`configs/right_arm/o10_right_pi05_lora_tasks.yaml` 中的多个 LoRA adapter。
+运行时切换的是一组 profile：`task_description + adapter_path`。如果想先跑同步模式调试，可设置：
+
+```bash
+ARM_HAND_TELEOP_MULTI_LORA_ASYNC=0 ./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh
+```
+
 推理前检查：
 
-- `infer.model_path` 必须存在，且目录内必须有 `config.json`；权重通常是 `model.safetensors` 或 `pytorch_model.bin`。
+- `infer.model_path` 必须存在。普通模型要指向 `.../pretrained_model` 目录；multi-LoRA 可以指向 `configs/right_arm/o10_right_pi05_lora_tasks.yaml` 这类 profile 配置。
 - `infer.policy` 必须和模型类型一致。
 - `infer.device` 可用 `cuda` 或 `cpu`；CPU 只适合小模型/调试。
 - `robot.include_eef_pose`、`robot.tactile_mode`、相机 key 必须与训练数据集一致，否则策略输入 schema 会不匹配。
