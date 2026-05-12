@@ -22,3 +22,15 @@ def test_record_preview_source_uses_async_worker_for_local_preview():
     assert 'events["exit_early"] = True' in source
     assert "preview_worker.render_latest()" in source
     assert "preview_worker.stop()" in source
+
+
+def test_record_preview_main_thread_gui_updates_are_throttled():
+    source = LEROBOT_RECORD_SRC_FILE.read_text(encoding="utf-8")
+
+    assert "class _RecordPreviewPump" in source
+    assert "_RecordPreviewPump(preview_fps=DEFAULT_RECORD_PREVIEW_FPS)" in source
+    assert "preview_pump.maybe_render(preview_worker, events)" in source
+    assert (
+        "preview_worker.render_latest()\n"
+        "                _pump_record_preview_events(events)"
+    ) not in source

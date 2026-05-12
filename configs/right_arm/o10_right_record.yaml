@@ -165,7 +165,7 @@ run:
 
   # 是否显示本地预览窗口。
   # 如果你环境里 OpenCV GUI 不可用，建议改成 false。
-  display_data: false
+  display_data: true
 
   # 一次运行最多录多少个 episode。
   num_episodes: 1000
@@ -180,7 +180,7 @@ run:
   # 自动数据集命名时会基于这个字段生成目录名。
   # 例如：
   # - pick and place -> pick_and_place_20260410
-  single_task: pick up the camera from the yellow paper into black box
+  single_task: 把纸巾从黄色纸上拿到黑色纸上
 
 dataset:
   # 是否自动按“任务名 + 日期”命名数据集目录。

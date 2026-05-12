@@ -558,6 +558,35 @@ class _RecordPreviewWorker:
         )
 
 
+class _RecordPreviewPump:
+    def __init__(
+        self,
+        preview_fps: float = DEFAULT_RECORD_PREVIEW_FPS,
+        clock: Any = time.perf_counter,
+    ):
+        self.preview_fps = preview_fps
+        self._clock = clock
+        self._last_update_s: float | None = None
+
+    def maybe_render(
+        self,
+        preview_worker: _RecordPreviewWorker,
+        events: dict[str, Any],
+    ) -> None:
+        if self.preview_fps <= 0:
+            return
+
+        now_s = self._clock()
+        if self._last_update_s is not None and (now_s - self._last_update_s) < (
+            1.0 / self.preview_fps
+        ):
+            return
+
+        self._last_update_s = now_s
+        preview_worker.render_latest()
+        _pump_record_preview_events(events)
+
+
 @safe_stop_image_writer
 def record_loop(
     robot: Robot,
@@ -631,6 +660,11 @@ def record_loop(
     start_episode_t = time.perf_counter()
     camera_keys = list(getattr(robot, "cameras", {}).keys())
     preview_worker = _RecordPreviewWorker() if display_data else None
+    preview_pump = (
+        _RecordPreviewPump(preview_fps=DEFAULT_RECORD_PREVIEW_FPS)
+        if preview_worker is not None
+        else None
+    )
     if preview_worker is not None:
         preview_worker.start()
     try:
@@ -747,8 +781,8 @@ def record_loop(
                     timestamp_s=frame_index / fps,
                     action=sent_action,
                 )
-                preview_worker.render_latest()
-                _pump_record_preview_events(events)
+                if preview_pump is not None:
+                    preview_pump.maybe_render(preview_worker, events)
 
             dt_s = time.perf_counter() - start_loop_t
             precise_sleep(1 / fps - dt_s)
