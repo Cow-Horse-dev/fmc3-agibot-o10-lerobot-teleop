@@ -181,7 +181,7 @@ run:
   # 自动数据集命名时会基于这个字段生成目录名。
   # 例如：
   # - pick and place -> pick_and_place_20260410
-  single_task: use the right arm to move the tissue from the yellow paper to the black paper
+  single_task: use the right arm to move the tissue from the black paper to the yellow  paper
 
 dataset:
   # 是否自动按“任务名 + 日期”命名数据集目录。

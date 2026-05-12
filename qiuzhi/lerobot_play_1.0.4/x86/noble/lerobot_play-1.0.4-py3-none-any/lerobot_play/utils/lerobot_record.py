@@ -372,6 +372,7 @@ def record_loop(
     online_encoding: bool = False,
     episode_index: int | None = None,
     total_episodes: int | None = None,
+    task_switch_coordinator=None,
 ):
     if dataset is not None and dataset.fps != fps:
         raise ValueError(
@@ -416,6 +417,7 @@ def record_loop(
 
     frame_index = 0
     timestamp = 0
+    current_task = single_task
     start_episode_t = time.perf_counter()
     camera_keys = list(getattr(robot, "cameras", {}).keys())
     preview_worker = _RecordPreviewWorker() if display_data else None
@@ -468,6 +470,13 @@ def record_loop(
                 and preprocessor is not None
                 and postprocessor is not None
             ):
+                if task_switch_coordinator is not None:
+                    action_queue = getattr(policy, "_action_queue", None)
+                    is_switch_boundary = action_queue is None or len(action_queue) == 0
+                    current_task = task_switch_coordinator.maybe_switch(
+                        is_switch_boundary=is_switch_boundary
+                    ).task_description
+
                 action_values = predict_action(
                     observation=observation_frame,
                     policy=policy,
@@ -475,7 +484,7 @@ def record_loop(
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
                     use_amp=policy.config.use_amp,
-                    task=single_task,
+                    task=current_task,
                     robot_type=robot.robot_type,
                 )
 

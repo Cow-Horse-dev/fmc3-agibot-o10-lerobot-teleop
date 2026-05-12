@@ -71,6 +71,16 @@ from lerobot.transport.utils import grpc_channel_options, send_bytes_in_chunks
 from lerobot.utils.visualization_utils import log_rerun_data
 from lerobot_play.robots.utils import make_robot_from_config
 from lerobot_play.utils.policy_preprocessor import load_observation_rename_map
+from lerobot_play.utils.multi_lora import (
+    TaskProfileRegistry,
+    is_multi_lora_config_path,
+)
+
+
+def _effective_pretrained_path(model_path: str) -> str:
+    if is_multi_lora_config_path(model_path):
+        return str(TaskProfileRegistry.from_path(model_path).effective_pretrained_path)
+    return model_path
 
 
 class RobotClient:
@@ -99,7 +109,9 @@ class RobotClient:
             lerobot_features=lerobot_features,
             actions_per_chunk=config.actions_per_chunk,
             device=config.policy_device,
-            rename_map=load_observation_rename_map(config.pretrained_name_or_path),
+            rename_map=load_observation_rename_map(
+                _effective_pretrained_path(config.pretrained_name_or_path)
+            ),
         )
         self.channel = grpc.insecure_channel(
             self.server_address,
@@ -135,6 +147,7 @@ class RobotClient:
         # Use an event for thread-safe coordination
         self.must_go = threading.Event()
         self.must_go.set()  # Initially set - observations qualify for direct processing
+        self.task_switch_coordinator = None
 
     def _wait_for_control_start_once(self) -> None:
         if getattr(self, "_control_loop_started", False):
@@ -520,6 +533,7 @@ class RobotClient:
 
         _performed_action = None
         _captured_observation = None
+        current_task = task
 
         loop_start = time.perf_counter()
         while self.running:
@@ -527,13 +541,20 @@ class RobotClient:
                 break
 
             control_loop_start = time.perf_counter()
+            if self.task_switch_coordinator is not None:
+                with self.action_queue_lock:
+                    is_switch_boundary = self.action_queue.empty()
+                current_task = self.task_switch_coordinator.maybe_switch(
+                    is_switch_boundary=is_switch_boundary
+                ).task_description
+
             """Control loop: (1) Performing actions, when available"""
             if self.actions_available():
                 _performed_action = self.control_loop_action(verbose)
 
             """Control loop: (2) Streaming observations to the remote policy server"""
             if self._ready_to_send_observation():
-                _captured_observation = self.control_loop_observation(task, verbose)
+                _captured_observation = self.control_loop_observation(current_task, verbose)
 
             self.logger.debug(
                 f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}"

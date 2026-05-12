@@ -59,6 +59,14 @@ from .utils.policy_preprocessor import load_observation_rename_map
 from .utils.runtime_helpers import build_dataset_features
 from .utils.camera_config_parser import parse_camera_configs
 from .utils.shared_camera_config import load_yaml_with_shared_camera_config
+from .utils.multi_lora import (
+    SwitchablePeftPolicy,
+    TaskProfile,
+    TaskProfileRegistry,
+    TaskSwitchCommandStore,
+    TaskSwitchCoordinator,
+    is_multi_lora_config_path,
+)
 
 
 SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
@@ -86,6 +94,13 @@ def _validate_model_path(model_path: str) -> bool:
     model_path = os.path.expanduser(model_path)
     if not os.path.exists(model_path):
         raise ValueError(f"Model path does not exist: {model_path}")
+
+    if is_multi_lora_config_path(model_path):
+        registry = TaskProfileRegistry.from_path(model_path)
+        for profile in registry.profiles.values():
+            if not profile.adapter_path.is_dir():
+                raise ValueError(f"LoRA adapter path does not exist: {profile.adapter_path}")
+        return True
 
     # 检查是否为有效的模型目录
     if not os.path.isdir(model_path):
@@ -669,6 +684,12 @@ def _is_local_peft_adapter_path(model_path: str) -> bool:
     return has_adapter_config and has_adapter_weights
 
 
+def _effective_model_path(model_path: str) -> str:
+    if is_multi_lora_config_path(model_path):
+        return str(TaskProfileRegistry.from_path(model_path).effective_pretrained_path)
+    return model_path
+
+
 def _load_base_policy(policy_type: str, model_path: str, device: str | None = None):
     config_path = Path(model_path).expanduser() / "config.json"
     from_pretrained_kwargs = {}
@@ -737,6 +758,49 @@ def _load_peft_policy(policy_type: str, adapter_path: str):
     return policy
 
 
+def _load_multi_lora_policy(policy_type: str, config_path: str):
+    try:
+        from peft import PeftConfig, PeftModel
+    except ImportError as exc:
+        raise RuntimeError(
+            "Multi-LoRA inference requires package 'peft', but it is not installed."
+        ) from exc
+
+    registry = TaskProfileRegistry.from_path(config_path)
+    default_profile = registry.default_profile
+    peft_config = PeftConfig.from_pretrained(str(default_profile.adapter_path))
+    base_model_path = str(
+        registry.base_model_path
+        or getattr(peft_config, "base_model_name_or_path", None)
+        or ""
+    )
+    if not base_model_path:
+        raise ValueError(
+            "Multi-LoRA config needs base_model_path, or the default adapter_config.json "
+            "must contain base_model_name_or_path."
+        )
+
+    log_say(
+        f"Detected multi-LoRA config at {config_path}; loading base {policy_type} "
+        f"policy from {base_model_path}"
+    )
+    base_policy = _load_base_policy(policy_type, base_model_path)
+    policy = PeftModel.from_pretrained(
+        base_policy,
+        str(default_profile.adapter_path),
+        adapter_name=default_profile.profile_id,
+        config=peft_config,
+    )
+    _ensure_lerobot_policy_config(policy, base_policy)
+    switchable_policy = SwitchablePeftPolicy(policy, registry)
+    switchable_policy.preload_remaining_adapters()
+    log_say(
+        "Preloaded LoRA task profiles: "
+        + ", ".join(sorted(registry.profiles))
+    )
+    return switchable_policy
+
+
 def _validate_policy_type_matches_checkpoint(
     policy_type: str,
     policy_config: PreTrainedConfig,
@@ -750,7 +814,7 @@ def _validate_policy_type_matches_checkpoint(
 
 
 def _load_observation_rename_map(model_path: str) -> dict[str, str]:
-    return load_observation_rename_map(model_path, logger=log_say)
+    return load_observation_rename_map(_effective_model_path(model_path), logger=log_say)
 
 
 def _resolve_local_paligemma_tokenizer_path() -> str | None:
@@ -802,12 +866,13 @@ def _load_and_validate_policy_config(
     device: str | None,
     robot_features: dict[str, dict],
 ) -> PreTrainedConfig:
-    policy_config = _load_policy_config_lenient(model_path, device)
-    _validate_policy_type_matches_checkpoint(policy_type, policy_config, model_path)
+    effective_model_path = _effective_model_path(model_path)
+    policy_config = _load_policy_config_lenient(effective_model_path, device)
+    _validate_policy_type_matches_checkpoint(policy_type, policy_config, effective_model_path)
     _validate_policy_robot_feature_compatibility(
         policy_config,
         robot_features,
-        model_path,
+        effective_model_path,
         observation_rename_map=_load_observation_rename_map(model_path),
     )
     return policy_config
@@ -825,7 +890,9 @@ def _load_policy(policy_type: str, model_path: str, device: str):
     start_time = time.time()
 
     try:
-        if _is_local_peft_adapter_path(model_path):
+        if is_multi_lora_config_path(model_path):
+            policy = _load_multi_lora_policy(policy_type, model_path)
+        elif _is_local_peft_adapter_path(model_path):
             policy = _load_peft_policy(policy_type, model_path)
         else:
             policy = _load_base_policy(policy_type, model_path, device)
@@ -840,6 +907,31 @@ def _load_policy(policy_type: str, model_path: str, device: str):
 
     except Exception as e:
         raise RuntimeError(f"Failed to load policy: {e}")
+
+
+def _create_task_switch_coordinator(
+    model_path: str,
+    policy=None,
+) -> TaskSwitchCoordinator | None:
+    if not is_multi_lora_config_path(model_path):
+        return None
+
+    registry = TaskProfileRegistry.from_path(model_path)
+
+    def switch_callback(profile: TaskProfile) -> None:
+        log_say(
+            f"Switching active LoRA profile to {profile.profile_id}: "
+            f"{profile.task_description}"
+        )
+        if policy is not None and hasattr(policy, "switch_to_profile"):
+            policy.switch_to_profile(profile.profile_id)
+
+    return TaskSwitchCoordinator(
+        registry=registry,
+        command_store=TaskSwitchCommandStore(registry.command_file),
+        initial_profile_id=registry.default_profile_id,
+        switch_callback=switch_callback,
+    )
 
 
 def _reset_to_training_start(robot, model_path: str) -> None:
@@ -1069,14 +1161,16 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=policy.config,
-        pretrained_path=args.model_path,
+        pretrained_path=_effective_model_path(args.model_path),
         dataset_stats=dataset.meta.stats,
         # The inference device is automatically set to match the detected hardware, overriding any previous device settings from training to ensure compatibility.
         preprocessor_overrides=_build_policy_preprocessor_overrides(
             args.policy,
             str(policy.config.device),
+            _load_observation_rename_map(args.model_path),
         ),
     )
+    task_switch_coordinator = _create_task_switch_coordinator(args.model_path, policy)
 
     # 初始化键盘监听和可视化
     events = {
@@ -1091,7 +1185,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 连接机器人
     robot.connect()
-    _reset_robot_for_inference_start(robot, args.model_path)
+    _reset_robot_for_inference_start(robot, _effective_model_path(args.model_path))
 
     try:
         episodes_completed = 0
@@ -1121,6 +1215,7 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
                 teleop_action_processor=teleop_action_processor,
                 robot_action_processor=robot_action_processor,
                 robot_observation_processor=robot_observation_processor,
+                task_switch_coordinator=task_switch_coordinator,
             )
 
             # 保存数据
@@ -1215,15 +1310,17 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         debug_visualize_queue_size=args.debug_visualize_queue_size,
     )
     client_cfg.display_data = args.display_data
+    task_switch_coordinator = _create_task_switch_coordinator(args.model_path)
 
     if args.display_data:
         init_rerun(session_name="inference")
 
     # 创建并启动客户端
     client = RobotClient(client_cfg)
+    client.task_switch_coordinator = task_switch_coordinator
     client_robot = getattr(client, "robot", None)
     if client_robot is not None:
-        _reset_robot_for_inference_start(client_robot, args.model_path)
+        _reset_robot_for_inference_start(client_robot, _effective_model_path(args.model_path))
 
     if not client.start():
         raise RuntimeError("Failed to start RobotClient")
@@ -1245,7 +1342,11 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
             try:
                 client.control_loop(
-                    args.task_description,
+                    (
+                        task_switch_coordinator.active_profile.task_description
+                        if task_switch_coordinator is not None
+                        else args.task_description
+                    ),
                     control_time_s=args.episode_time_sec,
                 )
             except KeyboardInterrupt:

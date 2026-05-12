@@ -21,6 +21,7 @@ from lerobot.async_inference.policy_server import make_pre_post_processors
 from lerobot.configs.types import RTCAttentionSchedule
 from lerobot.policies.rtc.configuration_rtc import RTCConfig
 from lerobot.transport import services_pb2, services_pb2_grpc
+from lerobot_play.utils.multi_lora import TaskProfileRegistry, is_multi_lora_config_path
 
 
 RTC_ENABLED_ENV = "ARM_HAND_TELEOP_RTC_ENABLED"
@@ -29,6 +30,12 @@ RTC_MAX_GUIDANCE_WEIGHT_ENV = "ARM_HAND_TELEOP_RTC_MAX_GUIDANCE_WEIGHT"
 RTC_PREFIX_ATTENTION_SCHEDULE_ENV = "ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE"
 RTC_DEBUG_ENV = "ARM_HAND_TELEOP_RTC_DEBUG"
 TransferState = services_pb2.TransferState  # type: ignore[attr-defined]
+
+
+def _effective_pretrained_path(model_path: str) -> str:
+    if is_multi_lora_config_path(model_path):
+        return str(TaskProfileRegistry.from_path(model_path).effective_pretrained_path)
+    return model_path
 
 
 def _load_policy(policy_type: str, model_path: str, device: str):
@@ -235,11 +242,14 @@ class PolicyServer(BasePolicyServer):
             self.device,
         )
         _apply_rtc_env_config(self.policy)
+        effective_pretrained_path = _effective_pretrained_path(
+            policy_specs.pretrained_name_or_path
+        )
 
         device_override = {"device": self.device}
         self.preprocessor, self.postprocessor = make_pre_post_processors(
             self.policy.config,
-            pretrained_path=policy_specs.pretrained_name_or_path,
+            pretrained_path=effective_pretrained_path,
             preprocessor_overrides=_build_policy_preprocessor_overrides(
                 self.policy_type,
                 self.device,
@@ -254,6 +264,18 @@ class PolicyServer(BasePolicyServer):
         )
 
         return services_pb2.Empty()
+
+    def _switch_policy_for_task(self, task_description: str | None) -> None:
+        if not task_description or not hasattr(self.policy, "switch_to_task_description"):
+            return
+
+        changed = self.policy.switch_to_task_description(task_description)
+        if not changed:
+            return
+
+        self._rtc_previous_action_chunk = None
+        self._rtc_previous_timestep = None
+        self.logger.info("Switched active LoRA adapter for task: %s", task_description)
 
     def _rtc_enabled(self) -> bool:
         rtc_config = getattr(getattr(self.policy, "config", None), "rtc_config", None)
@@ -306,6 +328,7 @@ class PolicyServer(BasePolicyServer):
 
     def _predict_action_chunk(self, observation_t):
         start_prepare = time.perf_counter()
+        self._switch_policy_for_task(observation_t.get_observation().get("task"))
         observation = _raw_observation_to_observation_compat(
             observation_t.get_observation(),
             self.lerobot_features,

@@ -1,0 +1,21 @@
+# PI0.5 multi-LoRA task profiles for the O10 right arm.
+#
+# Train the adapters with:
+#   /home/phl/workspace/lerobot-versions/fmc3-lerobot/scripts/train/train_pi05_o10_right_tissue_loras.sh
+#
+# Then launch inference with:
+#   ./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh
+# and switch tasks with:
+#   ./scripts/o10/right_arm/switch_o10_right_lora_task.sh yellow_to_black
+
+base_model_path: /home/phl/workspace/models/pi05_base
+default_profile: black_to_yellow
+command_file: /tmp/o10_right_pi05_lora_switch.json
+
+profiles:
+  black_to_yellow:
+    task_description: use the right arm to move the tissue from the black paper to the yellow paper
+    adapter_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_o10_right_tissue_black_to_yellow_lora/checkpoints/last/pretrained_model
+  yellow_to_black:
+    task_description: use the right arm to move the tissue from the yellow paper to the black paper
+    adapter_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_o10_right_tissue_yellow_to_black_lora/checkpoints/last/pretrained_model
