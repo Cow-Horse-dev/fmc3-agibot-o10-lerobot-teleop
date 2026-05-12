@@ -7,6 +7,7 @@ Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense/USB 相机的遥操作
 ## 目录说明
 
 - `configs/`：控制、录制、推理、回放配置，以及复位姿态 JSON。
+- `docs/`：实现说明和专项文档。
 - `scripts/`：日常启动脚本、HDService/HDWeb 服务脚本和工具脚本。
 - `qiuzhi/`：vendored `lerobot_play` 代码和 Python 回归测试。
 - `yudie/`：宇叠手套、OmniHand、HDService、HDWeb 相关代码和 SDK。
@@ -58,6 +59,7 @@ python run_lerobot_play.py infer  --yaml configs/right_arm/o10_right_infer.yaml
 python run_lerobot_play.py set_pose [args]
 python run_lerobot_play.py save_reset_pose [args]
 python run_lerobot_play.py save_dual_reset_pose [args]
+python run_lerobot_play.py switch_lora_task [args]
 ```
 
 ## 常用启动命令
@@ -328,13 +330,104 @@ ARM_HAND_TELEOP_ASYNC_ACTIONS_PER_CHUNK=50 \
 ./scripts/o10/right_arm/switch_o10_right_lora_task.sh black_to_yellow
 ```
 
-multi-LoRA 推理使用单个 PI0.5 base policy，启动时预加载
-`configs/right_arm/o10_right_pi05_lora_tasks.yaml` 中的多个 LoRA adapter。
-运行时切换的是一组 profile：`task_description + adapter_path`。如果想先跑同步模式调试，可设置：
+### PI0.5 多 LoRA 详细说明
+
+这套模式的目标是：
+
+- 只启动一个 PI0.5 推理进程。
+- 只保留一份 base model。
+- 在启动时预加载多个 LoRA adapter。
+- 运行过程中按任务切换当前激活的 adapter 和自然语言 `task`。
+
+它不是“每次切任务重新加载一个模型”，而是“一个 base model + 多个已加载 adapter”。这样切换更快，也更适合在线演示和连续任务切换。
+
+当前右臂使用的 profile 配置文件是：
+
+- `configs/right_arm/o10_right_pi05_lora_tasks.yaml`
+
+配置结构如下：
+
+```yaml
+base_model_path: /home/phl/workspace/models/pi05_base
+default_profile: black_to_yellow
+command_file: /tmp/o10_right_pi05_lora_switch.json
+
+profiles:
+  black_to_yellow:
+    task_description: use the right arm to move the tissue from the black paper to the yellow paper
+    adapter_path: /path/to/black_to_yellow_adapter
+  yellow_to_black:
+    task_description: use the right arm to move the tissue from the yellow paper to the black paper
+    adapter_path: /path/to/yellow_to_black_adapter
+```
+
+字段含义：
+
+- `base_model_path`：PI0.5 base model 路径。
+- `default_profile`：启动时默认激活的 adapter。
+- `command_file`：任务切换命令写入的文件。
+- `profiles.<name>.task_description`：送给策略的自然语言任务文本。
+- `profiles.<name>.adapter_path`：该任务对应的 LoRA adapter 目录。
+
+切换方式不是直接 RPC 下发“换模型”，而是写入 `command_file`。正在运行的推理循环会轮询这个文件，并在安全边界执行切换。
+
+切换边界：
+
+- 同步推理：等待当前 policy action queue 清空。
+- 异步推理：等待 client 本地 action queue 清空。
+
+所以 `switch_o10_right_lora_task.sh` 执行后不会立即硬切，而是：
+
+1. 写入目标 `profile_id` 到 command file。
+2. 推理循环读到切换请求。
+3. 等当前 chunk 消费完。
+4. 切到新的 LoRA adapter。
+5. 用新的 `task_description` 继续生成动作。
+
+切换时会额外重置 policy 运行时状态和 RTC processor，避免上一个任务的残留状态串到下一个任务。
+
+如果想先跑同步模式调试，可设置：
 
 ```bash
 ARM_HAND_TELEOP_MULTI_LORA_ASYNC=0 ./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh
 ```
+
+异步模式下：
+
+- `infer_o10_right_pi05_multi_lora.sh` 会自动拉起 `async_policy_server`
+- client 负责在边界更新任务文本
+- server 负责根据任务文本切到对应 adapter
+
+切换命令除了 shell 包装脚本，还可以直接调用统一入口：
+
+```bash
+python run_lerobot_play.py switch_lora_task \
+  --config configs/right_arm/o10_right_pi05_lora_tasks.yaml \
+  --profile yellow_to_black
+```
+
+当前建议使用场景：
+
+- 在线切任务推理
+- 同一个相机和机器人 schema 下的多任务 LoRA 演示
+- 单个 base model 配多个任务 adapter 的快速切换
+
+当前限制：
+
+- `task_description` 必须和 profile 里的文本精确对应，异步 server 用它反查 adapter。
+- adapter 越多，启动时预加载越慢，占用显存越高。
+- 同步推理如果同时开启 `save_data`，当前控制行为会切到新任务，但数据集写入的 `task` 仍是初始 `single_task`；所以当前实现更适合在线推理切换，不适合边切边录成严格多任务标注数据。
+
+排查建议：
+
+- 切换不生效：先确认 `switch_o10_right_lora_task.sh` 写入的 `profile_id` 在 YAML 里存在。
+- 启动时报路径错误：检查 `base_model_path` 和每个 `adapter_path` 是否都存在。
+- 推理输入不匹配：确认 `o10_right_infer.yaml` 的相机 key、state/action schema 与训练 LoRA 时一致。
+- 感觉切换有延迟：先看是不是还没到 chunk 边界，这是当前设计的正常行为。
+
+更完整的实现细节见：
+
+- `docs/pi05_multi_lora_switching.md`
 
 推理前检查：
 
