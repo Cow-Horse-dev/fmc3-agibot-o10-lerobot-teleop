@@ -1,97 +1,27 @@
-# O10 shared camera configuration.
+# O10 shared wrist camera registry.
 #
-# All O10 control / record / infer YAML files choose a profile from this file via:
-#   robot.camera_config_path: configs/cameras/o10_cameras.yaml
-#   robot.camera_profile: <profile_name>
-#
-# Tune camera exposure, serial numbers, resolution, and rotation here once instead
-# of editing every left/right/dual config separately.
+# This file only stores parameters shared by the physical wrist RealSense
+# cameras. Scene-specific camera keys such as top/left/right/right_wrist live in
+# the control/record/infer YAML files.
 
-cameras:
-  # 顶部 USB 相机默认配置，record/infer/dual control 共用。
-  top:
-    type: opencv
-    index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-    width: 640
-    height: 480
-    fps: 30
-    fourcc: MJPG
-    rotation: ROTATE_180
+wrist_camera_defaults:
+  type: intelrealsense
+  width: 640
+  height: 480
+  fps: 30
+  use_depth: false
+  color_mode: rgb
+  rotation: NO_ROTATION
 
-  # 右臂 control 当前使用的顶部相机 H264 profile。
-  # 如果该相机/驱动不支持 h264，可以把 right_arm_control 里的 top 改回 top。
-  top_h264:
-    type: opencv
-    index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
-    width: 640
-    height: 480
-    fps: 30
-    fourcc: h264
-    rotation: ROTATE_180
-
-  # 左腕 RealSense。record/infer profile 会把它映射成数据集 key: left。
+wrist_cameras:
   left_wrist:
-    type: intelrealsense
     serial_number_or_name: "260322276846"
-    width: 640
-    height: 480
-    fps: 30
-    use_depth: false
-    color_mode: rgb
-    rotation: NO_ROTATION
 
-  # 右腕 RealSense。record/infer profile 会把它映射成数据集 key: right。
   right_wrist:
-    type: intelrealsense
     serial_number_or_name: "260322273018"
-    width: 640
-    height: 480
-    fps: 30
-    use_depth: false
-    color_mode: rgb
-    rotation: NO_ROTATION
 
 camera_controls:
-  # RealSense 手动曝光参数。右腕过亮/过暗时优先调 exposure_us，再调 gain。
   right_wrist:
     auto_exposure: false
     exposure_us: 14000
     gain: 16
-
-profiles:
-  # control 用物理相机名，Rerun 里显示 top + *_wrist。
-  left_arm_control:
-    cameras:
-      top: top
-      left_wrist: left_wrist
-
-  # record/infer 用数据集 schema 名，训练特征里是 observation.images.left/top。
-  left_arm_dataset:
-    cameras:
-      left: left_wrist
-      top: top
-
-  # 右臂 control 用 top_h264 + right_wrist；需要 MJPG 时把 top_h264 改成 top。
-  right_arm_control:
-    cameras:
-      top: top_h264
-      right_wrist: right_wrist
-    camera_controls:
-      right_wrist: right_wrist
-
-  # 右臂 record/infer 用数据集 schema 名，训练特征里是 observation.images.right/top。
-  right_arm_dataset:
-    cameras:
-      right: right_wrist
-      top: top
-    camera_controls:
-      right: right_wrist
-
-  # 双臂 control/record/infer 都保留物理相机名 top + left_wrist + right_wrist。
-  dual_arm:
-    cameras:
-      top: top
-      left_wrist: left_wrist
-      right_wrist: right_wrist
-    camera_controls:
-      right_wrist: right_wrist

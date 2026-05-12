@@ -41,50 +41,46 @@ def _load_o10_single_arm_config_class():
     return module.PicoFollowerSingleArmAgibotO10Config, True
 
 
-def test_shared_camera_config_materializes_profile_with_aliases(tmp_path):
+def test_shared_camera_config_materializes_wrist_references_with_aliases(tmp_path):
     from lerobot_play.utils.shared_camera_config import apply_shared_camera_config
 
     shared_config = tmp_path / "o10_cameras.yaml"
     shared_config.write_text(
         """
-cameras:
-  top:
-    type: opencv
-    index_or_path: /dev/top
-    width: 640
-    height: 480
-    fps: 30
-    fourcc: MJPG
-    rotation: ROTATE_180
+wrist_camera_defaults:
+  type: realsense
+  width: 640
+  height: 480
+  fps: 30
+  use_depth: false
+  color_mode: RGB
+  rotation: NO_ROTATION
+wrist_cameras:
   right_wrist:
-    type: realsense
     serial_number_or_name: "260322273018"
-    width: 640
-    height: 480
-    fps: 30
-    use_depth: false
-    color_mode: RGB
-    rotation: NO_ROTATION
 camera_controls:
   right_wrist:
     auto_exposure: false
     exposure_us: 14000
     gain: 16
-profiles:
-  right_arm_dataset:
-    cameras:
-      right: right_wrist
-      top: top
-    camera_controls:
-      right: right_wrist
 """,
         encoding="utf-8",
     )
     config = {
         "robot": {
             "camera_config_path": str(shared_config),
-            "camera_profile": "right_arm_dataset",
-            "cameras": {"right": {"fps": 15}},
+            "cameras": {
+                "right": {"shared_wrist_camera": "right_wrist", "fps": 15},
+                "top": {
+                    "type": "opencv",
+                    "index_or_path": "/dev/top",
+                    "width": 640,
+                    "height": 480,
+                    "fps": 30,
+                    "fourcc": "MJPG",
+                    "rotation": "ROTATE_180",
+                },
+            },
             "camera_controls": {"right": {"gain": 8}},
         }
     }
@@ -119,9 +115,26 @@ def test_o10_configs_reference_shared_camera_file():
         config = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         robot = config["robot"]
         assert robot["camera_config_path"] == "configs/cameras/o10_cameras.yaml"
-        assert "camera_profile" in robot
-        assert "cameras" not in robot
+        assert "camera_profile" not in robot
+        assert "cameras" in robot
         assert "camera_controls" not in robot
+
+
+def test_o10_shared_camera_file_is_wrist_only():
+    shared_config = yaml.safe_load(
+        (WORKSPACE_ROOT / "configs" / "cameras" / "o10_cameras.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(shared_config) == {
+        "wrist_camera_defaults",
+        "wrist_cameras",
+        "camera_controls",
+    }
+    assert set(shared_config["wrist_cameras"]) == {"left_wrist", "right_wrist"}
+    assert "top" not in shared_config["wrist_cameras"]
+    assert "profiles" not in shared_config
 
 
 def test_shared_camera_config_resolves_repo_relative_path_from_absolute_yaml(monkeypatch, tmp_path):
@@ -146,7 +159,18 @@ def test_o10_robot_config_classes_materialize_shared_cameras():
         config = config_class(
             port="can1",
             camera_config_path="configs/cameras/o10_cameras.yaml",
-            camera_profile="right_arm_control",
+            cameras={
+                "top": {
+                    "type": "opencv",
+                    "index_or_path": "/dev/top",
+                    "width": 640,
+                    "height": 480,
+                    "fps": 30,
+                    "fourcc": "MJPG",
+                    "rotation": "ROTATE_180",
+                },
+                "right_wrist": "right_wrist",
+            },
         )
 
         assert set(config.cameras) == {"top", "right_wrist"}

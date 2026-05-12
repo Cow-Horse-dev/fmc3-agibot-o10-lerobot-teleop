@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, List
 
-from lerobot.cameras.configs import CameraConfig
 from lerobot.robots.config import RobotConfig
 
 from lerobot_play.utils.camera_config_parser import parse_camera_configs
@@ -33,7 +32,7 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     tactile_mode: str = "none"  # "none" or "130d"
     disable_torque_on_disconnect: bool = True
     max_relative_target: List[float] = field(default_factory=lambda: [0.1, 0.1])
-    cameras: dict[str, CameraConfig] = field(default_factory=dict)
+    cameras: dict[str, Any] = field(default_factory=dict)
     camera_controls: dict[str, dict] = field(default_factory=dict)
     camera_config_path: str | None = None
     camera_profile: str | None = None
@@ -42,7 +41,7 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     serial_freq: int = 500
 
     def __post_init__(self) -> None:
-        if not self.camera_config_path or not self.camera_profile:
+        if not self.camera_config_path:
             return
 
         materialized = apply_shared_camera_config(

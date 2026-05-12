@@ -42,9 +42,10 @@ WRIST_CAMERA_SAVE_DIR=/tmp/wrist_exposure \
 pytest tests/test_wrist_camera_exposure_debug.py -s
 ```
 
-If the test fails, lower the matching camera controls in the config, usually
-`camera_controls.<camera>.exposure_us` first and `gain` second. For the current
-right wrist config, edit `configs/cameras/o10_cameras.yaml`:
+If the test fails, lower the matching physical wrist controls in the shared
+config, usually `camera_controls.<physical_wrist>.exposure_us` first and `gain`
+second. For the current right wrist config, edit
+`configs/cameras/o10_cameras.yaml`:
 
 ```yaml
 camera_controls:

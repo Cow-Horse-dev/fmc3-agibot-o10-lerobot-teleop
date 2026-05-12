@@ -47,6 +47,66 @@ def _load_yaml(path: str | Path) -> dict[str, Any]:
         return yaml.safe_load(file) or {}
 
 
+def _shared_camera(
+    shared_config: dict[str, Any],
+    source_name: str,
+) -> dict[str, Any]:
+    wrist_cameras = shared_config.get("wrist_cameras", {})
+    if source_name in wrist_cameras:
+        defaults = shared_config.get("wrist_camera_defaults", {})
+        return _deep_update(defaults, wrist_cameras[source_name])
+
+    shared_cameras = shared_config.get("cameras", {})
+    if source_name in shared_cameras:
+        return deepcopy(shared_cameras[source_name])
+
+    raise KeyError(f"Shared camera config is missing wrist_cameras.{source_name}")
+
+
+def _camera_reference(camera_config: Any) -> tuple[str | None, dict[str, Any]]:
+    if isinstance(camera_config, str):
+        return camera_config, {}
+
+    if not isinstance(camera_config, dict):
+        return None, {}
+
+    source_name = (
+        camera_config.get("shared_wrist_camera")
+        or camera_config.get("wrist_camera")
+        or camera_config.get("camera_ref")
+    )
+    if not source_name:
+        return None, {}
+
+    overrides = {
+        key: deepcopy(value)
+        for key, value in camera_config.items()
+        if key not in {"shared_wrist_camera", "wrist_camera", "camera_ref"}
+    }
+    return str(source_name), overrides
+
+
+def _materialize_inline_cameras(
+    shared_config: dict[str, Any],
+    inline_cameras: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    materialized: dict[str, Any] = {}
+    camera_sources: dict[str, str] = {}
+
+    for target_name, camera_config in (inline_cameras or {}).items():
+        source_name, overrides = _camera_reference(camera_config)
+        if source_name:
+            materialized[target_name] = _deep_update(
+                _shared_camera(shared_config, source_name),
+                overrides,
+            )
+            camera_sources[target_name] = source_name
+        else:
+            materialized[target_name] = deepcopy(camera_config)
+
+    return materialized, camera_sources
+
+
 def _profile_map(profile: dict[str, Any], section: str) -> dict[str, str]:
     mapping = profile.get(section, {})
     if isinstance(mapping, list):
@@ -79,6 +139,32 @@ def _materialize_section(
     return materialized
 
 
+def _apply_inline_overrides(
+    materialized: dict[str, Any],
+    inline_overrides: dict[str, Any],
+) -> dict[str, Any]:
+    for target_name, override in (inline_overrides or {}).items():
+        if target_name in materialized and isinstance(override, dict):
+            materialized[target_name] = _deep_update(materialized[target_name], override)
+        else:
+            materialized[target_name] = deepcopy(override)
+    return materialized
+
+
+def _materialize_camera_controls(
+    shared_config: dict[str, Any],
+    camera_sources: dict[str, str],
+    inline_overrides: dict[str, Any],
+) -> dict[str, Any]:
+    shared_controls = shared_config.get("camera_controls", {})
+    materialized: dict[str, Any] = {}
+
+    for target_name, source_name in camera_sources.items():
+        if source_name in shared_controls:
+            materialized[target_name] = deepcopy(shared_controls[source_name])
+    return _apply_inline_overrides(materialized, inline_overrides)
+
+
 def apply_shared_camera_config(
     config: dict[str, Any],
     *,
@@ -91,25 +177,29 @@ def apply_shared_camera_config(
 
     shared_path = robot_config.get("camera_config_path")
     profile_name = robot_config.get("camera_profile")
-    if not shared_path or not profile_name:
+    if not shared_path:
         return materialized_config
 
     resolved_shared_path = _resolve_config_path(shared_path, base_path=base_path)
     shared_config = _load_yaml(resolved_shared_path)
-    profile = (shared_config.get("profiles") or {}).get(profile_name)
-    if not isinstance(profile, dict):
-        raise KeyError(f"Shared camera config is missing profiles.{profile_name}")
 
-    robot_config["cameras"] = _materialize_section(
+    if profile_name:
+        profile = (shared_config.get("profiles") or {}).get(profile_name)
+        if not isinstance(profile, dict):
+            raise KeyError(f"Shared camera config is missing profiles.{profile_name}")
+        profile_cameras = _materialize_section(shared_config, profile, "cameras", {})
+        robot_config["cameras"] = _deep_update(
+            profile_cameras,
+            robot_config.get("cameras") or {},
+        )
+
+    robot_config["cameras"], camera_sources = _materialize_inline_cameras(
         shared_config,
-        profile,
-        "cameras",
         robot_config.get("cameras") or {},
     )
-    robot_config["camera_controls"] = _materialize_section(
+    robot_config["camera_controls"] = _materialize_camera_controls(
         shared_config,
-        profile,
-        "camera_controls",
+        camera_sources,
         robot_config.get("camera_controls") or {},
     )
     return materialized_config
