@@ -189,8 +189,8 @@ def test_shared_camera_config_resolves_repo_relative_path_from_absolute_yaml(mon
         WORKSPACE_ROOT / "configs" / "right_arm" / "o10_right_record.yaml"
     )
 
-    assert set(config["robot"]["cameras"]) == {"right", "top"}
-    assert config["robot"]["camera_controls"]["right"]["exposure_us"] == 14000
+    assert set(config["robot"]["cameras"]) == {"right_wrist", "top"}
+    assert config["robot"]["camera_controls"]["right_wrist"]["exposure_us"] == 14000
 
 
 def test_o10_robot_config_classes_materialize_shared_cameras():

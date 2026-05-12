@@ -65,6 +65,7 @@ from .utils.runtime_helpers import (
     resolve_record_dataset_target,
 )
 from .utils.camera_config_parser import parse_camera_configs
+from .utils.rerun_control_display import configure_control_rerun_display
 from .utils.shared_camera_config import load_yaml_with_shared_camera_config
 
 
@@ -985,6 +986,7 @@ def main():
 
         if bool(cfg["run"].get("display_data", False)):
             init_rerun(session_name="recording")
+            configure_control_rerun_display(robot)
 
         # Connect devices
         robot.connect()

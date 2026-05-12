@@ -108,7 +108,7 @@ def test_right_control_yaml_parses():
     ("config_path", "camera_key"),
     [
         ("configs/right_arm/o10_right_control.yaml", "right_wrist"),
-        ("configs/right_arm/o10_right_record.yaml", "right"),
+        ("configs/right_arm/o10_right_record.yaml", "right_wrist"),
         ("configs/right_arm/o10_right_infer.yaml", "right"),
         ("configs/right_arm/o10_right_infer_cpu.yaml", "right"),
         ("configs/dual_arm/o10_dual_control.yaml", "right_wrist"),
@@ -277,7 +277,7 @@ def test_dual_arm_wrist_camera_rotations_are_no_rotation():
     )
     assert (
         dual_record["robot"]["cameras"]["right_wrist"]["rotation"]
-        == right_record["robot"]["cameras"]["right"]["rotation"]
+        == right_record["robot"]["cameras"]["right_wrist"]["rotation"]
         == "NO_ROTATION"
     )
     assert dual_control["robot"]["cameras"]["left_wrist"]["rotation"] == "NO_ROTATION"
@@ -326,7 +326,8 @@ def test_right_record_yaml_uses_joint_only_state_without_tactile():
     assert config["robot"]["tactile_mode"] == "none"
     assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "right"
-    assert "right" in config["robot"]["cameras"]
+    assert "right_wrist" in config["robot"]["cameras"]
+    assert "right" not in config["robot"]["cameras"]
 
 
 def test_single_arm_realsense_rotations_are_no_rotation():
@@ -341,7 +342,7 @@ def test_single_arm_realsense_rotations_are_no_rotation():
     left_record_rotation = left_record_config["robot"]["cameras"]["left"]["rotation"]
     left_infer_rotation = left_infer_config["robot"]["cameras"]["left"]["rotation"]
     control_rotation = control_config["robot"]["cameras"]["right_wrist"]["rotation"]
-    record_rotation = record_config["robot"]["cameras"]["right"]["rotation"]
+    record_rotation = record_config["robot"]["cameras"]["right_wrist"]["rotation"]
     infer_rotation = infer_config["robot"]["cameras"]["right"]["rotation"]
 
     assert left_control_rotation == left_record_rotation == left_infer_rotation == "NO_ROTATION"

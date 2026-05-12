@@ -123,6 +123,7 @@ from lerobot_play._compat import Teleoperator
 from lerobot_play.robots.utils import make_robot_from_config
 from lerobot_play.teleoperators.utils import make_teleoperator_from_config
 from lerobot_play.utils.display_filter import filter_display_observation
+from lerobot_play.utils.rerun_control_display import configure_control_rerun_display
 
 DEFAULT_RECORD_PREVIEW_FPS = 5.0
 
@@ -802,6 +803,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         init_rerun(session_name="recording")
 
     robot = make_robot_from_config(cfg.robot)
+    if cfg.display_data:
+        configure_control_rerun_display(robot)
     teleop = (
         make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
     )
