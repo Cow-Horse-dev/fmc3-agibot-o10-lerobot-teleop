@@ -318,12 +318,12 @@ def test_left_record_yaml_has_dataset_section():
     assert "right" not in config["robot"]["cameras"]
 
 
-def test_right_record_yaml_uses_joint_only_state_without_tactile():
+def test_right_record_yaml_records_raw_130d_tactile_separately():
     config = _load_config("configs/right_arm/o10_right_record.yaml")
 
     assert config["robot"]["port"] == "can1"
     assert config["robot"]["include_eef_pose"] is False
-    assert config["robot"]["tactile_mode"] == "none"
+    assert config["robot"]["tactile_mode"] == "130d"
     assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "right"
     assert "right_wrist" in config["robot"]["cameras"]

@@ -81,7 +81,8 @@ robot:
   include_eef_pose: false
   action_control_mode: joint  # joint, eef_delta
   hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
-  tactile_mode: "none"
+  # 右臂录制默认保存 O10 raw 130D 触觉到 observation.tactile.right_raw。
+  tactile_mode: "130d"
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：
@@ -113,7 +114,7 @@ robot:
       width: 640
       height: 480
       fps: 30
-      fourcc: MJPG
+      fourcc: h264
       rotation: ROTATE_180
     right_wrist: right_wrist
 
@@ -165,7 +166,7 @@ run:
 
   # 是否显示本地预览窗口。
   # 如果你环境里 OpenCV GUI 不可用，建议改成 false。
-  display_data: true
+  display_data: false
 
   # 一次运行最多录多少个 episode。
   num_episodes: 1000
@@ -180,7 +181,7 @@ run:
   # 自动数据集命名时会基于这个字段生成目录名。
   # 例如：
   # - pick and place -> pick_and_place_20260410
-  single_task: 把纸巾从黄色纸上拿到黑色纸上
+  single_task: use the right arm to move the tissue from the yellow paper to the black paper
 
 dataset:
   # 是否自动按“任务名 + 日期”命名数据集目录。

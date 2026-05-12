@@ -39,7 +39,7 @@ dataset:
   # 要回放的具体数据集目录。
   # 这里应当直接指向某一个已经录好的数据集目录，例如：
   # ~/workspace/dataset/Robot/agi_arm_bot/pick_and_place_20260410
-  root: ~/workspace/dataset/Robot/agi_arm_bot/pick_up_the_camera_from_the_yellow_paper_into_black_box_20260423_7
+  root: /home/phl/workspace/dataset/Robot/agi_arm_bot/pick_up_the_camera_from_the_yellow_paper_into_black_box_20260512
 
 replay:
   # 回放第几个 episode，从 0 开始编号。
