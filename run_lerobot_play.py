@@ -15,6 +15,14 @@ LOCAL_LEROBOT_PLAY_ROOT = (
     / "noble"
     / "lerobot_play-1.0.4-py3-none-any"
 )
+LOCAL_MMK2_KDL_ROOT = (
+    Path(__file__).resolve().parent
+    / "qiuzhi"
+    / "lerobot_play_1.0.4"
+    / "x86"
+    / "noble"
+    / "mmk2_kdl_py-0.1.4-py3-none-any"
+)
 
 COMMAND_MODULES = {
     "record": "lerobot_play.record",
@@ -34,9 +42,13 @@ SCRIPT_COMMANDS = {
 
 
 def _bootstrap_local_package() -> None:
-    local_root = str(LOCAL_LEROBOT_PLAY_ROOT)
-    if local_root not in sys.path:
-        sys.path.insert(0, local_root)
+    bootstrap_roots = [
+        str(LOCAL_LEROBOT_PLAY_ROOT),
+        str(LOCAL_MMK2_KDL_ROOT),
+    ]
+    for local_root in reversed(bootstrap_roots):
+        if local_root not in sys.path:
+            sys.path.insert(0, local_root)
 
 
 def _print_usage() -> None:
