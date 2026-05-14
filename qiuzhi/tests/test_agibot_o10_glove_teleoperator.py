@@ -69,3 +69,17 @@ def test_update_hand_data_stores_pre_mapped_values_verbatim():
 def test_teleoperator_owns_an_o10_hand_mapper_with_matching_handedness():
     teleoperator = AgibotO10GloveTeleoperator(handedness="left")
     assert teleoperator.mapper.handedness == "left"
+
+
+def test_single_arm_connect_waits_long_enough_for_hdservice_first_packet():
+    source_path = (
+        LEROBOT_PLAY_PACKAGE_ROOT
+        / "lerobot_play"
+        / "teleoperators"
+        / "pico_leader_single_arm_agibot_o10"
+        / "pico_leader_single_arm_agibot_o10.py"
+    )
+
+    source = source_path.read_text(encoding="utf-8")
+
+    assert "wait_until_ready(timeout_s=6.0)" in source

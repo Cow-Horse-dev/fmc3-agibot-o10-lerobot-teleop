@@ -15,7 +15,7 @@ command_file: /tmp/o10_right_pi05_lora_switch.json
 profiles:
   black_to_yellow:
     task_description: use the right arm to move the tissue from the black paper to the yellow paper
-    adapter_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_o10_right_tissue_black_to_yellow_lora/checkpoints/last/pretrained_model
+    adapter_path: /home/phl/FermiBotNas/mymodels/qiuzhi_agibot/agi_arm_bot/pi05/pi05_agi_arm_tissue_black_to_yellow_20260512_lora/checkpoints/015000/pretrained_model
   yellow_to_black:
     task_description: use the right arm to move the tissue from the yellow paper to the black paper
-    adapter_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_o10_right_tissue_yellow_to_black_lora/checkpoints/last/pretrained_model
+    adapter_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_agi_arm_tissue_yellow_to_black_overnight_final/checkpoints/last/pretrained_model

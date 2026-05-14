@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,7 @@ fake_mmk2_kdl.ArmKdlNumerical = lambda *args, **kwargs: SimpleNamespace()
 sys.modules.setdefault("airbot_hardware_py", fake_airbot_hardware)
 sys.modules.setdefault("mmk2_kdl_py", fake_mmk2_kdl)
 
+import lerobot_play.infer as infer_module
 from lerobot_play.infer import (
     _apply_policy_robot_schema_defaults,
     _build_policy_preprocessor_overrides,
@@ -57,6 +59,7 @@ from lerobot_play.infer import (
     _create_robot_config,
     _create_save_directory,
     _run_async_inference,
+    _reset_to_training_start,
     _validate_policy_type_matches_checkpoint,
     _validate_policy_robot_feature_compatibility,
     _validate_args,
@@ -276,6 +279,47 @@ def test_build_policy_preprocessor_overrides_leaves_non_vla_tokenizer_unchanged(
     overrides = _build_policy_preprocessor_overrides("act", "cuda")
 
     assert overrides == {"device_processor": {"device": "cuda"}}
+
+
+def test_filter_norm_map_drops_feature_types_missing_from_runtime():
+    norm_map = {
+        "VISUAL": "IDENTITY",
+        "STATE": "QUANTILES",
+        "ACTION": "QUANTILES",
+        "TACTILE": "MEAN_STD",
+    }
+
+    filtered = infer_module._filter_norm_map_for_supported_feature_types(
+        norm_map,
+        supported_feature_type_names={"VISUAL", "STATE", "ACTION"},
+    )
+
+    assert filtered == {
+        "VISUAL": "IDENTITY",
+        "STATE": "QUANTILES",
+        "ACTION": "QUANTILES",
+    }
+
+
+def test_build_policy_processor_overrides_drop_legacy_tactile_norm_map_for_pi05():
+    preprocessor_overrides = _build_policy_preprocessor_overrides("pi05", "cuda")
+    postprocessor_overrides = infer_module._build_policy_postprocessor_overrides(
+        "pi05",
+        device="cuda",
+    )
+
+    assert "TACTILE" not in preprocessor_overrides["normalizer_processor"]["norm_map"]
+    assert "TACTILE" not in postprocessor_overrides["unnormalizer_processor"]["norm_map"]
+
+
+def test_trim_action_tensor_to_policy_action_dim_keeps_pi05_rtc_padding_internal():
+    action_tensor = torch.arange(2 * 4, dtype=torch.float32).reshape(1, 2, 4)
+
+    trimmed = infer_module._trim_action_tensor_to_action_dim(action_tensor, 2)
+
+    assert trimmed.shape == (1, 2, 2)
+    assert trimmed.tolist() == [[[0.0, 1.0], [4.0, 5.0]]]
+    assert action_tensor.shape == (1, 2, 4)
 
 
 def test_single_arm_o10_infer_passes_schema_fields_to_robot_config():
@@ -532,6 +576,126 @@ def test_validate_policy_robot_feature_compatibility_allows_saved_camera_rename_
         observation_rename_map={
             "observation.images.top": "observation.images.base_0_rgb",
             "observation.images.left_wrist": "observation.images.left_wrist_0_rgb",
+            "observation.images.right_wrist": "observation.images.right_wrist_0_rgb",
+        },
+    )
+
+
+def test_validate_policy_robot_feature_compatibility_allows_pi05_empty_camera_padding(tmp_path):
+    policy = SimpleNamespace(
+        config=SimpleNamespace(
+            type="pi05",
+            max_state_dim=32,
+            max_action_dim=32,
+            input_features={
+                "observation.images.base_0_rgb": {
+                    "type": "VISUAL",
+                    "shape": (3, 480, 640),
+                },
+                "observation.images.right_wrist_0_rgb": {
+                    "type": "VISUAL",
+                    "shape": (3, 480, 640),
+                },
+                "observation.images.empty_camera_0": {
+                    "type": "VISUAL",
+                    "shape": (3, 224, 224),
+                },
+                "observation.state": {"type": "STATE", "shape": (7,)},
+            },
+            output_features={"action": {"type": "ACTION", "shape": (7,)}},
+        )
+    )
+    robot_features = {
+        "observation.images.top": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.images.right_wrist": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": [f"state_{index}" for index in range(7)],
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": [f"action_{index}" for index in range(7)],
+        },
+    }
+
+    _validate_policy_robot_feature_compatibility(
+        policy,
+        robot_features,
+        str(tmp_path),
+        observation_rename_map={
+            "observation.images.top": "observation.images.base_0_rgb",
+            "observation.images.right_wrist": "observation.images.right_wrist_0_rgb",
+        },
+    )
+
+
+def test_validate_policy_robot_feature_compatibility_allows_pi05_missing_left_camera_padding(tmp_path):
+    policy = SimpleNamespace(
+        config=SimpleNamespace(
+            type="pi05",
+            max_state_dim=32,
+            max_action_dim=32,
+            input_features={
+                "observation.images.base_0_rgb": {
+                    "type": "VISUAL",
+                    "shape": (3, 224, 224),
+                },
+                "observation.images.left_wrist_0_rgb": {
+                    "type": "VISUAL",
+                    "shape": (3, 224, 224),
+                },
+                "observation.images.right_wrist_0_rgb": {
+                    "type": "VISUAL",
+                    "shape": (3, 224, 224),
+                },
+                "observation.images.empty_camera_0": {
+                    "type": "VISUAL",
+                    "shape": (3, 224, 224),
+                },
+                "observation.state": {"type": "STATE", "shape": (32,)},
+            },
+            output_features={"action": {"type": "ACTION", "shape": (7,)}},
+        )
+    )
+    robot_features = {
+        "observation.images.top": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.images.right_wrist": {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": [f"state_{index}" for index in range(7)],
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": [f"action_{index}" for index in range(7)],
+        },
+    }
+
+    _validate_policy_robot_feature_compatibility(
+        policy,
+        robot_features,
+        str(tmp_path),
+        observation_rename_map={
+            "observation.images.top": "observation.images.base_0_rgb",
             "observation.images.right_wrist": "observation.images.right_wrist_0_rgb",
         },
     )
@@ -834,6 +998,67 @@ def test_async_inference_resets_robot_before_control_loop(tmp_path, monkeypatch)
     _run_async_inference(args)
 
     assert events[:3] == ["reset", "start", "control"]
+
+
+def test_reset_to_training_start_maps_gripper_state_to_hand_joints(tmp_path, monkeypatch):
+    import lerobot_play.infer as infer_module
+
+    model_root = tmp_path / "model"
+    dataset_root = tmp_path / "dataset"
+    model_root.mkdir()
+    dataset_root.mkdir()
+    (model_root / "train_config.json").write_text(
+        json.dumps(
+            {
+                "dataset": {
+                    "root": str(dataset_root),
+                    "repo_id": "local/gripper_dataset",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeDataset:
+        def __init__(self, repo_id, root, episodes):
+            assert repo_id == "gripper_dataset"
+            assert Path(root) == dataset_root
+            assert episodes == [0]
+
+        def __getitem__(self, index):
+            assert index == 0
+            return {
+                "observation.state": np.array(
+                    [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75],
+                    dtype=np.float32,
+                )
+            }
+
+    class FakeRobot:
+        name = "pico_follower_single_arm_agibot_o10"
+
+        def __init__(self):
+            self.reset_arm_joint_pos = []
+            self.reset_hand_joint_pos = []
+            self.reset_called = False
+
+        def _hand_action_mode(self):
+            return "gripper_1d"
+
+        def _gripper_value_to_hand_joints(self, gripper_value):
+            return [float(gripper_value) + index for index in range(10)]
+
+        def reset_zero(self):
+            self.reset_called = True
+
+    monkeypatch.setattr(infer_module, "LeRobotDataset", FakeDataset)
+    robot = FakeRobot()
+
+    _reset_to_training_start(robot, str(model_root))
+
+    assert robot.reset_arm_joint_pos == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert robot.reset_hand_joint_pos == pytest.approx([0.75 + index for index in range(10)])
+    assert robot.reset_called is True
 
 
 def test_async_inference_uses_configured_queue_tuning(tmp_path, monkeypatch):
@@ -1164,6 +1389,161 @@ def test_async_robot_client_logs_observation_to_rerun_when_display_enabled(
     assert raw_observation["task"] == "pick"
 
 
+def test_async_inference_disconnects_schema_probe_robot_before_client(monkeypatch):
+    from lerobot_play import infer as infer_module
+
+    events = []
+
+    class ProbeCamera:
+        def disconnect(self):
+            events.append("probe-camera-disconnect")
+
+    probe_robot = SimpleNamespace(cameras={"top": ProbeCamera()})
+
+    class FakeClient:
+        def __init__(self, cfg):
+            events.append("client-created")
+            self.robot = None
+            self.task_switch_coordinator = None
+            self.action_queue_size = []
+
+        def start(self):
+            return True
+
+        def receive_actions(self):
+            return None
+
+        def control_loop(self, task, control_time_s):
+            return None
+
+        def stop(self):
+            events.append("client-stop")
+
+    monkeypatch.setattr(infer_module, "_create_robot_config", lambda args: object())
+    monkeypatch.setattr(infer_module, "make_robot_from_config", lambda config: probe_robot)
+    monkeypatch.setattr(
+        infer_module,
+        "build_dataset_features",
+        lambda robot, use_videos: {
+            "observation.state": {"dtype": "float32", "shape": (7,), "names": []},
+            "action": {"dtype": "float32", "shape": (7,), "names": []},
+            "observation.images.top": {
+                "dtype": "video",
+                "shape": (480, 640, 3),
+                "names": ["height", "width", "channels"],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        infer_module,
+        "_load_and_validate_policy_config",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        infer_module,
+        "_create_task_switch_coordinator",
+        lambda model_path, policy=None, task_switch_config_path=None: None,
+    )
+    monkeypatch.setattr(infer_module, "RobotClient", FakeClient)
+
+    args = SimpleNamespace(
+        server_address="localhost:8080",
+        device="cuda",
+        policy="pi05",
+        model_path="/tmp/model",
+        chunk_size_threshold=0.8,
+        actions_per_chunk=50,
+        debug_visualize_queue_size=False,
+        display_data=False,
+        num_episodes=1,
+        task_description="pick",
+        episode_time_sec=0,
+    )
+
+    result = _run_async_inference(args)
+
+    assert result["status"] == "success"
+    assert events[:2] == ["probe-camera-disconnect", "client-created"]
+
+
+def test_async_inference_uses_text_task_switch_config_for_fullft(tmp_path, monkeypatch):
+    from lerobot_play import infer as infer_module
+
+    task_switch_config = tmp_path / "tasks.yaml"
+    task_switch_config.write_text(
+        yaml.safe_dump(
+            {
+                "default_profile": "black_to_yellow",
+                "command_file": str(tmp_path / "switch.json"),
+                "profiles": {
+                    "black_to_yellow": {
+                        "task_description": "black to yellow",
+                    },
+                    "yellow_to_black": {
+                        "task_description": "yellow to black",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, cfg):
+            self.robot = None
+            self.task_switch_coordinator = None
+            self.action_queue_size = []
+
+        def start(self):
+            return True
+
+        def receive_actions(self):
+            return None
+
+        def control_loop(self, task, control_time_s):
+            captured["task"] = task
+            captured["coordinator"] = self.task_switch_coordinator
+            return None
+
+        def stop(self):
+            return None
+
+    monkeypatch.setattr(infer_module, "_create_robot_config", lambda args: object())
+    monkeypatch.setattr(infer_module, "make_robot_from_config", lambda config: SimpleNamespace(cameras={}))
+    monkeypatch.setattr(
+        infer_module,
+        "build_dataset_features",
+        lambda robot, use_videos: {
+            "observation.state": {"dtype": "float32", "shape": (7,), "names": []},
+            "action": {"dtype": "float32", "shape": (7,), "names": []},
+        },
+    )
+    monkeypatch.setattr(infer_module, "_load_and_validate_policy_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr(infer_module, "RobotClient", FakeClient)
+
+    args = SimpleNamespace(
+        server_address="localhost:8080",
+        device="cuda",
+        policy="pi05",
+        model_path=str(tmp_path / "pretrained_model"),
+        task_switch_config=str(task_switch_config),
+        chunk_size_threshold=0.8,
+        actions_per_chunk=50,
+        debug_visualize_queue_size=False,
+        display_data=False,
+        num_episodes=1,
+        task_description="fallback task",
+        episode_time_sec=0,
+    )
+
+    result = _run_async_inference(args)
+
+    assert result["status"] == "success"
+    assert captured["task"] == "black to yellow"
+    assert captured["coordinator"].active_profile.profile_id == "black_to_yellow"
+
+
 def test_async_robot_client_clear_action_queue_advances_stale_action_watermark():
     from lerobot.async_inference.helpers import TimedAction
     from lerobot_play.async_inference.robot_client import RobotClient
@@ -1213,9 +1593,16 @@ def test_lerobot_play_async_policy_server_loads_policy_through_project_loader(mo
         "lerobot_play.async_inference.policy_server._load_policy",
         fake_load_policy,
     )
+    processor_call = {}
+
+    def fake_make_pre_post_processors(*args, **kwargs):
+        processor_call["args"] = args
+        processor_call["kwargs"] = kwargs
+        return "pre", "post"
+
     monkeypatch.setattr(
         "lerobot_play.async_inference.policy_server.make_pre_post_processors",
-        lambda *args, **kwargs: ("pre", "post"),
+        fake_make_pre_post_processors,
     )
 
     server = PolicyServer(PolicyServerConfig())
@@ -1238,6 +1625,10 @@ def test_lerobot_play_async_policy_server_loads_policy_through_project_loader(mo
     assert server.preprocessor == "pre"
     assert server.postprocessor == "post"
     assert server.observation_rename_map == policy_specs.rename_map
+    preprocessor_overrides = processor_call["kwargs"]["preprocessor_overrides"]
+    postprocessor_overrides = processor_call["kwargs"]["postprocessor_overrides"]
+    assert "TACTILE" not in preprocessor_overrides["normalizer_processor"]["norm_map"]
+    assert "TACTILE" not in postprocessor_overrides["unnormalizer_processor"]["norm_map"]
 
 
 def test_lerobot_play_async_policy_server_renames_observation_features_for_legacy_helper(
@@ -1348,6 +1739,119 @@ def test_lerobot_play_async_policy_server_can_enable_rtc(monkeypatch):
     assert calls[1]["inference_delay"] == 3
     assert calls[1]["execution_horizon"] == 4
     assert calls[1]["prev_chunk_left_over"].shape == (1, 2, 2)
+
+
+def test_lerobot_play_async_policy_server_trims_pi05_padding_before_postprocess(
+    monkeypatch,
+):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import TimedObservation
+    from lerobot.policies.rtc.configuration_rtc import RTCConfig
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    postprocessed_shapes = []
+
+    class FakePolicy:
+        def __init__(self):
+            self.config = SimpleNamespace(
+                device="cpu",
+                image_features={},
+                rtc_config=RTCConfig(enabled=True),
+            )
+
+        def predict_action_chunk(self, observation, **kwargs):
+            return torch.arange(8, dtype=torch.float32).reshape(1, 2, 4)
+
+    monkeypatch.setattr(
+        "lerobot.async_inference.policy_server.raw_observation_to_observation",
+        lambda *args, **kwargs: {"observation.state": torch.zeros(1)},
+    )
+
+    server = PolicyServer(PolicyServerConfig())
+    server.lerobot_features = {}
+    server.observation_rename_map = {}
+    server.policy = FakePolicy()
+    server.preprocessor = lambda observation: observation
+    server.postprocess_action_dim = 2
+
+    def postprocess(action):
+        postprocessed_shapes.append(tuple(action.shape))
+        return action
+
+    server.postprocessor = postprocess
+    server.actions_per_chunk = 2
+
+    action_chunk = server._predict_action_chunk(
+        TimedObservation(timestamp=0.0, timestep=0, observation={})
+    )
+
+    assert postprocessed_shapes == [(1, 2), (1, 2)]
+    assert server._rtc_previous_action_chunk.shape == (1, 2, 4)
+    assert action_chunk[0].get_action().shape == (2,)
+
+
+def test_lerobot_play_async_policy_server_pads_state_after_normalizer_preprocessor(
+    monkeypatch,
+):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import TimedObservation
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    captured = {}
+
+    class FakePolicy:
+        def __init__(self):
+            self.config = SimpleNamespace(
+                type="pi05",
+                max_state_dim=32,
+                input_features={
+                    "observation.state": {"type": "STATE", "shape": (32,)},
+                },
+                image_features={},
+            )
+
+        def predict_action_chunk(self, observation, **kwargs):
+            captured["policy_state"] = observation["observation.state"].clone()
+            return torch.zeros((1, 1, 7), dtype=torch.float32)
+
+    monkeypatch.setattr(
+        "lerobot.async_inference.policy_server.raw_observation_to_observation",
+        lambda *args, **kwargs: {
+            "observation.state": torch.arange(7, dtype=torch.float32).reshape(1, 7),
+        },
+    )
+
+    def preprocessor(observation):
+        captured["preprocessor_state"] = observation["observation.state"].clone()
+        state = observation["observation.state"]
+        padded_observation = dict(observation)
+        padded_observation["observation.state"] = torch.cat(
+            (state, state.new_zeros((state.shape[0], 25))),
+            dim=-1,
+        )
+        return padded_observation
+
+    server = PolicyServer(PolicyServerConfig())
+    server.lerobot_features = {}
+    server.observation_rename_map = {}
+    server.policy = FakePolicy()
+    server.preprocessor = preprocessor
+    server.postprocessor = lambda action: action
+    server.actions_per_chunk = 1
+    server.postprocess_action_dim = 7
+
+    server._predict_action_chunk(
+        TimedObservation(timestamp=0.0, timestep=0, observation={})
+    )
+
+    assert captured["preprocessor_state"].shape == (1, 7)
+    assert torch.equal(
+        captured["preprocessor_state"][0],
+        torch.arange(7, dtype=torch.float32),
+    )
+    assert captured["policy_state"].shape == (1, 32)
+    assert torch.equal(captured["policy_state"][0, :7], torch.arange(7, dtype=torch.float32))
+    assert torch.equal(captured["policy_state"][0, 7:], torch.zeros(25, dtype=torch.float32))
 
 
 def test_lerobot_play_async_policy_server_receive_observation_is_quiet_at_info(

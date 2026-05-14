@@ -1,0 +1,7 @@
+default_profile: black_to_yellow
+command_file: /tmp/o10_right_pi05_fullft_task_switch.json
+profiles:
+  black_to_yellow:
+    task_description: Use the right arm to move the tissue from the black paper to the yellow paper.
+  yellow_to_black:
+    task_description: Use the right arm to move the tissue from the yellow paper to the black paper.

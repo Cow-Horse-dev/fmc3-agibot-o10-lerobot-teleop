@@ -148,6 +148,7 @@ def test_o10_configs_reference_shared_camera_file():
         "configs/right_arm/o10_right_control.yaml",
         "configs/right_arm/o10_right_record.yaml",
         "configs/right_arm/o10_right_infer.yaml",
+        "configs/right_arm/o10_right_pi05_multi_lora_infer.yaml",
         "configs/right_arm/o10_right_infer_cpu.yaml",
         "configs/dual_arm/o10_dual_control.yaml",
         "configs/dual_arm/o10_dual_record.yaml",

@@ -7,7 +7,7 @@ Agibot O10 单臂/双臂 + OmniHand 灵巧手 + RealSense/USB 相机的遥操作
 ## 目录说明
 
 - `configs/`：控制、录制、推理、回放配置，以及复位姿态 JSON。
-- `docs/`：实现说明和专项文档。
+- `docs/`：实现说明、专项文档和现场演示命令；快速 demo 入口见 `docs/demo_runbook.md`。
 - `scripts/`：日常启动脚本、HDService/HDWeb 服务脚本和工具脚本。
 - `qiuzhi/`：vendored `lerobot_play` 代码和 Python 回归测试。
 - `yudie/`：宇叠手套、OmniHand、HDService、HDWeb 相关代码和 SDK。
@@ -93,6 +93,7 @@ cd ~/workspace/arm-hand-teleop
 ./scripts/o10/right_arm/infer_o10_right.sh         # GPU 策略推理
 ./scripts/o10/right_arm/infer_o10_right_cpu.sh     # CPU 策略推理示例
 ./scripts/o10/right_arm/infer_o10_right_pi05_multi_lora.sh  # PI0.5 多 LoRA 动态切换推理
+./scripts/o10/right_arm/infer_o10_right_pi05_fullft_merged.sh # PI0.5 fullft merged 动态切任务推理
 ```
 
 ### 单左臂
@@ -164,6 +165,9 @@ cd ~/workspace/arm-hand-teleop
 - `configs/right_arm/o10_right_infer.yaml`：GPU 策略推理。相机 key 与右臂录制 schema 保持一致：`top + right`。
 - `configs/right_arm/o10_right_infer_cpu.yaml`：CPU 推理示例，默认 `policy: act`。
 - `configs/right_arm/o10_right_pi05_lora_tasks.yaml`：右臂 PI0.5 多 LoRA profile 配置，绑定 adapter 路径、任务文本和切换命令文件。
+- `configs/right_arm/o10_right_wrist_glove_control.yaml`：右臂 wrist/腕带位姿 + 宇叠手套控制配置。
+- `configs/right_arm/o10_right_pi05_fullft_merged_infer.yaml`：右臂 PI0.5 fullft merged 推理配置。
+- `configs/right_arm/o10_right_pi05_fullft_merged_tasks.yaml`：右臂 PI0.5 fullft merged 在线切任务 profile 配置。
 
 ### 双臂
 
@@ -428,6 +432,21 @@ python run_lerobot_play.py switch_lora_task \
 更完整的实现细节见：
 
 - `docs/pi05_multi_lora_switching.md`
+
+右臂 PI0.5 fullft merged 在线切任务推理使用同一套安全边界切换逻辑，但不加载 LoRA adapter；切换时只更新任务文本：
+
+```bash
+ARM_HAND_TELEOP_RTC_ENABLED=1 \
+ARM_HAND_TELEOP_RTC_EXECUTION_HORIZON=10 \
+ARM_HAND_TELEOP_RTC_MAX_GUIDANCE_WEIGHT=10.0 \
+ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE=EXP \
+./scripts/o10/right_arm/infer_o10_right_pi05_fullft_merged.sh
+
+./scripts/o10/right_arm/switch_o10_right_fullft_task.sh yellow_to_black
+./scripts/o10/right_arm/switch_o10_right_fullft_task.sh black_to_yellow
+```
+
+现场演示命令汇总见 `docs/demo_runbook.md`，其中包括 USB 摄像头 MediaPipe 控制 O10 右手、双臂手柄遥操、右臂 wrist+宇叠手套控制、PI0.5 async 和 fullft merged 切任务推理。
 
 推理前检查：
 

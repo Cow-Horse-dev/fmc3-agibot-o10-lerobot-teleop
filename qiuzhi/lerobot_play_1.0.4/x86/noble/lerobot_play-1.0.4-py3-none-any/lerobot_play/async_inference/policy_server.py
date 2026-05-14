@@ -56,6 +56,33 @@ def _build_policy_preprocessor_overrides(
     return build_overrides(policy_type, device, observation_rename_map)
 
 
+def _build_policy_postprocessor_overrides(
+    policy_type: str,
+    device: str | None = None,
+):
+    from lerobot_play.infer import (
+        _build_policy_postprocessor_overrides as build_overrides,
+    )
+
+    return build_overrides(policy_type, device=device)
+
+
+def _policy_action_dim_from_model_path(model_path: str) -> int | None:
+    from lerobot_play.infer import (
+        _policy_action_dim_from_model_path as action_dim_from_model_path,
+    )
+
+    return action_dim_from_model_path(model_path)
+
+
+def _trim_action_tensor_to_action_dim(action_tensor: torch.Tensor, action_dim: int | None):
+    from lerobot_play.infer import (
+        _trim_action_tensor_to_action_dim as trim_action_tensor,
+    )
+
+    return trim_action_tensor(action_tensor, action_dim)
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
     if value is None:
@@ -245,8 +272,10 @@ class PolicyServer(BasePolicyServer):
         effective_pretrained_path = _effective_pretrained_path(
             policy_specs.pretrained_name_or_path
         )
+        self.postprocess_action_dim = _policy_action_dim_from_model_path(
+            effective_pretrained_path
+        )
 
-        device_override = {"device": self.device}
         self.preprocessor, self.postprocessor = make_pre_post_processors(
             self.policy.config,
             pretrained_path=effective_pretrained_path,
@@ -255,7 +284,10 @@ class PolicyServer(BasePolicyServer):
                 self.device,
                 policy_specs.rename_map,
             ),
-            postprocessor_overrides={"device_processor": device_override},
+            postprocessor_overrides=_build_policy_postprocessor_overrides(
+                self.policy_type,
+                device=self.device,
+            ),
         )
 
         end = time.perf_counter()
@@ -354,10 +386,14 @@ class PolicyServer(BasePolicyServer):
         )
 
         start_postprocess = time.perf_counter()
-        _, chunk_size, _ = action_tensor.shape
+        postprocess_action_tensor = _trim_action_tensor_to_action_dim(
+            action_tensor,
+            getattr(self, "postprocess_action_dim", None),
+        )
+        _, chunk_size, _ = postprocess_action_tensor.shape
         processed_actions = []
         for index in range(chunk_size):
-            single_action = action_tensor[:, index, :]
+            single_action = postprocess_action_tensor[:, index, :]
             processed_actions.append(self.postprocessor(single_action))
 
         action_tensor = torch.stack(processed_actions, dim=1).squeeze(0)

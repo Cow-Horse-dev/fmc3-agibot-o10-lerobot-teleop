@@ -98,6 +98,35 @@ def test_task_profile_registry_loads_profiles_and_resolves_task_text(tmp_path):
     assert registry.effective_pretrained_path == registry.default_profile.adapter_path
 
 
+def test_task_profile_registry_allows_text_only_profiles_for_fullft_switching(tmp_path):
+    config_path = tmp_path / "fullft_tasks.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "default_profile": "black_to_yellow",
+                "command_file": str(tmp_path / "fullft_switch.json"),
+                "profiles": {
+                    "black_to_yellow": {
+                        "task_description": "move tissue from black paper to yellow paper",
+                    },
+                    "yellow_to_black": {
+                        "task_description": "move tissue from yellow paper to black paper",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = TaskProfileRegistry.from_path(config_path)
+
+    assert registry.default_profile.profile_id == "black_to_yellow"
+    assert registry.default_profile.adapter_path is None
+    assert registry.profile_for_id("yellow_to_black").task_description == (
+        "move tissue from yellow paper to black paper"
+    )
+
+
 def test_task_switch_command_store_writes_and_reads_atomically(tmp_path):
     registry = TaskProfileRegistry.from_path(_write_profile_config(tmp_path))
     store = TaskSwitchCommandStore(registry.command_file)

@@ -60,9 +60,13 @@ run with `WRIST_CAMERA_NAME=left_wrist`.
 
 ## Other manual hardware tests
 
+For live demonstration commands, start with `docs/demo_runbook.md`.
+
 - `test_eef_delta_arm_control.py`: dry-run or real-arm EEF delta smoke test.
   Use `python tests/test_eef_delta_arm_control.py --help`.
 - `test_eef_absolute_pose_arm_control.py`: dry-run or real-arm absolute EEF pose
   smoke test. Use `python tests/test_eef_absolute_pose_arm_control.py --help`.
+- `test_mediapipe_right_hand_control.py`: MediaPipe USB camera control demo for
+  the O10 dexterous hand. See `docs/mediapipe_o10_hand_demo.md`.
 - `AGIBOT/test_pinch_grasp.py`: manual CAN/O10 pinch grasp check; run directly
   when testing the hand hardware.

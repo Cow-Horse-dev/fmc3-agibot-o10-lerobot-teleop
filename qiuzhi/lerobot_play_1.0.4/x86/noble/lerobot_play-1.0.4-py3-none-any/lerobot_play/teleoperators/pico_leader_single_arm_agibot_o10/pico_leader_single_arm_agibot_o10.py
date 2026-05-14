@@ -91,7 +91,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
                     "Please make sure HDService/HandDriver is running and UDP port 5555 is available."
                 )
             self.hand_teleoperator.start_listening()
-            if not self.hand_teleoperator.wait_until_ready(timeout_s=2.0):
+            if not self.hand_teleoperator.wait_until_ready(timeout_s=6.0):
                 self.hand_teleoperator.stop()
                 raise RuntimeError(
                     "Failed to receive fresh UDE glove data for Agibot O10. "

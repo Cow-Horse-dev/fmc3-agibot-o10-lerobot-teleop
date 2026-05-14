@@ -1,0 +1,53 @@
+# O10 right-arm PI0.5 full-finetune inference config.
+# This checkpoint was trained with a 32D PI0.5 state schema and image keys:
+#   observation.images.base_0_rgb
+#   observation.images.left_wrist_0_rgb
+#   observation.images.right_wrist_0_rgb
+# Runtime provides top + right_wrist. The normalizer consumes the 7D runtime
+# state stats first; PI0.5 then pads state to 32D and fills the missing left
+# camera through its inference processors.
+
+infer:
+  policy: pi05
+  task_description: Use the right arm to move the tissue from the black paper to the yellow paper.
+  task_switch_config: configs/right_arm/o10_right_pi05_fullft_merged_tasks.yaml
+  model_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_agi_arm_tissue_move_right_arm_merged_20260512_fullft_bs16_ckpt10000_full/pretrained_model
+  save_data: false
+  display_data: true
+  async_infer: true
+  num_episodes: 100
+  episode_time_sec: 100
+  fps: 30
+  device: cuda
+  server_address: localhost:8080
+  save_path: null
+
+robot:
+  type: pico_follower_single_arm_agibot_o10
+  id: o10_right
+  port: can1
+  handedness: right
+  enable_hand: true
+  include_eef_pose: false
+  action_control_mode: joint
+  hand_action_mode: gripper_1d
+  tactile_mode: "none"
+  channel_mode: multiChannel
+  device_id: 1
+  canfd_id: 0
+  channel_id: null
+  reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json
+  gripper_gesture: cylindrical
+  reset_gesture: cylindrical
+
+  camera_config_path: configs/cameras/o10_cameras.yaml
+  cameras:
+    top:
+      type: opencv
+      index_or_path: /dev/v4l/by-id/usb-LRCP_500W_LRCP_500W_200901010001-video-index0
+      width: 640
+      height: 480
+      fps: 30
+      fourcc: MJPG
+      rotation: ROTATE_180
+    right_wrist: right_wrist

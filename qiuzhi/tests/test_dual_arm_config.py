@@ -52,6 +52,8 @@ def test_dual_control_yaml_parses():
         "configs/right_arm/o10_right_control.yaml",
         "configs/right_arm/o10_right_record.yaml",
         "configs/right_arm/o10_right_infer.yaml",
+        "configs/right_arm/o10_right_pi05_multi_lora_infer.yaml",
+        "configs/right_arm/o10_right_pi05_fullft_merged_infer.yaml",
         "configs/right_arm/o10_right_infer_cpu.yaml",
         "configs/dual_arm/o10_dual_control.yaml",
         "configs/dual_arm/o10_dual_record.yaml",
@@ -182,6 +184,41 @@ def test_dual_infer_yaml_enables_display_at_15hz():
 
     assert config["infer"]["display_data"] is True
     assert config["infer"]["fps"] == 15
+
+
+def test_right_pi05_multi_lora_infer_yaml_matches_training_fps():
+    with open("configs/right_arm/o10_right_pi05_multi_lora_infer.yaml") as f:
+        config = yaml.safe_load(f)
+
+    assert config["infer"]["fps"] == 30
+
+
+def test_right_pi05_fullft_merged_infer_yaml_uses_checkpoint_schema_compatibility():
+    config = _load_config("configs/right_arm/o10_right_pi05_fullft_merged_infer.yaml")
+
+    assert config["infer"]["policy"] == "pi05"
+    assert config["infer"]["async_infer"] is True
+    assert config["infer"]["fps"] == 30
+    assert (
+        config["infer"]["model_path"]
+        == "/home/phl/workspace/mymodels/agi_arm_bot/pi05_agi_arm_tissue_move_right_arm_merged_20260512_fullft_bs16_ckpt10000_full/pretrained_model"
+    )
+    assert (
+        config["infer"]["task_switch_config"]
+        == "configs/right_arm/o10_right_pi05_fullft_merged_tasks.yaml"
+    )
+    assert set(config["robot"]["cameras"]) == {"top", "right_wrist"}
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["tactile_mode"] == "none"
+
+
+def test_right_pi05_fullft_merged_task_profiles_are_text_only():
+    config = _load_config("configs/right_arm/o10_right_pi05_fullft_merged_tasks.yaml")
+
+    assert config["default_profile"] == "black_to_yellow"
+    assert config["command_file"] == "/tmp/o10_right_pi05_fullft_task_switch.json"
+    assert set(config["profiles"]) == {"black_to_yellow", "yellow_to_black"}
+    assert "adapter_path" not in config["profiles"]["black_to_yellow"]
 
 
 def test_dual_record_yaml_keeps_left_trigger_mode_and_original_gestures():
@@ -327,6 +364,14 @@ def test_right_record_yaml_records_raw_130d_tactile_separately():
     assert config["teleop"]["controller_side"] == "left"
     assert config["teleop"]["wrist_pose_source"] == "right"
     assert "right_wrist" in config["robot"]["cameras"]
+    assert "right" not in config["robot"]["cameras"]
+
+
+def test_right_pi05_multi_lora_infer_uses_training_camera_keys():
+    config = _load_config("configs/right_arm/o10_right_pi05_multi_lora_infer.yaml")
+
+    assert config["robot"]["tactile_mode"] == "none"
+    assert set(config["robot"]["cameras"]) == {"top", "right_wrist"}
     assert "right" not in config["robot"]["cameras"]
 
 

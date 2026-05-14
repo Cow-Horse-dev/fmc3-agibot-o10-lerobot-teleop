@@ -13,7 +13,7 @@ import yaml
 @dataclass(frozen=True)
 class TaskProfile:
     profile_id: str
-    adapter_path: Path
+    adapter_path: Path | None
     task_description: str
 
 
@@ -56,7 +56,11 @@ class TaskProfileRegistry:
         for profile_id, raw_profile in raw_profiles.items():
             if not isinstance(raw_profile, dict):
                 raise ValueError(f"Profile {profile_id!r} must be a mapping")
-            adapter_path = _expand_path(raw_profile.get("adapter_path"), path.parent)
+            adapter_path = (
+                _expand_path(raw_profile["adapter_path"], path.parent)
+                if raw_profile.get("adapter_path")
+                else None
+            )
             task_description = raw_profile.get("task_description")
             if not task_description:
                 raise ValueError(f"Profile {profile_id!r} is missing task_description")
@@ -90,6 +94,10 @@ class TaskProfileRegistry:
 
     @property
     def effective_pretrained_path(self) -> Path:
+        if self.default_profile.adapter_path is None:
+            raise ValueError(
+                f"Task profile {self.default_profile.profile_id!r} has no adapter_path"
+            )
         return self.default_profile.adapter_path
 
     def profile_for_id(self, profile_id: str) -> TaskProfile:

@@ -47,6 +47,10 @@ from lerobot_play.utils.agibot_o10 import (
     AgibotO10Hand,
     O10HandMapper,
 )
+from lerobot_play.utils.agibot_o10_mediapipe_retargeting import (
+    mediapipe_landmarks_to_o10_glove_degrees,
+    select_preferred_hand_landmarks,
+)
 
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
 MODEL_PATH = REPO_ROOT / "models" / "hand_landmarker.task"
@@ -85,51 +89,6 @@ def ensure_model() -> str:
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     print("Download complete.")
     return str(MODEL_PATH)
-
-
-def _vec(a, b) -> np.ndarray:
-    return np.array([b.x - a.x, b.y - a.y, b.z - a.z], dtype=float)
-
-
-def _angle_between(v1: np.ndarray, v2: np.ndarray) -> float:
-    cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
-    return math.degrees(math.acos(float(np.clip(cos, -1.0, 1.0))))
-
-
-def _bend(lm, mcp, pip, tip) -> float:
-    v1 = _vec(lm[mcp], lm[pip])
-    v2 = _vec(lm[pip], lm[tip])
-    return _angle_between(v1, v2)
-
-
-def _spread(lm, a, b, w) -> float:
-    v1 = _vec(lm[w], lm[a])
-    v2 = _vec(lm[w], lm[b])
-    return _angle_between(v1, v2)
-
-
-def mediapipe_to_glove_angles(lm) -> list[float]:
-    W = _LM.WRIST
-    # thumb_cm_roll: 拇指旋转，张开时角度大 → 内收时需要反转
-    raw_roll = _spread(lm, _LM.THUMB_MCP, _LM.MIDDLE_FINGER_MCP, _LM.THUMB_CMC)
-    thumb_roll = max(0, 40 - raw_roll) * 0.9
-    # thumb_cm_yaw: 拇指外展 → 内收时 spread 变小，需要反转
-    raw_yaw = _spread(lm, _LM.THUMB_CMC, _LM.INDEX_FINGER_MCP, W)
-    thumb_yaw = max(0, 50 - raw_yaw) * 0.8
-    # thumb_cm_pitch: 拇指弯曲 — 弯曲越大角度越大，方向正确
-    thumb_pitch = _bend(lm, _LM.THUMB_CMC, _LM.THUMB_MCP, _LM.THUMB_IP)
-    # 四指
-    index_yaw   = _spread(lm, _LM.INDEX_FINGER_MCP, _LM.MIDDLE_FINGER_MCP, W) * 0.5
-    index_pitch = _bend(lm, _LM.INDEX_FINGER_MCP, _LM.INDEX_FINGER_PIP, _LM.INDEX_FINGER_TIP)
-    middle_pitch = _bend(lm, _LM.MIDDLE_FINGER_MCP, _LM.MIDDLE_FINGER_PIP, _LM.MIDDLE_FINGER_TIP)
-    ring_yaw    = _spread(lm, _LM.RING_FINGER_MCP, _LM.MIDDLE_FINGER_MCP, W) * 0.5
-    ring_pitch  = _bend(lm, _LM.RING_FINGER_MCP, _LM.RING_FINGER_PIP, _LM.RING_FINGER_TIP)
-    pinky_yaw   = _spread(lm, _LM.PINKY_MCP, _LM.RING_FINGER_MCP, W) * 0.5
-    pinky_pitch = _bend(lm, _LM.PINKY_MCP, _LM.PINKY_PIP, _LM.PINKY_TIP)
-    return [thumb_roll, thumb_yaw, thumb_pitch, index_yaw, index_pitch,
-            middle_pitch, ring_yaw, ring_pitch, pinky_yaw, pinky_pitch]
-
-
 def draw_landmarks(frame: np.ndarray, lm_list, w: int, h: int) -> None:
     pts = [(int(l.x * w), int(l.y * h)) for l in lm_list]
     for a, b in HAND_CONNECTIONS:
@@ -247,9 +206,14 @@ def main() -> int:
             if result and result.hand_landmarks:
                 lm_list = result.hand_landmarks[0]
                 draw_landmarks(frame, lm_list, cam_w, cam_h)
-                glove_angles = mediapipe_to_glove_angles(lm_list)
-                angles_rad = mapper.map(glove_angles)
-                detected = True
+                preferred_landmarks = select_preferred_hand_landmarks(result)
+                if preferred_landmarks is not None:
+                    glove_angles = mediapipe_landmarks_to_o10_glove_degrees(
+                        preferred_landmarks,
+                        handedness=handedness,
+                    )
+                    angles_rad = mapper.map(glove_angles)
+                    detected = True
 
             if detected and hand_hw is not None:
                 try:

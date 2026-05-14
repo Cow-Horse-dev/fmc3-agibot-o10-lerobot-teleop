@@ -82,6 +82,12 @@ DEFAULT_PALIGEMMA_TOKENIZER_PATHS = (
     "~/workspace/models/paligemma-tokenizer",
     "/home/phl/FermiBotNas/models/paligemma-tokenizer",
 )
+DEFAULT_POLICY_NORM_MAP = {
+    "VISUAL": "IDENTITY",
+    "STATE": "QUANTILES",
+    "ACTION": "QUANTILES",
+    "TACTILE": "MEAN_STD",
+}
 
 
 def _parse_cameras(cameras_obj: dict) -> dict:
@@ -226,6 +232,12 @@ def _parse_cli_args() -> argparse.Namespace:
         default=False,
         help="Plot async action queue size when inference stops",
     )
+    parser.add_argument(
+        "--task_switch_config",
+        type=str,
+        default=None,
+        help="Optional task profile YAML/JSON used for runtime task-text switching.",
+    )
 
     # 机器人配置参数（与 record.py 保持一致）
     parser.add_argument(
@@ -361,6 +373,8 @@ def _load_config(cli: argparse.Namespace) -> dict:
             infer_cfg["chunk_size_threshold"] = cli.chunk_size_threshold
         if cli.debug_visualize_queue_size:
             infer_cfg["debug_visualize_queue_size"] = True
+        if cli.task_switch_config is not None:
+            infer_cfg["task_switch_config"] = cli.task_switch_config
 
         robot_cfg = cfg.setdefault("robot", {})
         if cli.robot_type != "airbot_PTK_follower":
@@ -411,6 +425,7 @@ def _load_config(cli: argparse.Namespace) -> dict:
             if cli.chunk_size_threshold is not None
             else 0.5,
             "debug_visualize_queue_size": cli.debug_visualize_queue_size,
+            "task_switch_config": cli.task_switch_config,
         },
         "robot": {
             "type": cli.robot_type,
@@ -457,6 +472,7 @@ def _config_to_args(cfg: dict) -> argparse.Namespace:
         debug_visualize_queue_size=bool(
             infer_cfg.get("debug_visualize_queue_size", False)
         ),
+        task_switch_config=infer_cfg.get("task_switch_config"),
         robot_type=robot_cfg.get("type", "airbot_PTK_follower"),
         robot_port=robot_cfg.get("port", "can0"),
         robot_left_arm_port=robot_cfg.get("left_arm_port", "can0"),
@@ -506,6 +522,8 @@ def _validate_args(args: argparse.Namespace) -> None:
     args.model_path = os.path.expanduser(args.model_path)
     if args.save_path:
         args.save_path = os.path.expanduser(args.save_path)
+    if getattr(args, "task_switch_config", None):
+        args.task_switch_config = os.path.expanduser(args.task_switch_config)
 
     # 验证异步推理支持
     if args.async_infer and args.policy not in SUPPORTED_POLICIES:
@@ -542,6 +560,15 @@ def _feature_shape(feature: Any) -> tuple[int, ...]:
     return tuple(int(dim) for dim in shape)
 
 
+def _policy_action_dim(policy_or_config: Any) -> int | None:
+    policy_config = getattr(policy_or_config, "config", policy_or_config)
+    output_features = getattr(policy_config, "output_features", {}) or {}
+    action_feature = output_features.get("action")
+    if action_feature is None:
+        return None
+    return _feature_shape(action_feature)[0]
+
+
 def _policy_feature_names(features: dict[str, Any], feature_type: str) -> set[str]:
     return {
         name
@@ -552,6 +579,22 @@ def _policy_feature_names(features: dict[str, Any], feature_type: str) -> set[st
             and str(feature.get("type", "")).split(".")[-1] == feature_type
         )
     }
+
+
+def _is_empty_camera_feature(key: str) -> bool:
+    return key.startswith("observation.images.empty_camera_")
+
+
+def _allows_vla_missing_image_padding(
+    policy_type: str | None,
+    expected_image_keys: set[str],
+    robot_image_keys: set[str],
+) -> bool:
+    return (
+        policy_type in {"pi0", "pi05"}
+        and bool(expected_image_keys)
+        and bool(expected_image_keys & robot_image_keys)
+    )
 
 
 def _validate_policy_robot_feature_compatibility(
@@ -583,7 +626,11 @@ def _validate_policy_robot_feature_compatibility(
         if policy_dim != robot_dim and not _allows_vla_padding(key, policy_dim, robot_dim):
             mismatches.append(f"{key}: model expects {policy_dim}D, robot exposes {robot_dim}D")
 
-    expected_image_keys = _policy_feature_names(policy_input_features, "VISUAL")
+    expected_image_keys = {
+        key
+        for key in _policy_feature_names(policy_input_features, "VISUAL")
+        if not _is_empty_camera_feature(key)
+    }
     robot_image_keys = {
         key
         for key, feature in robot_features.items()
@@ -595,7 +642,11 @@ def _validate_policy_robot_feature_compatibility(
             for key in robot_image_keys
         }
     missing_image_keys = sorted(expected_image_keys - robot_image_keys)
-    if missing_image_keys:
+    if missing_image_keys and not _allows_vla_missing_image_padding(
+        policy_type,
+        expected_image_keys,
+        robot_image_keys,
+    ):
         mismatches.append(
             "image keys: model expects missing robot observations "
             f"{missing_image_keys}; robot exposes {sorted(robot_image_keys)}"
@@ -688,6 +739,25 @@ def _effective_model_path(model_path: str) -> str:
     if is_multi_lora_config_path(model_path):
         return str(TaskProfileRegistry.from_path(model_path).effective_pretrained_path)
     return model_path
+
+
+def _policy_action_dim_from_model_path(model_path: str) -> int | None:
+    try:
+        policy_config = _load_policy_config_lenient(_effective_model_path(model_path), None)
+    except Exception:
+        return None
+    return _policy_action_dim(policy_config)
+
+
+def _trim_action_tensor_to_action_dim(action_tensor: Any, action_dim: int | None):
+    if action_dim is None or action_tensor.shape[-1] == action_dim:
+        return action_tensor
+    if action_tensor.shape[-1] < action_dim:
+        raise ValueError(
+            f"Policy action chunk has {action_tensor.shape[-1]} dims, "
+            f"but postprocessor expects {action_dim} dims"
+        )
+    return action_tensor[..., :action_dim]
 
 
 def _load_base_policy(policy_type: str, model_path: str, device: str | None = None):
@@ -850,12 +920,49 @@ def _build_policy_preprocessor_overrides(
         }
 
     if policy_type in {"pi0", "pi05"}:
+        overrides["normalizer_processor"] = {
+            "norm_map": _filter_norm_map_for_supported_feature_types(DEFAULT_POLICY_NORM_MAP)
+        }
         tokenizer_path = _resolve_local_paligemma_tokenizer_path()
         if tokenizer_path:
             overrides["tokenizer_processor"] = {
                 "tokenizer_name": tokenizer_path
             }
             log_say(f"Using local PaliGemma tokenizer at {tokenizer_path}")
+
+    return overrides
+
+
+def _runtime_feature_type_names() -> set[str]:
+    from lerobot.configs.types import FeatureType
+
+    return {feature_type.name for feature_type in FeatureType}
+
+
+def _filter_norm_map_for_supported_feature_types(
+    norm_map: dict[str, str],
+    supported_feature_type_names: set[str] | None = None,
+) -> dict[str, str]:
+    supported_names = supported_feature_type_names or _runtime_feature_type_names()
+    return {
+        feature_type_name: norm_mode
+        for feature_type_name, norm_mode in norm_map.items()
+        if feature_type_name in supported_names
+    }
+
+
+def _build_policy_postprocessor_overrides(
+    policy_type: str,
+    device: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    overrides: dict[str, dict[str, Any]] = {}
+    if device is not None:
+        overrides["device_processor"] = {"device": str(device)}
+
+    if policy_type in {"pi0", "pi05"}:
+        overrides["unnormalizer_processor"] = {
+            "norm_map": _filter_norm_map_for_supported_feature_types(DEFAULT_POLICY_NORM_MAP)
+        }
 
     return overrides
 
@@ -912,19 +1019,28 @@ def _load_policy(policy_type: str, model_path: str, device: str):
 def _create_task_switch_coordinator(
     model_path: str,
     policy=None,
+    task_switch_config_path: str | None = None,
 ) -> TaskSwitchCoordinator | None:
-    if not is_multi_lora_config_path(model_path):
+    config_path = task_switch_config_path or (
+        model_path if is_multi_lora_config_path(model_path) else None
+    )
+    if not config_path:
         return None
 
-    registry = TaskProfileRegistry.from_path(model_path)
+    registry = TaskProfileRegistry.from_path(config_path)
 
     def switch_callback(profile: TaskProfile) -> None:
-        log_say(
-            f"Switching active LoRA profile to {profile.profile_id}: "
-            f"{profile.task_description}"
-        )
         if policy is not None and hasattr(policy, "switch_to_profile"):
+            log_say(
+                f"Switching active LoRA profile to {profile.profile_id}: "
+                f"{profile.task_description}"
+            )
             policy.switch_to_profile(profile.profile_id)
+        else:
+            log_say(
+                f"Switching active task profile to {profile.profile_id}: "
+                f"{profile.task_description}"
+            )
 
     return TaskSwitchCoordinator(
         registry=registry,
@@ -966,7 +1082,17 @@ def _reset_to_training_start(robot, model_path: str) -> None:
     arm_dof = len(AGIBOT_O10_ARM_FEATURE_NAMES)
     hand_dof = len(AGIBOT_O10_HAND_FEATURE_NAMES)
     arm_target = state[:arm_dof]
-    hand_target = state[arm_dof:arm_dof + hand_dof]
+    hand_state = state[arm_dof:]
+
+    hand_action_mode = (
+        robot._hand_action_mode()
+        if hasattr(robot, "_hand_action_mode")
+        else "dexterous_10d"
+    )
+    if hand_action_mode == "gripper_1d" and len(hand_state) == 1:
+        hand_target = robot._gripper_value_to_hand_joints(float(hand_state[0]))
+    else:
+        hand_target = hand_state[:hand_dof]
 
     robot.reset_arm_joint_pos = arm_target
     robot.reset_hand_joint_pos = hand_target
@@ -992,6 +1118,14 @@ def _reset_robot_for_inference_start(robot, model_path: str) -> None:
 
     log_say("Resetting to configured reset pose for inference startup")
     robot.return_zero()
+
+
+def _disconnect_robot_cameras(robot, label: str = "robot") -> None:
+    for cam in getattr(robot, "cameras", {}).values():
+        try:
+            cam.disconnect()
+        except Exception as exc:
+            log_say(f"Warning: failed to disconnect {label} camera: {exc}")
 
 
 def _create_robot_config(args: argparse.Namespace):
@@ -1169,8 +1303,13 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
             str(policy.config.device),
             _load_observation_rename_map(args.model_path),
         ),
+        postprocessor_overrides=_build_policy_postprocessor_overrides(args.policy),
     )
-    task_switch_coordinator = _create_task_switch_coordinator(args.model_path, policy)
+    task_switch_coordinator = _create_task_switch_coordinator(
+        args.model_path,
+        policy,
+        task_switch_config_path=getattr(args, "task_switch_config", None),
+    )
 
     # 初始化键盘监听和可视化
     events = {
@@ -1285,17 +1424,20 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 创建机器人配置
     robot_config = _create_robot_config(args)
-    robot = make_robot_from_config(robot_config)
-    robot_features = build_dataset_features(
-        robot,
-        use_videos=bool(getattr(robot, "cameras", {})),
-    )
-    _load_and_validate_policy_config(
-        args.policy,
-        args.model_path,
-        args.device,
-        robot_features,
-    )
+    schema_robot = make_robot_from_config(robot_config)
+    try:
+        robot_features = build_dataset_features(
+            schema_robot,
+            use_videos=bool(getattr(schema_robot, "cameras", {})),
+        )
+        _load_and_validate_policy_config(
+            args.policy,
+            args.model_path,
+            args.device,
+            robot_features,
+        )
+    finally:
+        _disconnect_robot_cameras(schema_robot, label="schema probe")
 
     # 创建客户端配置
     client_cfg = RobotClientConfig(
@@ -1310,7 +1452,10 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         debug_visualize_queue_size=args.debug_visualize_queue_size,
     )
     client_cfg.display_data = args.display_data
-    task_switch_coordinator = _create_task_switch_coordinator(args.model_path)
+    task_switch_coordinator = _create_task_switch_coordinator(
+        args.model_path,
+        task_switch_config_path=getattr(args, "task_switch_config", None),
+    )
 
     if args.display_data:
         init_rerun(session_name="inference")
