@@ -56,23 +56,23 @@ teleop:
   enable_hand: true  # 可选: true, false
   arm_trigger_mode: left  # 可选: split, left, right, both
   hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
-  trigger_gesture: tripod  # 可选: pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
+  trigger_gesture: cylindrical  # 可选: pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
   action_control_mode: joint  # 可选: joint, eef_delta
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   left:
     handedness: left  # 可选: left, right
     wrist_pose_source: left  # 可选: auto, left, right
-    trigger_gesture: tripod  # 可选: pinch, tripod, cylindrical
-    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    trigger_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
   right:
     handedness: right  # 可选: left, right
     wrist_pose_source: right  # 可选: auto, left, right
-    trigger_gesture: pinch  # 可选: pinch, tripod, cylindrical
-    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    trigger_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
 
 robot:
   type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
@@ -88,9 +88,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
   right:
     port: can1  # CAN 口
     handedness: right  # 可选: left, right
@@ -98,9 +98,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical  # 可选: pinch, tripod, cylindrical
   camera_config_path: configs/cameras/o10_cameras.yaml
   cameras:
     top:

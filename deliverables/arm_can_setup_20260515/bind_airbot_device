@@ -1,0 +1,123 @@
+#!/bin/bash
+
+BIND_NAME=$1
+
+CAN_RULE_PATH=/etc/udev/rules.d/91-usb-can-airbot.rules
+SLCAN_RULE_PATH=/etc/udev/rules.d/91-usb-slcan-airbot.rules
+
+if [ "$BIND_NAME" = "rm" ]; then
+        if [ -z $2] || [ $2 = "slcan" ]; then
+                rm -f "$SLCAN_RULE_PATH"
+                echo "Removed $SLCAN_RULE_PATH"
+        fi
+        if [ -z $2] || [ $2 = "can" ]; then
+                rm -f "$CAN_RULE_PATH"
+                echo "Removed $CAN_RULE_PATH"
+        fi
+        exit 0
+fi
+
+# Check for root permissions
+if [ $EUID -ne 0 ]; then
+        echo "This script must be run as root. Use sudo to run the script."
+        exit 1
+fi
+
+# Detect connected USB2CAN devices by idVendor and idProduct
+echo "Detecting connected USB2CAN devices..."
+DEVICES=($(lsusb | awk '/ID (0483:0000|1d50:606f)/ {print $2 "/" $4}' | sed 's/://'))
+NUM_DEVICES=${#DEVICES[@]}
+
+if [ $NUM_DEVICES -eq 0 ]; then
+        echo "No USB2CAN devices detected. Please connect a device and try again."
+        exit 1
+fi
+
+# Display detected devices and extract serial numbers
+echo "Detected USB2CAN devices:"
+for ((i = 0; i < NUM_DEVICES; i++)); do
+        DEVICE_PATH="/dev/bus/usb/${DEVICES[i]}"
+        SERIAL=$(udevadm info --query=property --path=$(udevadm info --query=path --name=$DEVICE_PATH) | grep 'ID_SERIAL_SHORT=' | cut -d'=' -f2)
+
+        if [ -z "$SERIAL" ]; then
+                SERIAL="Unknown"
+        fi
+
+        echo "$((i + 1)). ${DEVICES[i]}"
+        echo "Serial number: $SERIAL"
+done
+
+# Loop to gather CAN interface names and automatically use serial numbers
+for ((i = 0; i < NUM_DEVICES; i++)); do
+        DEVICE_PATH="/dev/bus/usb/${DEVICES[i]}"
+        SERIAL=$(udevadm info --query=property --path=$(udevadm info --query=path --name=$DEVICE_PATH) | grep 'ID_SERIAL_SHORT=' | cut -d'=' -f2)
+
+        if [ -z "$SERIAL" ]; then
+                echo "Error: Unable to detect serial number for device ${DEVICES[i]}"
+                continue
+        fi
+
+        if [ "$NUM_DEVICES" -gt 1 ] || [ -z "$BIND_NAME" ]; then
+                read -p "Enter desired CAN interface name for device with serial number $SERIAL (e.g., can_left) or press Enter to skip this device: " CAN_NAME
+        else
+                CAN_NAME=${BIND_NAME}
+        fi
+
+        if [ -z "$CAN_NAME" ]; then
+                echo "Please enter a non-empty name"
+                continue
+        fi
+
+        if [ ${#CAN_NAME} -gt 15 ]; then
+                echo "The name is too long! Please enter a name with 15 characters or less"
+                continue
+        fi
+
+        VENDOR_ID=$(udevadm info --query=property --path=$(udevadm info --query=path --name=$DEVICE_PATH) | grep 'ID_VENDOR_ID=' | cut -d'=' -f2)
+        PRODUCT_ID=$(udevadm info --query=property --path=$(udevadm info --query=path --name=$DEVICE_PATH) | grep 'ID_MODEL_ID=' | cut -d'=' -f2)
+        if [[ "$VENDOR_ID" == "0483" && "$PRODUCT_ID" == "0000" ]]; then
+
+                # generate udev rule
+                cat >>"${SLCAN_RULE_PATH}" <<EOL
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="0000", ATTRS{serial}=="$SERIAL", SYMLINK+="$CAN_NAME", GROUP="dialout", MODE="0777", TAG+="systemd", ENV{SYSTEMD_WANTS}="slcan_$CAN_NAME@.service"
+EOL
+                chmod +x "${SLCAN_RULE_PATH}"
+
+                # generate service file
+                cat >/etc/systemd/system/slcan_$CAN_NAME@.service <<EOL
+[Unit]
+Description=SocketCAN device $CAN_NAME
+After=dev-$CAN_NAME.device
+BindsTo=dev-$CAN_NAME.device
+
+[Service]
+ExecStart=/usr/local/bin/slcan_add_$CAN_NAME.sh
+Type=forking
+EOL
+                chmod +x /etc/systemd/system/slcan_$CAN_NAME@.service
+
+                # generate script file
+                cat >/usr/local/bin/slcan_add_$CAN_NAME.sh <<EOL
+#!/bin/bash
+/usr/bin/slcand -o -c -f -s8 -S 3000000 /dev/$CAN_NAME $CAN_NAME
+sleep 1
+/usr/sbin/ip link set up $CAN_NAME
+/usr/sbin/ip link set $CAN_NAME txqueuelen 1000
+EOL
+
+                chmod +x /usr/local/bin/slcan_add_$CAN_NAME.sh
+                echo "udev for $CAN_NAME created in $SLCAN_RULE_PATH"
+        else
+                # generate udev rule
+                cat >>${CAN_RULE_PATH} <<EOL
+ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="606f", ATTRS{serial}=="$SERIAL", NAME="$CAN_NAME", RUN+="/sbin/ip link set $CAN_NAME up type can bitrate 1000000", RUN+="/sbin/ip link set $CAN_NAME txqueuelen 1000"
+EOL
+                chmod +x ${CAN_RULE_PATH}
+                echo "udev for $CAN_NAME created in $CAN_RULE_PATH"
+        fi
+done
+
+# Reload udev rules
+udevadm control --reload-rules
+udevadm trigger
+echo "Udev rules reloaded successfully. Reconnect your USB2CAN devices."
