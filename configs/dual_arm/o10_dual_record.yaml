@@ -100,7 +100,7 @@ robot:
   action_control_mode: joint  # 可选: joint, eef_delta
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   allow_camera_read_failures: true  # 可选: true, false
-  tactile_mode: "none"  # 可选: none, 130d
+  tactile_mode: "none"  # 可选: none, 130d；也决定数据集 root 子目录 (none -> without_tactile, 其他 -> with_tactile)
   left:
     port: can0  # CAN 口
     handedness: left  # 可选: left, right
@@ -166,6 +166,11 @@ dataset:
   repo_id: manual_dataset_name  # 手动数据集目录名
 
   # 数据集根目录。
+  # 最终路径会自动追加 with_tactile / without_tactile 子目录，由 robot.tactile_mode 决定：
+  #   none -> ~/workspace/dataset/Robot/agi_arm_bot/without_tactile/<任务名_日期>
+  #   其他 -> ~/workspace/dataset/Robot/agi_arm_bot/with_tactile/<任务名_日期>
+  # 若手工把 root 末段写成 with_tactile / without_tactile，会被尊重不再追加；
+  # 此时若与 tactile_mode 不一致会打 yellow 警告。
   root: ~/workspace/dataset/Robot/agi_arm_bot  # 数据集根目录
 
   # 是否录相机视频。
