@@ -147,10 +147,10 @@ run:
   num_episodes: 1000  # 最多录制 episode 数
 
   # 单个 episode 最长时长，单位秒。
-  episode_time_sec: 60  # 单个 episode 最长时长，单位秒
+  episode_time_sec: 86400  # 单个 episode 最长时长，单位秒；24h 等于"无限"，靠终端 next/n 手动结束
 
   # 保留的 reset 时间字段。
-  reset_time_sec: 10  # reset 时间字段，单位秒
+  reset_time_sec: 15  # reset 时间字段，单位秒
 
   # 任务名。
   single_task: dual arm collaborative express parcel sorting  # 任务描述
