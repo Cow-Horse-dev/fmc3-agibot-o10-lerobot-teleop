@@ -145,7 +145,7 @@ cd ~/workspace/arm-hand-teleop
   - 闭合条件：工作侧手柄的 grip 按键（左臂看 `LG`，右臂看 `RG`）按下，或 grip 轴值超过阈值。
     - 单臂：阈值硬编码为 `0.2`，不可通过配置修改。
     - 双臂：每侧独立判断（左手看 `LG`/`leftGrip`，右手看 `RG`/`rightGrip`），阈值可用 `teleop.grasp_grip_threshold` 覆盖，默认 `0.2`。
-  - `teleop.trigger_gesture` 选择闭合姿态形状，常用 `pinch` / `tripod`。
+  - `teleop.trigger_gesture` 选择闭合姿态形状，可选 `pinch` / `tripod` / `cylindrical` / `cylindrical_straight`（后者 open 时拇指完全伸直，适合圆柱抓握和快递分拣任务）。
   - 双臂可在 `teleop.left.trigger_gesture` / `teleop.right.trigger_gesture` 里为左右手分别指定不同手势。
 
 ## 配置文件
@@ -181,7 +181,7 @@ cd ~/workspace/arm-hand-teleop
 - `configs/reset_poses/o10_dual_reset.json`：统一复位姿态文件，结构如下（所有 O10 控制、录制、回放、推理配置默认共用）：
   - `arm.left` / `arm.right`：左右臂 6 个关节的目标角度。
   - `hand.feature_names`：手部关节顺序（10 维）。
-  - `gestures.<name>.<side>.open|closed`：每个手势（默认已提供 `pinch`、`tripod`）左右手的 10 维 `open` / `closed` 关节值。YAML 的 `reset_gesture` 字段用来指定 `<name>`。
+  - `gestures.<name>.<side>.open|closed`：每个手势（默认已提供 `pinch`、`tripod`、`cylindrical`、`cylindrical_straight`）左右手的 10 维 `open` / `closed` 关节值。YAML 的 `reset_gesture` 字段用来指定 `<name>`。注意 `cylindrical_straight` 右手 yaw 用 `-1.7` 而左手用 `+1.51`，是为了补偿机械零点偏差让两手视觉对称。
 - 运行时只读不写，不会被自动覆盖。需要更新时手动编辑此 JSON（下文 "工具脚本" 里的 `save_*` 只输出辅助 JSON，不直接写回这份文件）。
 
 ## 数据流和硬件通道
@@ -250,7 +250,7 @@ cd ~/workspace/arm-hand-teleop
 
 录制侧仍先得到每只 O10 手的 10D 手指关节，再按配置的 `gripper_gesture`、`handedness` 和 reset pose 里的 `open` / `closed` 姿态，把当前 10D 手指关节投影到 `0..1` 的 `gripper.pos`。回放侧读取数据集里的 `left.gripper.pos` / `right.gripper.pos`，按同样的 `gripper_gesture` 和 `handedness`，从对应 `open` / `closed` pose 线性插值还原为 10D 手指关节并下发到 O10 手。
 
-当前双臂配置在 `configs/dual_arm/o10_dual_record.yaml` 和 `configs/dual_arm/o10_dual_replay.yaml`：左手使用 `tripod`，右手使用 `pinch`。20260427 数据集 replay 基本能对上，说明录制/回放映射链路没问题。
+当前双臂配置在 `configs/dual_arm/o10_dual_record.yaml` 和 `configs/dual_arm/o10_dual_replay.yaml`：左右手都使用 `cylindrical_straight`，用于快递分拣任务（`single_task: dual arm collaborative express parcel sorting`）。映射链路同 1D mapping 通用，端点改为 `cylindrical_straight` 的 open/closed。
 
 `robot.tactile_mode` 只支持 `none` 和 `130d`：
 
