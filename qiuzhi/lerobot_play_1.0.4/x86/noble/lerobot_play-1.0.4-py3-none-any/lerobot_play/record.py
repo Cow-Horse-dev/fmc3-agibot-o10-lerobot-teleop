@@ -916,6 +916,33 @@ def main():
                 "No cameras configured; recording an action/state-only dataset."
             )
 
+        # Route dataset.root into a tactile / non-tactile subfolder so that
+        # recordings with different tactile_mode never end up in the same
+        # parent directory. Skip if the user already pointed root at one of
+        # those subfolders; warn if their subfolder disagrees with tactile_mode.
+        tactile_mode = cfg.get("robot", {}).get("tactile_mode", "none")
+        tactile_subdir = (
+            "without_tactile"
+            if tactile_mode in (None, "", "none")
+            else "with_tactile"
+        )
+        raw_root = cfg["dataset"].get("root")
+        if raw_root:
+            raw_root_path = Path(str(raw_root)).expanduser()
+            if raw_root_path.name in ("with_tactile", "without_tactile"):
+                if raw_root_path.name != tactile_subdir:
+                    print_yellow(
+                        f"dataset.root ends in '{raw_root_path.name}' but "
+                        f"tactile_mode='{tactile_mode}' implies '{tactile_subdir}'; "
+                        f"keeping user-provided path."
+                    )
+            else:
+                cfg["dataset"]["root"] = str(raw_root_path / tactile_subdir)
+                print_yellow(
+                    f"Auto-routed dataset.root to '{tactile_subdir}' "
+                    f"based on tactile_mode='{tactile_mode}'."
+                )
+
         # Create dataset (local repo_id)
         dataset_target = resolve_record_dataset_target(
             repo_id=cfg["dataset"].get("repo_id"),
