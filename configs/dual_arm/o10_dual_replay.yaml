@@ -33,7 +33,7 @@ dataset:
   repo_id: null  # 可选: null 或数据集名字
 
   # 要回放的具体数据集目录。
-  root: /home/phl/workspace/dataset/Robot/agi_arm_bot/right_hand_picks_up_the_camera_left_hand_picks_up_the_pen_then_left_hand_uses_the_pen_to_touch_20260427_2  # 要回放的具体数据集目录
+  root: /home/phl/workspace/dataset/Robot/agi_arm_bot/dual_arm_collaborative_express_parcel_sorting_20260521  # 要回放的具体数据集目录
 
 replay:
   # 回放第几个 episode，从 0 开始编号。
@@ -55,9 +55,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical；与录制一致
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight；与录制一致
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
   right:
     port: can1  # CAN 口
     handedness: right  # 可选: left, right
@@ -65,6 +65,6 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical；与录制一致
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight；与录制一致
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight

@@ -28,7 +28,13 @@ wrist_cameras:
     serial_number_or_name: "260322273018"
 
 camera_controls:
+  left_wrist:
+    auto_exposure: false
+    exposure_us: 14000
+    gain: 16
   right_wrist:
     auto_exposure: false
     exposure_us: 14000
     gain: 16
+
+

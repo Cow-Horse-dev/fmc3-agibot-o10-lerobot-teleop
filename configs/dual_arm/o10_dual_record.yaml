@@ -74,23 +74,23 @@ teleop:
   # - split: 左臂看 LTr，右臂看 RTr
   arm_trigger_mode: left  # 可选: split, left, right, both
   hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
-  trigger_gesture: tripod  # 可选: pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
+  trigger_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight（仅 trigger_gesture 模式生效）
   action_control_mode: joint  # 可选: joint, eef_delta
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   left:
     handedness: left  # 可选: left, right
     wrist_pose_source: left  # 可选: auto, left, right
-    trigger_gesture: tripod  # 可选: pinch, tripod, cylindrical
-    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    trigger_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
   right:
     handedness: right  # 可选: left, right
     wrist_pose_source: right  # 可选: auto, left, right
-    trigger_gesture: pinch  # 可选: pinch, tripod, cylindrical
-    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    trigger_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
 
 robot:
   type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
@@ -108,9 +108,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: tripod  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
   right:
     port: can1  # CAN 口
     handedness: right  # 可选: left, right
@@ -118,9 +118,9 @@ robot:
     device_id: 1  # O10 设备 id
     canfd_id: 0  # CANFD id
     channel_id: null  # 可选: null 或整数；null 自动 left->0, right->1
-    gripper_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    gripper_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
     reset_poses_path: ~/workspace/arm-hand-teleop/configs/reset_poses/o10_dual_reset.json  # reset 姿态 JSON
-    reset_gesture: pinch  # 可选: pinch, tripod, cylindrical
+    reset_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight
   camera_config_path: configs/cameras/o10_cameras.yaml
   cameras:
     top:
@@ -153,7 +153,7 @@ run:
   reset_time_sec: 10  # reset 时间字段，单位秒
 
   # 任务名。
-  single_task: right hand picks up the camera, left hand picks up the pen, then left hand uses the pen to touch  # 任务描述
+  single_task: dual arm collaborative express parcel sorting  # 任务描述
 
 dataset:
   # 是否自动按"任务名 + 日期"命名数据集目录。
