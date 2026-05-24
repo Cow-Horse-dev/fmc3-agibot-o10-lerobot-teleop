@@ -57,6 +57,18 @@ def test_trigger_gesture_hand_pos_prefers_reset_json(tmp_path):
     )
 
 
+def test_trigger_gesture_hand_pos_preserves_falsey_reset_json_value(tmp_path):
+    from lerobot_play.utils.o10_hand_control import trigger_gesture_hand_pos
+
+    reset_path = tmp_path / "reset.json"
+    reset_path.write_text(
+        json.dumps({"gestures": {"pinch": {"left": {"open": []}}}}),
+        encoding="utf-8",
+    )
+
+    assert trigger_gesture_hand_pos(reset_path, "pinch", "left", "open") == []
+
+
 def test_gripper_value_to_hand_joints_clamps_and_interpolates():
     from lerobot_play.utils.o10_hand_control import gripper_value_to_hand_joints, trigger_gesture_hand_pos
 
@@ -89,6 +101,8 @@ def test_default_gripper_gesture_fallback_order():
     from lerobot_play.utils.o10_hand_control import default_gripper_gesture
 
     assert default_gripper_gesture(None, None, None) == "pinch"
+    assert default_gripper_gesture(None, None, None, "tripod") == "tripod"
+    assert default_gripper_gesture(None, None, "pinch", "tripod") == "pinch"
     assert default_gripper_gesture(None, "tripod", "pinch") == "tripod"
     assert default_gripper_gesture("cylindrical", "tripod", "pinch") == "cylindrical"
 
@@ -97,5 +111,7 @@ def test_real_reset_pose_json_can_supply_trigger_gesture():
     from lerobot_play.utils.o10_hand_control import trigger_gesture_hand_pos
 
     reset_poses_path = WORKSPACE_ROOT / "configs" / "reset_poses" / "o10_dual_reset.json"
+    payload = json.loads(reset_poses_path.read_text(encoding="utf-8"))
+    expected = payload["gestures"]["pinch"]["left"]["open"]
 
-    assert len(trigger_gesture_hand_pos(reset_poses_path, "pinch", "left", "open")) == 10
+    assert trigger_gesture_hand_pos(reset_poses_path, "pinch", "left", "open") == pytest.approx(expected)

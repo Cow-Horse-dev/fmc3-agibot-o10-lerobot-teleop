@@ -15,8 +15,9 @@ def default_gripper_gesture(
     gripper_gesture: str | None,
     trigger_gesture: str | None,
     reset_gesture: str | None,
+    fallback_trigger_gesture: str | None = None,
 ) -> str:
-    return gripper_gesture or trigger_gesture or reset_gesture or "pinch"
+    return gripper_gesture or trigger_gesture or reset_gesture or fallback_trigger_gesture or "pinch"
 
 
 def trigger_gesture_hand_pos(
@@ -25,12 +26,15 @@ def trigger_gesture_hand_pos(
     handedness: str,
     state_key: str,
 ) -> list[float]:
-    return get_agibot_o10_reset_pose_gesture_joint_angles(
+    reset_pose_value = get_agibot_o10_reset_pose_gesture_joint_angles(
         reset_poses_path,
         gesture_name,
         handedness,
         state_key,
-    ) or get_agibot_o10_trigger_gesture_joint_angles(
+    )
+    if reset_pose_value is not None:
+        return reset_pose_value
+    return get_agibot_o10_trigger_gesture_joint_angles(
         gesture_name,
         handedness,
         state_key,
