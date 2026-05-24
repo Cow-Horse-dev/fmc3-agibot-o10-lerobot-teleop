@@ -90,7 +90,9 @@
       "Bash(git tag *)",
       "WebSearch",
       "Bash(codex --help)",
-      "Bash(codex login *)"
+      "Bash(codex login *)",
+      "Bash(git restore *)",
+      "Bash(ip -br link show can0 can1)"
     ],
     "additionalDirectories": [
       "/home/phl/.codex",

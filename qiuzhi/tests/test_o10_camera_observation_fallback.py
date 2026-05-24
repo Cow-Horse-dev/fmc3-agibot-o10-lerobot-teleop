@@ -118,6 +118,7 @@ def _install_common_robot_stubs(monkeypatch):
     _install_stub_module(
         monkeypatch,
         "lerobot.utils.errors",
+        DeviceAlreadyConnectedError=RuntimeError,
         DeviceNotConnectedError=RuntimeError,
     )
     _install_stub_module(
@@ -238,11 +239,20 @@ class _ColorCamera:
     def __init__(self, reads):
         self._reads = list(reads)
 
-    def async_read(self):
+    def async_read(self, timeout_ms=200):
         result = self._reads.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class _TimeoutRecordingCamera:
+    def __init__(self):
+        self.timeout_ms_calls = []
+
+    def async_read(self, timeout_ms=200):
+        self.timeout_ms_calls.append(timeout_ms)
+        raise TimeoutError("camera timeout")
 
 
 class _ConnectCamera:
@@ -275,7 +285,7 @@ class _DepthCamera:
     def __init__(self, reads):
         self._reads = list(reads)
 
-    def async_read_color_and_depth(self):
+    def async_read_color_and_depth(self, timeout_ms=200):
         result = self._reads.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -447,3 +457,33 @@ def test_dual_arm_camera_timeout_returns_zero_frame_when_allowed(monkeypatch):
     assert obs["top"].shape == (2, 4, 3)
     assert obs["top"].dtype == np.uint8
     assert np.count_nonzero(obs["top"]) == 0
+
+
+def test_dual_arm_camera_fallback_uses_short_configured_read_timeout(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    camera = _TimeoutRecordingCamera()
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        enable_hand=False,
+        allow_camera_read_failures=True,
+        camera_read_timeout_ms=35,
+        cameras={"top": SimpleNamespace(height=2, width=4, use_depth=False)},
+    )
+    robot.cameras = {"top": camera}
+    robot.get_joint_pos = lambda: {
+        "left": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+        "right": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+    }
+
+    robot.get_observation()
+
+    assert camera.timeout_ms_calls == [35]

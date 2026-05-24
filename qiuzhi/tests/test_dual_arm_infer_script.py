@@ -22,6 +22,11 @@ DUAL_PI05_ASYNC_RTC_SCRIPT = (
     / ".."
     / "scripts/o10/dual_arm/infer_o10_dual_pi05_async_rtc.sh"
 ).resolve()
+DUAL_PI05_FULLFT_ASYNC_RTC_SCRIPT = (
+    REPO_ROOT
+    / ".."
+    / "scripts/o10/dual_arm/infer_o10_dual_pi05_fullft_async_rtc.sh"
+).resolve()
 RIGHT_PI05_MULTI_LORA_SCRIPT = (
     REPO_ROOT
     / ".."
@@ -71,6 +76,19 @@ def test_dual_pi05_async_rtc_script_uses_pi0_env_and_current_checkpoint():
     assert "ARM_HAND_TELEOP_RTC_ENABLED" in source
     assert 'fps="${ARM_HAND_TELEOP_ASYNC_FPS:-15}"' in source
     assert "pi05_camera_pen_touch_clean_del_52_376_selected/120000/pretrained_model" in source
+    assert "async_policy_server" in source
+    assert "--policy pi05" in source
+    assert "--async_infer" in source
+
+
+def test_dual_pi05_fullft_async_rtc_script_uses_training_model_override():
+    source = DUAL_PI05_FULLFT_ASYNC_RTC_SCRIPT.read_text(encoding="utf-8")
+
+    assert "arm-hand-teleop-pi0/bin/python" in source
+    assert "ARM_HAND_TELEOP_DUAL_PI05_FULLFT_MODEL" in source
+    assert "o10_dual_pi05_fullft_infer.yaml" in source
+    assert 'fps="${ARM_HAND_TELEOP_ASYNC_FPS:-30}"' in source
+    assert 'ARM_HAND_TELEOP_RTC_ENABLED="${ARM_HAND_TELEOP_RTC_ENABLED:-1}"' in source
     assert "async_policy_server" in source
     assert "--policy pi05" in source
     assert "--async_infer" in source

@@ -2,6 +2,7 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 
@@ -46,10 +47,13 @@ fake_lerobot_dataset.LeRobotDataset = object
 sys.modules.setdefault("lerobot_play.utils.lerobot_dataset", fake_lerobot_dataset)
 
 from lerobot_play.utils.lerobot_record import record_loop
+from lerobot_play._compat import Teleoperator
 
 
 class _IdentityProcessor:
     def __call__(self, value):
+        if isinstance(value, tuple):
+            return value[0]
         return value
 
     def reset(self):
@@ -94,6 +98,77 @@ class _DummyDataset:
         self.add_frame_calls += 1
 
 
+class _SuccessfulRobot:
+    cameras = {"top": object()}
+    robot_type = "dummy"
+    name = "dummy"
+    action_features = {}
+    observation_features = {}
+
+    def __init__(self):
+        self.send_action_calls = 0
+
+    def get_observation(self):
+        return {"top": np.zeros((3, 2, 2), dtype=np.uint8)}
+
+    def send_action(self, action):
+        self.send_action_calls += 1
+        return action
+
+
+class _SuccessfulTeleop(Teleoperator):
+    def __init__(self):
+        pass
+
+    @property
+    def action_features(self):
+        return {}
+
+    @property
+    def feedback_features(self):
+        return {}
+
+    @property
+    def is_connected(self):
+        return True
+
+    def connect(self, calibrate=True):
+        return None
+
+    @property
+    def is_calibrated(self):
+        return True
+
+    def calibrate(self):
+        return None
+
+    def configure(self):
+        return None
+
+    def get_action(self):
+        return {}
+
+    def send_feedback(self, feedback):
+        return None
+
+    def disconnect(self):
+        return None
+
+
+class _FailingDataset(_DummyDataset):
+    features = {
+        "observation.images.top": {
+            "dtype": "video",
+            "shape": (3, 480, 640),
+            "names": ["channel", "height", "width"],
+        }
+    }
+
+    def add_frame(self, frame, use_mcap=False, online_encoding=False):
+        self.add_frame_calls += 1
+        raise RuntimeError("Async image writer failed while writing frame")
+
+
 def test_record_loop_camera_timeout_stops_and_discards_partial_episode(caplog):
     robot = _FailingRobot()
     dataset = _DummyDataset()
@@ -136,3 +211,46 @@ def test_record_loop_camera_timeout_stops_and_discards_partial_episode(caplog):
     assert events["exit_early"] is True
     assert events["discard_episode"] is True
     assert "Camera read failed during recording" in caplog.text
+
+
+def test_record_loop_dataset_write_failure_discards_partial_episode(caplog):
+    robot = _SuccessfulRobot()
+    dataset = _FailingDataset()
+    events = {
+        "exit_early": False,
+        "reset_robot": False,
+        "stop_recording": False,
+        "rerecord_episode": False,
+        "discard_episode": False,
+        "start": True,
+    }
+
+    with caplog.at_level("ERROR"):
+        record_loop(
+            robot=robot,
+            events=events,
+            fps=30,
+            teleop_action_processor=_IdentityProcessor(),
+            robot_action_processor=_IdentityProcessor(),
+            robot_observation_processor=_IdentityProcessor(),
+            dataset=dataset,
+            teleop=_SuccessfulTeleop(),
+            policy=None,
+            preprocessor=None,
+            postprocessor=None,
+            control_time_s=1,
+            single_task="test task",
+            display_data=False,
+            use_mcap=False,
+            online_encoding=False,
+            episode_index=1,
+            total_episodes=1,
+        )
+
+    assert robot.send_action_calls == 1
+    assert dataset.add_frame_calls == 1
+    assert dataset.clear_calls == [True]
+    assert events["stop_recording"] is True
+    assert events["exit_early"] is True
+    assert events["discard_episode"] is True
+    assert "Dataset write failed during recording" in caplog.text

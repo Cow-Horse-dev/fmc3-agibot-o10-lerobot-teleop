@@ -33,10 +33,10 @@ def test_dual_control_yaml_parses():
     assert config["robot"]["allow_camera_read_failures"] is True
     assert config["teleop"]["hand_action_mode"] == "gripper_1d"
     assert config["robot"]["hand_action_mode"] == "gripper_1d"
-    assert config["teleop"]["left"]["gripper_gesture"] == "tripod"
-    assert config["teleop"]["right"]["gripper_gesture"] == "pinch"
-    assert config["robot"]["left"]["gripper_gesture"] == "tripod"
-    assert config["robot"]["right"]["gripper_gesture"] == "pinch"
+    assert config["teleop"]["left"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["teleop"]["right"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["left"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["right"]["gripper_gesture"] == "cylindrical_straight"
     assert config["robot"]["left"]["port"] == "can0"
     assert config["robot"]["right"]["port"] == "can1"
     assert config["teleop"]["left"]["handedness"] == "left"
@@ -58,6 +58,7 @@ def test_dual_control_yaml_parses():
         "configs/dual_arm/o10_dual_control.yaml",
         "configs/dual_arm/o10_dual_record.yaml",
         "configs/dual_arm/o10_dual_infer.yaml",
+        "configs/dual_arm/o10_dual_pi05_fullft_infer.yaml",
     ],
 )
 def test_o10_top_camera_configs_rotate_physical_camera_upright(config_path):
@@ -162,6 +163,7 @@ def test_dual_record_yaml_has_dataset_section():
     assert "run" in config
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
+    assert config["robot"]["camera_read_timeout_ms"] == 35
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["action_control_mode"] == "joint"
     assert config["robot"]["tactile_mode"] == "none"
@@ -221,17 +223,37 @@ def test_right_pi05_fullft_merged_task_profiles_are_text_only():
     assert "adapter_path" not in config["profiles"]["black_to_yellow"]
 
 
+def test_dual_pi05_fullft_infer_yaml_uses_async_rtc_schema():
+    config = _load_config("configs/dual_arm/o10_dual_pi05_fullft_infer.yaml")
+
+    assert config["infer"]["policy"] == "pi05"
+    assert config["infer"]["async_infer"] is True
+    assert config["infer"]["fps"] == 30
+    assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["include_eef_pose"] is False
+    assert config["robot"]["action_control_mode"] == "joint"
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["tactile_mode"] == "none"
+    assert config["robot"]["allow_camera_read_failures"] is True
+    assert config["robot"]["camera_read_timeout_ms"] == 35
+    assert set(config["robot"]["cameras"]) == {"top", "left_wrist", "right_wrist"}
+    assert config["robot"]["left"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["right"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["left"]["reset_gesture"] == "cylindrical_straight"
+    assert config["robot"]["right"]["reset_gesture"] == "cylindrical_straight"
+
+
 def test_dual_record_yaml_keeps_left_trigger_mode_and_original_gestures():
     with open("configs/dual_arm/o10_dual_record.yaml") as f:
         config = yaml.safe_load(f)
 
     assert config["teleop"]["arm_trigger_mode"] == "left"
-    assert config["teleop"]["left"]["trigger_gesture"] == "tripod"
-    assert config["teleop"]["right"]["trigger_gesture"] == "pinch"
-    assert config["teleop"]["left"]["gripper_gesture"] == "tripod"
-    assert config["teleop"]["right"]["gripper_gesture"] == "pinch"
-    assert config["robot"]["left"]["gripper_gesture"] == "tripod"
-    assert config["robot"]["right"]["gripper_gesture"] == "pinch"
+    assert config["teleop"]["left"]["trigger_gesture"] == "cylindrical_straight"
+    assert config["teleop"]["right"]["trigger_gesture"] == "cylindrical_straight"
+    assert config["teleop"]["left"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["teleop"]["right"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["left"]["gripper_gesture"] == "cylindrical_straight"
+    assert config["robot"]["right"]["gripper_gesture"] == "cylindrical_straight"
 
 
 @pytest.mark.parametrize(

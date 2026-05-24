@@ -76,8 +76,8 @@ from lerobot.cameras.realsense.configuration_realsense import (
 )  # noqa: F401
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
-from lerobot.datasets.image_writer import safe_stop_image_writer
 from .lerobot_dataset import LeRobotDataset
+from .image_writer import safe_stop_image_writer
 try:
     from lerobot.datasets.feature_utils import build_dataset_frame
 except ImportError:
@@ -531,7 +531,18 @@ def record_loop(
                     dataset.features, sent_action, prefix=ACTION
                 )
                 frame = {**observation_frame, **action_frame, "task": single_task}
-                dataset.add_frame(frame, use_mcap, online_encoding)
+                try:
+                    dataset.add_frame(frame, use_mcap, online_encoding)
+                except Exception as exc:
+                    logging.error(
+                        "Dataset write failed during recording; stopping current episode without saving partial data: %s",
+                        exc,
+                    )
+                    dataset.clear_episode_buffer(restart_image_writer=True)
+                    events["discard_episode"] = True
+                    events["stop_recording"] = True
+                    events["exit_early"] = True
+                    break
 
             if preview_worker is not None:
                 display_observation = filter_display_observation(obs_processed, camera_keys)

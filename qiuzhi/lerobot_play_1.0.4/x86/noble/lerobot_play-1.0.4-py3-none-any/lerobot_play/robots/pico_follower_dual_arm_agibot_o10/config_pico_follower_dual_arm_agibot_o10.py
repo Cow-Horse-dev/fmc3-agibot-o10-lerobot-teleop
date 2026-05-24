@@ -26,6 +26,7 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     right: dict = field(default_factory=dict)
     enable_hand: bool = True
     allow_camera_read_failures: bool = False
+    camera_read_timeout_ms: int = 200
     include_eef_pose: bool = True
     action_control_mode: str = "joint"  # "joint" or "eef_delta"
     hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"

@@ -121,6 +121,11 @@ mapping; hand CANFD over multiChannel (channel 0 = left, 1 = right); arms on CAN
 - Treat `*.zip`, `*.whl`, `.so`, `__pycache__/`, and generated `Protobuf/*_pb2.py` as
   vendor artifacts unless regeneration is in scope.
 
+## Commit Message Format
+
+All git commit messages must follow the `heliangp:提交内容` format
+(e.g. `heliangp:fix JSON role fallback`, `heliangp:add cylindrical_straight gesture`).
+
 ## Behavioral Guidelines
 
 Bias toward caution over speed. For trivial tasks, use judgment.

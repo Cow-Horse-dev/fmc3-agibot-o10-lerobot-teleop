@@ -338,6 +338,41 @@ def test_dual_robot_gripper_mode_observation_compresses_hand_to_1d(monkeypatch):
     assert obs[f"right.{GRIPPER_FEATURE_NAME}"] == pytest.approx(0.0)
 
 
+def test_dual_robot_gripper_observation_uses_cached_hand_joints_without_tactile(monkeypatch):
+    module = _load_dual_robot_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot.config = SimpleNamespace(
+        hand_action_mode="gripper_1d",
+        include_eef_pose=False,
+        tactile_mode="none",
+        enable_hand=True,
+        left={"handedness": "left", "gripper_gesture": "tripod"},
+        right={"handedness": "right", "gripper_gesture": "pinch"},
+        cameras={},
+    )
+    robot._is_connected = True
+    robot.cameras = {}
+    robot.left_arm = SimpleNamespace(state=lambda: SimpleNamespace(pos=[1, 2, 3, 4, 5, 6]))
+    robot.right_arm = SimpleNamespace(state=lambda: SimpleNamespace(pos=[7, 8, 9, 10, 11, 12]))
+    robot.left_hand = SimpleNamespace(
+        read_active_joint_angles=lambda: pytest.fail("left hand should not be read")
+    )
+    robot.right_hand = SimpleNamespace(
+        read_active_joint_angles=lambda: pytest.fail("right hand should not be read")
+    )
+    robot.left_hand_joints = agibot_o10.agibot_o10_hand_joints_from_gripper_value(
+        1.0, "tripod", "left"
+    )
+    robot.right_hand_joints = agibot_o10.agibot_o10_hand_joints_from_gripper_value(
+        0.0, "pinch", "right"
+    )
+
+    obs = robot.get_observation()
+
+    assert obs[f"left.{GRIPPER_FEATURE_NAME}"] == pytest.approx(1.0)
+    assert obs[f"right.{GRIPPER_FEATURE_NAME}"] == pytest.approx(0.0)
+
+
 def test_dual_robot_gripper_mode_send_action_expands_1d_gripper_to_hand_joints(monkeypatch):
     module = _load_dual_robot_module(monkeypatch)
     left_closed = agibot_o10.agibot_o10_hand_joints_from_gripper_value(1.0, "tripod", "left")

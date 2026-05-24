@@ -25,6 +25,36 @@ def test_record_source_accepts_intelrealsense_alias():
     assert "return parse_camera_configs(cameras_obj)" in source
 
 
+def test_record_source_passes_o10_camera_failure_fallback_config():
+    source = RECORD_SRC.read_text(encoding="utf-8")
+
+    single_start = source.index(
+        '        robot_cfg = PicoFollowerSingleArmAgibotO10Config('
+    )
+    dual_start = source.index(
+        '        robot_cfg = PicoFollowerDualArmAgibotO10Config('
+    )
+    single_block = source[single_start:dual_start]
+    dual_block = source[dual_start:source.index("    else:", dual_start)]
+
+    assert (
+        'allow_camera_read_failures=cfg["robot"].get("allow_camera_read_failures", False),'
+        in single_block
+    )
+    assert (
+        'allow_camera_read_failures=cfg["robot"].get("allow_camera_read_failures", False),'
+        in dual_block
+    )
+    assert (
+        'camera_read_timeout_ms=cfg["robot"].get("camera_read_timeout_ms", 200),'
+        in single_block
+    )
+    assert (
+        'camera_read_timeout_ms=cfg["robot"].get("camera_read_timeout_ms", 200),'
+        in dual_block
+    )
+
+
 def test_record_source_rehydrates_single_arm_teleop_when_episode_starts():
     source = RECORD_SRC.read_text(encoding="utf-8")
 

@@ -13,9 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 import multiprocessing
 import queue
 import threading
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +36,8 @@ def safe_stop_image_writer(func):
             return func(*args, **kwargs)
         except Exception as e:
             dataset = kwargs.get("dataset")
+            if dataset is None and len(args) >= 7:
+                dataset = args[6]
             image_writer = getattr(dataset, "image_writer", None) if dataset else None
             if image_writer is not None:
                 print("Waiting for image writer to terminate...")
@@ -225,9 +230,8 @@ def write_image(
         TypeError: If the input 'image' is not a NumPy array or a
             PIL.Image.Image object.
 
-    Side Effects:
-        Prints an error message to the console if the image writing process
-        fails for any reason.
+    Raises:
+        RuntimeError: If conversion or disk writing fails.
     """
     try:
         if isinstance(image, np.ndarray):
@@ -238,7 +242,7 @@ def write_image(
             raise TypeError(f"Unsupported image type: {type(image)}")
         img.save(fpath, compress_level=compress_level)
     except Exception as e:
-        print(f"Error writing image {fpath}: {e}")
+        raise RuntimeError(f"Failed to write image {fpath}: {e}") from e
 
 
 def write_mcap(image: np.ndarray | PIL.Image.Image, fpath: Path, frame_index: int = 0):
@@ -251,24 +255,48 @@ def write_mcap(image: np.ndarray | PIL.Image.Image, fpath: Path, frame_index: in
             raise TypeError(f"Unsupported image type: {type(image)}")
         append_image_to_mcap(img, fpath, frame_index=frame_index)
     except Exception as e:
-        print(f"Error writing image {fpath}: {e}")
+        raise RuntimeError(f"Failed to write mcap image {fpath}: {e}") from e
 
 
-def worker_thread_loop(queue: queue.Queue):
+def _put_worker_error(
+    error_queue: queue.Queue | multiprocessing.Queue | None,
+    fpath: Path | None,
+    exc: Exception,
+) -> None:
+    if error_queue is None:
+        return
+    error_queue.put(
+        {
+            "fpath": str(fpath) if fpath is not None else "<unknown>",
+            "error": f"{type(exc).__name__}: {exc}",
+            "traceback": traceback.format_exc(),
+        }
+    )
+
+
+def worker_thread_loop(queue: queue.Queue, error_queue: queue.Queue | None = None):
     while True:
         item = queue.get()
-        if item is None:
+        try:
+            if item is None:
+                break
+            image_array, fpath, compress_level = item
+            write_image(image_array, fpath, compress_level)
+        except Exception as exc:
+            fpath = item[1] if item is not None and len(item) > 1 else None
+            _put_worker_error(error_queue, fpath, exc)
+        finally:
             queue.task_done()
-            break
-        image_array, fpath, compress_level = item
-        write_image(image_array, fpath, compress_level)
-        queue.task_done()
 
 
-def worker_process(queue: queue.Queue, num_threads: int):
+def worker_process(
+    queue: queue.Queue,
+    num_threads: int,
+    error_queue: multiprocessing.Queue | None = None,
+):
     threads = []
     for _ in range(num_threads):
-        t = threading.Thread(target=worker_thread_loop, args=(queue,))
+        t = threading.Thread(target=worker_thread_loop, args=(queue, error_queue))
         t.daemon = True
         t.start()
         threads.append(t)
@@ -295,6 +323,7 @@ class AsyncImageWriter:
         self.num_processes = num_processes
         self.num_threads = num_threads
         self.queue = None
+        self.error_queue = None
         self.threads = []
         self.processes = []
         self._stopped = False
@@ -307,21 +336,49 @@ class AsyncImageWriter:
         if self.num_processes == 0:
             # Use threading
             self.queue = queue.Queue()
+            self.error_queue = queue.Queue()
             for _ in range(self.num_threads):
-                t = threading.Thread(target=worker_thread_loop, args=(self.queue,))
+                t = threading.Thread(
+                    target=worker_thread_loop, args=(self.queue, self.error_queue)
+                )
                 t.daemon = True
                 t.start()
                 self.threads.append(t)
         else:
             # Use multiprocessing
             self.queue = multiprocessing.JoinableQueue()
+            self.error_queue = multiprocessing.Queue()
             for _ in range(self.num_processes):
                 p = multiprocessing.Process(
-                    target=worker_process, args=(self.queue, self.num_threads)
+                    target=worker_process,
+                    args=(self.queue, self.num_threads, self.error_queue),
                 )
                 p.daemon = True
                 p.start()
                 self.processes.append(p)
+
+    def _raise_worker_errors(self):
+        if self.error_queue is None:
+            return
+
+        errors = []
+        while True:
+            try:
+                errors.append(self.error_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if not errors:
+            return
+
+        first_error = errors[0]
+        message = (
+            "Async image writer failed while writing "
+            f"{first_error['fpath']}: {first_error['error']}"
+        )
+        if len(errors) > 1:
+            message = f"{message} (and {len(errors) - 1} more image write errors)"
+        raise RuntimeError(message)
 
     def save_image(
         self,
@@ -329,6 +386,7 @@ class AsyncImageWriter:
         fpath: Path,
         compress_level: int = 1,
     ):
+        self._raise_worker_errors()
         if isinstance(image, torch.Tensor):
             # Convert tensor to numpy array to minimize main process time
             image = image.cpu().numpy()
@@ -336,6 +394,7 @@ class AsyncImageWriter:
 
     def wait_until_done(self):
         self.queue.join()
+        self._raise_worker_errors()
 
     def stop(self):
         if self._stopped:

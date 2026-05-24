@@ -208,9 +208,13 @@ class PicoFollowerSingleArmAgibotO10(Robot):
         self.arm.set_param("arm.control_mode", ah.MotorControlMode.PVT)
 
     def get_joint_pos(self) -> list[list[float]]:
+        use_cached_hand_pos = (
+            self._hand_action_mode() == "gripper_1d"
+            and validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none")) == "none"
+        )
         hand_joint_pos = (
             self.hand.read_active_joint_angles()
-            if self.hand is not None
+            if self.hand is not None and not use_cached_hand_pos
             else self.hand_joints.copy()
         )
         return [list(self.arm.state().pos), hand_joint_pos]
@@ -328,14 +332,15 @@ class PicoFollowerSingleArmAgibotO10(Robot):
     def _read_camera_observation(self, camera_name: str, camera: Any) -> tuple[np.ndarray, np.ndarray | None]:
         uses_depth = self._camera_uses_depth(self.config.cameras[camera_name])
         cache = self._get_camera_observation_cache()
+        timeout_ms = int(getattr(self.config, "camera_read_timeout_ms", 200))
         try:
             if uses_depth:
-                color_frame, depth_frame = camera.async_read_color_and_depth()
+                color_frame, depth_frame = camera.async_read_color_and_depth(timeout_ms=timeout_ms)
                 cache[camera_name] = (color_frame, depth_frame)
                 self._mark_camera_read_success(camera_name)
                 return color_frame, depth_frame
 
-            color_frame = camera.async_read()
+            color_frame = camera.async_read(timeout_ms=timeout_ms)
             cache[camera_name] = (color_frame, None)
             self._mark_camera_read_success(camera_name)
             return color_frame, None

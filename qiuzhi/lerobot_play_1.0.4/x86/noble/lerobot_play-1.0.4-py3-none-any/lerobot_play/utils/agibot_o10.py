@@ -707,6 +707,15 @@ class AgibotO10Hand:
         self._tactile_fingertip_cache: list[float] | None = None
         self._tactile_full_cache: list[float] | None = None
         self._tactile_last_update = 0.0
+        self._tactile_thread: threading.Thread | None = None
+        self._tactile_thread_stop = threading.Event()
+        self._tactile_thread_period_s = 0.05
+
+    _TACTILE_CACHE_DIMS = {
+        "_tactile_avg_cache": 7,
+        "_tactile_fingertip_cache": 80,
+        "_tactile_full_cache": 130,
+    }
 
     def _refresh_tactile_caches(self) -> None:
         avg_result = []
@@ -737,10 +746,20 @@ class AgibotO10Hand:
         if self._hand is None:
             raise RuntimeError("Agibot O10 hand is not connected")
 
+        thread_running = (
+            self._tactile_thread is not None and self._tactile_thread.is_alive()
+        )
+
         now = time.monotonic()
         with self._tactile_cache_lock:
             cached = getattr(self, cache_name)
             last_update = self._tactile_last_update
+
+            if thread_running:
+                if cached is not None:
+                    return cached.copy()
+                return [0.0] * self._TACTILE_CACHE_DIMS.get(cache_name, 0)
+
             if cached is not None and now - last_update <= max_cache_age_s:
                 return cached.copy()
 
@@ -756,6 +775,53 @@ class AgibotO10Hand:
         with self._tactile_cache_lock:
             cached = getattr(self, cache_name)
             return [] if cached is None else cached.copy()
+
+    def start_tactile_reader(self, period_s: float = 0.05) -> None:
+        """Run a daemon thread that refreshes tactile caches at a fixed rate.
+
+        Once started, read_tactile_*_cached() returns the latest cached value
+        without blocking the caller on CANFD round-trips, so tactile sampling
+        no longer contends with hand control commands on the shared bus.
+        """
+        if self._hand is None:
+            raise RuntimeError("Agibot O10 hand is not connected")
+        if self._tactile_thread is not None and self._tactile_thread.is_alive():
+            return
+
+        self._tactile_thread_period_s = max(float(period_s), 0.005)
+        try:
+            self._refresh_tactile_caches()
+        except Exception as exc:
+            print(
+                f"Warning: initial tactile refresh failed for "
+                f"{self.handedness} hand: {exc}"
+            )
+
+        self._tactile_thread_stop.clear()
+        self._tactile_thread = threading.Thread(
+            target=self._tactile_loop,
+            name=f"AgibotO10Hand[{self.handedness}].tactile",
+            daemon=True,
+        )
+        self._tactile_thread.start()
+
+    def stop_tactile_reader(self) -> None:
+        self._tactile_thread_stop.set()
+        thread = self._tactile_thread
+        self._tactile_thread = None
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+
+    def _tactile_loop(self) -> None:
+        while not self._tactile_thread_stop.is_set():
+            if self._hand is None or self._sdk is None:
+                break
+            try:
+                self._refresh_tactile_caches()
+            except Exception:
+                pass
+            if self._tactile_thread_stop.wait(self._tactile_thread_period_s):
+                break
 
     def connect(self) -> None:
         if self._hand is not None:
@@ -881,5 +947,6 @@ class AgibotO10Hand:
         )
 
     def disconnect(self) -> None:
+        self.stop_tactile_reader()
         self._hand = None
         self._sdk = None
