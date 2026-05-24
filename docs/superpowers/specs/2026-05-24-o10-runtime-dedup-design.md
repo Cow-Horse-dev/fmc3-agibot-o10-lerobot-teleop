@@ -1,192 +1,177 @@
-# O10 runtime helper deduplication design
+# O10 runtime 共享 helper 去重设计
 
-Date: 2026-05-24
-Status: Design approved; pending written spec review
-Owner: phl
+日期：2026-05-24
+状态：设计已确认，待用户阅读书面 spec
+作者：phl
 
-## Problem
+## 背景
 
-The AGIBOT O10 runtime support in vendored `lerobot_play` has grown in two parallel
-directions: single-arm classes and dual-arm classes. The follower and leader code now
-duplicates several behavior-sensitive blocks:
+vendored `lerobot_play` 里的 AGIBOT O10 runtime 现在沿着“单臂”和“双臂”两条线各自扩展。
+单臂/双臂 follower 与 leader 里已经重复了不少行为敏感逻辑：
 
-- O10 action/state/tactile feature names and feature specs.
-- Camera color/depth read fallback, cached-frame reuse, zero-frame creation, and recovery logs.
-- Reset pose loading and normalized in-memory reset target handling.
-- End-effector delta math, IK failure handling, and 4x4 pose to 7D pose conversion.
-- Gripper 1D to 10D hand joint conversion and trigger-gesture open/closed pose lookup.
+- O10 action/state/tactile feature names 和 feature spec。
+- 相机 color/depth 读帧 fallback、缓存帧复用、zero frame 生成和恢复日志。
+- reset pose 加载、normalize、内存 reset target 维护。
+- eef_delta 数学、IK 失败处理、4x4 pose 转 7D pose。
+- gripper 1D 与 10D 手关节互转、trigger gesture open/closed 姿态查找。
 
-The duplication makes future changes risky because a fix in single-arm code can be missed
-in dual-arm code, and vice versa. The current request is intentionally conservative:
-reduce duplication without changing runtime behavior, YAML fields, hardware lifecycle, or
-dataset schema.
+这些重复逻辑会让后续改动变危险：单臂修了一个 bug，双臂可能漏改；双臂加了容错，
+单臂可能还在旧路径里。这次目标刻意保守：只减少重复，不改变 runtime 行为、YAML 字段、
+硬件连接生命周期或数据集 schema。
 
-## Goals
+## 目标
 
-- Extract shared O10 helper modules under
-  `qiuzhi/lerobot_play_1.0.4/x86/noble/lerobot_play-1.0.4-py3-none-any/lerobot_play/utils/`.
-- Keep the existing O10 single-arm and dual-arm follower/leader classes as orchestration
-  layers that own hardware objects, side-specific state, and action sending.
-- Preserve all public config fields, command entrypoints, action keys, observation keys,
-  tactile keys, and dataset feature ordering.
-- Add focused pure-Python regression tests before and during refactoring so the helpers
-  are locked to current behavior.
-- Use the local vendored `lerobot_play` style; do not migrate the project to the newer
-  upstream LeRobot package layout in this change.
+- 在
+  `qiuzhi/lerobot_play_1.0.4/x86/noble/lerobot_play-1.0.4-py3-none-any/lerobot_play/utils/`
+  下抽出 O10 共享 helper 模块。
+- 保留现有 O10 单臂/双臂 follower/leader 类作为 orchestration 层，继续负责硬件对象、
+  左右侧状态和 action 发送。
+- 保持所有公开配置字段、命令入口、action key、observation key、tactile key 和 dataset
+  feature 顺序不变。
+- 在重构前后增加聚焦的纯 Python 回归测试，用测试锁住 helper 的当前行为。
+- 沿用本项目 vendored `lerobot_play` 的风格；本次不迁移到新版 upstream LeRobot 包结构。
 
-## Non-goals
+## 非目标
 
-- No YAML migration or command-line flag changes.
-- No dataset schema changes.
-- No hardware connection lifecycle rewrite for arms, hands, cameras, Pico WebRTC, or glove
-  threads.
-- No conversion to a new shared base class or mixin hierarchy in this first pass.
-- No vendored OmniHand SDK or `yudie/` runtime changes.
-- No broad cleanup in `record.py`, `infer.py`, `control.py`, or unrelated LeRobot helpers.
+- 不迁移 YAML，不新增 CLI flag。
+- 不修改数据集 schema。
+- 不重写机械臂、灵巧手、相机、Pico WebRTC、手套线程的连接生命周期。
+- 第一阶段不引入新的共享 base class 或 mixin 继承体系。
+- 不修改 vendored OmniHand SDK 或 `yudie/` runtime。
+- 不顺手清理 `record.py`、`infer.py`、`control.py` 或其他无关 LeRobot helper。
 
-## Design
+## 设计
 
-### 1. Helper module boundaries
+### 1. helper 模块边界
 
-Add small helper modules that keep behavior-specific logic close to the O10 domain:
+新增几个小 helper，让 O10 领域逻辑集中，但不把它变成大框架：
 
 - `utils/o10_motion.py`
-  - `rotation_matrix_from_rpy(roll, pitch, yaw)`.
-  - `apply_eef_delta_to_pose(current_pose, eef_delta)`.
-  - `solve_o10_ik(arm_kdl, target_pose, seed_joints)`.
-  - `homogeneous_matrix_to_pose(matrix)`.
-  - Preserve the current IK compatibility path: try
-    `inverse_kinematics(..., force_calculate=True)` first, then fall back to the older
-    signature on `TypeError`. Empty IK results still raise `RuntimeError`.
+  - `rotation_matrix_from_rpy(roll, pitch, yaw)`。
+  - `apply_eef_delta_to_pose(current_pose, eef_delta)`。
+  - `solve_o10_ik(arm_kdl, target_pose, seed_joints)`。
+  - `homogeneous_matrix_to_pose(matrix)`。
+  - 保留当前 IK 兼容路径：优先调用
+    `inverse_kinematics(..., force_calculate=True)`，遇到 `TypeError` 再回退到旧签名。
+    IK 返回空结果时继续抛 `RuntimeError`。
 
 - `utils/o10_camera_io.py`
-  - `CameraObservationReader` owns per-camera cached frames and fallback-active flags.
-  - Exposes `read(camera_name, camera)` returning `(color_frame, depth_frame_or_none)`.
-  - Exposes `features(camera_names, camera_configs)` or equivalent helpers for color/depth
-    feature shapes.
-  - Keeps camera creation and connection in the follower classes. The helper only handles
-    read-time behavior after cameras exist.
+  - 增加 `CameraObservationReader`，内部持有每个 camera 的缓存帧和 fallback-active 状态。
+  - 提供 `read(camera_name, camera)`，返回 `(color_frame, depth_frame_or_none)`。
+  - 提供 `features(camera_names, camera_configs)` 或等价 helper，用来生成 color/depth feature
+    shape。
+  - 相机创建和连接仍留在 follower 类里。helper 只处理相机已经存在之后的读帧行为。
 
 - `utils/o10_schema.py`
-  - Centralizes single-arm and dual-arm feature name construction.
-  - Provides tactile raw keys and tactile feature specs for `none` and `130d` modes.
-  - Keeps existing names such as `left.joint1.pos`,
-    `observation.tactile.left_raw`, and `observation.tactile.right_raw`.
+  - 集中构造单臂/双臂 feature name。
+  - 提供 tactile raw key 和 tactile feature spec，覆盖 `none` 和 `130d` 模式。
+  - 保留现有 key，比如 `left.joint1.pos`、`observation.tactile.left_raw`、
+    `observation.tactile.right_raw`。
 
 - `utils/o10_hand_control.py`
-  - Wraps gripper value to hand joints and hand joints to gripper value.
-  - Wraps trigger gesture open/closed lookup, including reset-pose JSON overrides.
-  - Delegates to existing `agibot_o10` functions so the source of gesture constants remains
-    stable.
+  - 封装 gripper value 到 hand joints、hand joints 到 gripper value 的互转。
+  - 封装 trigger gesture open/closed 查找，包括 reset-pose JSON 覆盖。
+  - 内部继续调用现有 `agibot_o10` 函数，gesture 常量的来源不变。
 
 - `utils/o10_reset.py`
-  - Adds small reset-loading helpers for `load_reset_poses(...)` plus normalization through
-    `PersistentJointTargetStore`.
-  - Does not write `configs/reset_poses/o10_dual_reset.json` at runtime.
-  - Keeps follower/leader classes responsible for assigning reset values to their own
-    side-specific fields.
+  - 增加小型 reset 加载 helper：`load_reset_poses(...)` 加
+    `PersistentJointTargetStore` normalize。
+  - runtime 仍不写 `configs/reset_poses/o10_dual_reset.json`。
+  - follower/leader 类继续负责把 reset 值赋给自己的单臂或左右侧字段。
 
-These helpers are intentionally functions or small state holders, not framework-level
-base classes. This keeps the refactor reversible and avoids touching MRO, hardware
-construction, or connection sequencing.
+这些 helper 以函数或小状态对象为主，不做框架级 base class。这样 refactor 更容易回退，也避免碰
+MRO、硬件构造和连接顺序。
 
-### 2. Follower class changes
+### 2. follower 类改法
 
-`PicoFollowerSingleArmAgibotO10` and `PicoFollowerDualArmAgibotO10` keep ownership of:
+`PicoFollowerSingleArmAgibotO10` 和 `PicoFollowerDualArmAgibotO10` 继续负责：
 
-- `ah.Play` arm objects and executor/io-context objects.
-- `AgibotO10Hand` objects.
-- Camera creation and connection.
-- Per-side current hand joint caches.
-- `send_action(...)`, `get_observation(...)`, `connect(...)`, and `disconnect(...)`
-  orchestration.
+- `ah.Play` 机械臂对象和 executor/io-context。
+- `AgibotO10Hand` 对象。
+- 相机创建和连接。
+- 每侧当前手关节缓存。
+- `send_action(...)`、`get_observation(...)`、`connect(...)`、`disconnect(...)` 编排。
 
-They delegate shared logic as follows:
+它们把共享逻辑下沉：
 
-- Camera read fallback moves to `CameraObservationReader`.
-- Feature names and tactile specs come from `o10_schema.py`.
-- EEF delta action conversion uses `o10_motion.py`.
-- Gripper conversions use `o10_hand_control.py`.
-- Reset pose loading uses `o10_reset.py` where doing so does not obscure the per-side state
-  assignments.
+- 相机读帧 fallback 交给 `CameraObservationReader`。
+- feature names 和 tactile specs 来自 `o10_schema.py`。
+- eef_delta action 转换使用 `o10_motion.py`。
+- gripper 转换使用 `o10_hand_control.py`。
+- reset pose 加载使用 `o10_reset.py`，但只在不掩盖左右侧赋值逻辑的地方使用。
 
-### 3. Leader class changes
+### 3. leader 类改法
 
-`PicoLeaderSingleArmAgibotO10` and `PicoLeaderDualArmAgibotO10` keep ownership of:
+`PicoLeaderSingleArmAgibotO10` 和 `PicoLeaderDualArmAgibotO10` 继续负责：
 
-- Pico event thread startup and control-state dictionaries.
-- Per-side LPFs, IK histories, transform poses, and start/reset flags.
-- Glove teleoperator objects and trigger-gate decisions.
-- `get_action(...)`, `reset_pose(...)`, and hand-commanded-state locks.
+- Pico event thread 启动和 `ctrl` 状态字典。
+- 每侧 LPF、IK history、transform pose、start/reset flag。
+- 手套 teleoperator 对象和 trigger gate 判断。
+- `get_action(...)`、`reset_pose(...)`、手部 commanded state lock。
 
-They delegate shared logic as follows:
+它们把共享逻辑下沉：
 
-- Action feature selection and feature name lists come from `o10_schema.py`.
-- EEF delta computation uses `o10_motion.py` helpers where the current and previous pose
-  math is identical.
-- Trigger gesture hand pose lookup and gripper interpolation use `o10_hand_control.py`.
-- Reset pose file loading uses `o10_reset.py` while side-specific assignment remains local.
+- action feature 选择和 feature name list 来自 `o10_schema.py`。
+- eef_delta 计算中相同的 pose 数学使用 `o10_motion.py`。
+- trigger gesture 手姿态查找、gripper 插值使用 `o10_hand_control.py`。
+- reset pose 文件加载使用 `o10_reset.py`，左右侧状态赋值仍留在本类。
 
-### 4. Data flow
+### 4. 数据流
 
-The runtime data flow does not change:
+runtime 数据流不变：
 
-1. Teleoperator produces an action dict according to `action_control_mode` and
-   `hand_action_mode`.
-2. Follower converts that action into arm joints plus 10D hand joints.
-3. Follower sends arm PVT targets and hand joint targets to existing hardware adapters.
-4. Follower returns observations with the same action/state/tactile/image schema as before.
+1. Teleoperator 按 `action_control_mode` 和 `hand_action_mode` 产出 action dict。
+2. Follower 把 action 转成 arm joints + 10D hand joints。
+3. Follower 把 arm PVT target 和 hand joint target 发给现有硬件 adapter。
+4. Follower 返回 observation，schema 与之前的 action/state/tactile/image 完全一致。
 
-Helpers only participate in conversion, schema construction, pose math, reset loading, and
-camera frame fallback. They do not directly send CAN commands, start threads, or connect
-devices.
+helper 只参与转换、schema 构造、pose 数学、reset 加载和相机帧 fallback。它们不直接发 CAN、
+不启动线程、不连接设备。
 
-## Error Handling
+## 错误处理
 
-The refactor should preserve current behavior:
+重构后保持当前行为：
 
-- IK failure still raises `RuntimeError` and refuses to send an arm target.
-- Invalid action lengths still raise `ValueError` with clear expected/got dimensions.
-- Camera read failures still follow `allow_camera_read_failures`:
-  - false: re-raise the camera exception.
-  - true with cache: reuse the last frame.
-  - true without cache: create a zero color frame and optional zero depth frame.
-- Camera recovery should log once when a previously failing camera succeeds again.
-- Reset pose load failures still warn and fall back to the current in-memory/default state.
-- Trigger gesture lookup still prefers reset-pose JSON values and then built-in gesture
-  constants.
+- IK 失败仍抛 `RuntimeError`，拒绝发送 arm target。
+- action 长度非法仍抛 `ValueError`，错误里说明 expected/got 维度。
+- 相机读帧失败仍遵循 `allow_camera_read_failures`：
+  - false：重新抛出相机异常。
+  - true 且已有缓存：复用上一帧。
+  - true 且没有缓存：生成 zero color frame，必要时生成 zero depth frame。
+- 曾经失败的相机恢复成功时，只打一条恢复日志。
+- reset pose 加载失败仍 warning，并回退到当前内存/default 状态。
+- trigger gesture 查找仍优先使用 reset-pose JSON，找不到再使用内置 gesture 常量。
 
-## Testing
+## 测试
 
-Add focused tests under `qiuzhi/tests/`:
+新增聚焦测试，放在 `qiuzhi/tests/`：
 
 - `test_o10_motion_helpers.py`
-  - RPY rotation matrix shape and identity case.
-  - EEF delta translation and rotation application.
-  - IK helper accepts the current `force_calculate=True` signature and the fallback
-    signature.
-  - Empty IK result raises `RuntimeError`.
-  - 4x4 pose conversion returns 7 values and rejects non-4x4 input.
+  - RPY rotation matrix 的 shape 和 identity case。
+  - eef_delta translation 和 rotation 应用。
+  - IK helper 支持当前 `force_calculate=True` 签名，也支持 fallback 旧签名。
+  - IK 空结果抛 `RuntimeError`。
+  - 4x4 pose conversion 返回 7 个值，非 4x4 输入报错。
 
 - `test_o10_camera_io.py`
-  - Color-only camera read stores cache.
-  - Color+depth camera read returns expanded depth via caller-compatible data.
-  - Read failure re-raises when fallback is disabled.
-  - Read failure reuses cached frames when fallback is enabled.
-  - First read failure with no cache creates zero frames with configured dimensions.
-  - Recovery clears fallback-active state.
+  - color-only camera 正常读帧并写入缓存。
+  - color+depth camera 正常返回 depth。
+  - fallback 关闭时，读帧失败重新抛异常。
+  - fallback 开启且有缓存时，读帧失败复用缓存帧。
+  - fallback 开启且无缓存时，首次失败生成符合配置尺寸的 zero frame。
+  - 相机恢复后清掉 fallback-active 状态。
 
 - `test_o10_schema.py`
-  - Single-arm action/state feature ordering matches existing `agibot_o10` constants.
-  - Dual-arm action/state feature ordering matches current dual-arm constants.
-  - Tactile raw key names and 130D feature specs match current behavior.
+  - 单臂 action/state feature 顺序匹配现有 `agibot_o10` 常量。
+  - 双臂 action/state feature 顺序匹配当前 dual-arm 常量。
+  - tactile raw key 和 130D feature spec 匹配当前行为。
 
 - `test_o10_hand_control.py`
-  - Gripper 1D round trips through current gesture helpers.
-  - Trigger gesture open/closed values match existing built-ins.
-  - Reset-pose JSON gesture overrides remain preferred.
+  - gripper 1D 通过当前 gesture helper 往返转换。
+  - trigger gesture open/closed 值与现有内置姿态一致。
+  - reset-pose JSON gesture 覆盖仍然优先。
 
-Run these alongside existing O10 regression tests:
+同时跑现有 O10 回归测试：
 
 ```bash
 env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
@@ -197,42 +182,33 @@ env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
   qiuzhi/tests/test_o10_tactile_raw_dataset_schema.py
 ```
 
-Before claiming completion, run the new helper tests plus the broader O10-related tests
-that cover any follower or leader files touched.
+完成前需要跑新增 helper 测试，以及覆盖被改 follower/leader 文件的 O10 相关测试。
 
-## Rollout
+## 实施顺序
 
-Implement in small commits or reviewable patches:
+建议拆成小 patch：
 
-1. Add helper modules and tests while existing classes still use old local functions where
-   practical.
-2. Move single-arm follower call sites to helpers.
-3. Move dual-arm follower call sites to helpers.
-4. Move single-arm and dual-arm leader call sites to helpers.
-5. Remove duplicated private functions/constants only after tests prove the helper-backed
-   paths match current behavior.
+1. 新增 helper 模块和测试；可行时先让旧类暂时不接入 helper，只先锁住行为。
+2. 单臂 follower 调用点切到 helper。
+3. 双臂 follower 调用点切到 helper。
+4. 单臂和双臂 leader 调用点切到 helper。
+5. 测试证明 helper 路径行为一致后，再删除重复的 private 函数/常量。
 
-The first implementation pass should prefer duplication removal with minimal reshaping.
-If a helper starts needing many callbacks into a runtime class, leave that code local and
-document it as a future extraction candidate.
+第一轮实现以“减少重复、少改结构”为准。如果某段 helper 开始需要大量 callback 回 runtime 类，
+说明边界没切好，这段先保留在原类里，作为后续候选项记录，不强行抽。
 
-## Risks
+## 风险
 
-- Feature ordering regressions can silently break dataset compatibility. Schema tests must
-  compare exact ordered key sequences.
-- Camera fallback is stateful. Moving cache/fallback flags into a helper must preserve one
-  reader instance per follower, not a shared global.
-- Dual-arm side prefixes are easy to swap. Tests should check both left and right keys and
-  trigger gesture behavior.
-- Moving reset helpers too aggressively could hide side-specific assignment. Keep state
-  assignment in runtime classes for this first pass.
+- feature 顺序回归会悄悄破坏数据集兼容性。schema 测试必须比较完整、有序 key 序列。
+- 相机 fallback 有状态。缓存/fallback flag 移到 helper 后，必须保证每个 follower 一个
+  reader 实例，不能用全局共享状态。
+- 双臂左右前缀容易写反。测试要覆盖 left/right key 和 trigger gesture 行为。
+- reset helper 抽得太激进会隐藏左右侧状态赋值。第一阶段把赋值留在 runtime 类里。
 
-## Success Criteria
+## 成功标准
 
-- O10 single-arm and dual-arm runtime classes are shorter and contain less repeated helper
-  logic.
-- Public action/observation/tactile/image keys are unchanged.
-- Existing O10 tests continue to pass.
-- New helper tests cover the extracted behavior without CAN hardware, cameras, Pico, or
-  glove services.
-- No unrelated files or vendor artifacts are reformatted.
+- O10 单臂/双臂 runtime 类更短，重复 helper 逻辑减少。
+- 公开 action/observation/tactile/image key 不变。
+- 现有 O10 测试继续通过。
+- 新增 helper 测试不需要 CAN 硬件、相机、Pico 或手套服务。
+- 不格式化无关文件，不碰 vendor artifact。
