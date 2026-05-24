@@ -6,6 +6,7 @@ import numpy as np
 
 
 NUM_O10_ARM_JOINTS = 6
+ROTATION_MATRIX_ATOL = 1e-7
 
 
 def rotation_matrix_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
@@ -103,9 +104,9 @@ def rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
         raise ValueError("Rotation matrix must be 3x3.")
     if not np.isfinite(rotation).all():
         raise ValueError("Rotation matrix must contain only finite values.")
-    if not np.allclose(np.dot(rotation, rotation.T), np.eye(3), atol=1e-8):
+    if not np.allclose(np.dot(rotation, rotation.T), np.eye(3), atol=ROTATION_MATRIX_ATOL):
         raise ValueError("Rotation matrix must be orthogonal.")
-    if not np.isclose(np.linalg.det(rotation), 1.0, atol=1e-8):
+    if not np.isclose(np.linalg.det(rotation), 1.0, atol=ROTATION_MATRIX_ATOL):
         raise ValueError("Rotation matrix determinant must be +1.")
 
     quaternion = np.zeros(4)

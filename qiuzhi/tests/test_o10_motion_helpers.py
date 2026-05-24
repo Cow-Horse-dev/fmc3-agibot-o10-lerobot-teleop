@@ -236,6 +236,17 @@ def test_rotation_matrix_to_quaternion_rejects_non_finite_values():
         rotation_matrix_to_quaternion(rotation)
 
 
+def test_rotation_matrix_to_quaternion_accepts_kdl_level_float_drift():
+    from lerobot_play.utils.o10_motion import rotation_matrix_from_rpy, rotation_matrix_to_quaternion
+
+    rotation = rotation_matrix_from_rpy(0.2, -0.1, 0.3)
+    rotation[0, 0] += 4e-8
+
+    quaternion = rotation_matrix_to_quaternion(rotation)
+
+    assert np.linalg.norm(quaternion) == pytest.approx(1.0)
+
+
 def test_rotation_matrix_to_quaternion_rejects_non_orthogonal_matrix():
     from lerobot_play.utils.o10_motion import rotation_matrix_to_quaternion
 
