@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEROBOT_PLAY_PACKAGE_ROOT = (
@@ -103,3 +105,12 @@ def test_dual_arm_tactile_specs_are_per_side_130d():
     assert right_spec["shape"] == (130,)
     assert left_spec["names"] == [f"left.{name}" for name in TACTILE_FULL_NAMES]
     assert right_spec["names"] == [f"right.{name}" for name in TACTILE_FULL_NAMES]
+
+
+def test_dual_arm_tactile_helpers_reject_invalid_side():
+    from lerobot_play.utils.o10_schema import dual_arm_tactile_raw_feature_spec, dual_arm_tactile_raw_key
+
+    with pytest.raises(ValueError, match="side"):
+        dual_arm_tactile_raw_key("lef")
+    with pytest.raises(ValueError, match="side"):
+        dual_arm_tactile_raw_feature_spec("LEFT")

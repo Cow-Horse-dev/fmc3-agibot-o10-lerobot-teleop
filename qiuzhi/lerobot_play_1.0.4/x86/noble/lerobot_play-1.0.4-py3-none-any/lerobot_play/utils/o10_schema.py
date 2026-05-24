@@ -77,11 +77,19 @@ def tactile_raw_feature_spec(names: tuple[str, ...]) -> dict[str, object]:
     }
 
 
+def _validate_dual_arm_side(side: str) -> str:
+    if side not in ("left", "right"):
+        raise ValueError("side must be 'left' or 'right'")
+    return side
+
+
 def dual_arm_tactile_raw_key(side: str) -> str:
+    side = _validate_dual_arm_side(side)
     return LEFT_TACTILE_RAW_KEY if side == "left" else RIGHT_TACTILE_RAW_KEY
 
 
 def dual_arm_tactile_raw_feature_spec(side: str) -> dict[str, object]:
+    side = _validate_dual_arm_side(side)
     return tactile_raw_feature_spec(
         tuple(f"{side}.{name}" for name in TACTILE_FULL_NAMES)
     )
