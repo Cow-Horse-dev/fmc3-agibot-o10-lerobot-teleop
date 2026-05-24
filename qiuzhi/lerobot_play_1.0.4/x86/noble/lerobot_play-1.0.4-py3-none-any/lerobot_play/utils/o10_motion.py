@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 
 
@@ -41,6 +43,24 @@ def apply_eef_delta_to_pose(current_pose: np.ndarray, eef_delta: list[float]) ->
     return target_pose
 
 
+def _inverse_kinematics_accepts_force_calculate(inverse_kinematics) -> bool | None:
+    try:
+        signature = inspect.signature(inverse_kinematics)
+    except (TypeError, ValueError):
+        return None
+    return "force_calculate" in signature.parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
+    )
+
+
+def _is_unknown_force_calculate_error(error: TypeError) -> bool:
+    message = str(error).lower()
+    return "force_calculate" in message and any(
+        fragment in message
+        for fragment in ("unexpected keyword", "invalid keyword", "unrecognized keyword")
+    )
+
+
 def solve_o10_ik(
     arm_kdl,
     target_pose: np.ndarray,
@@ -48,10 +68,19 @@ def solve_o10_ik(
     *,
     num_arm_joints: int = NUM_O10_ARM_JOINTS,
 ) -> list[float]:
-    try:
-        result = arm_kdl.inverse_kinematics(target_pose, seed_joints, force_calculate=True)
-    except TypeError:
-        result = arm_kdl.inverse_kinematics(target_pose, seed_joints)
+    inverse_kinematics = arm_kdl.inverse_kinematics
+    accepts_force_calculate = _inverse_kinematics_accepts_force_calculate(inverse_kinematics)
+    if accepts_force_calculate is True:
+        result = inverse_kinematics(target_pose, seed_joints, force_calculate=True)
+    elif accepts_force_calculate is False:
+        result = inverse_kinematics(target_pose, seed_joints)
+    else:
+        try:
+            result = inverse_kinematics(target_pose, seed_joints, force_calculate=True)
+        except TypeError as error:
+            if not _is_unknown_force_calculate_error(error):
+                raise
+            result = inverse_kinematics(target_pose, seed_joints)
     if len(result) == 0:
         raise RuntimeError("Agibot O10 eef_delta IK failed; refusing to send an arm target.")
     return [float(value) for value in result[0][:num_arm_joints]]
@@ -69,8 +98,15 @@ def homogeneous_matrix_to_pose(matrix) -> np.ndarray:
 
 
 def rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
+    rotation = np.asarray(rotation, dtype=float)
+    if rotation.shape != (3, 3):
+        raise ValueError("Rotation matrix must be 3x3.")
+    if not np.isfinite(rotation).all():
+        raise ValueError("Rotation matrix must contain only finite values.")
     if not np.allclose(np.dot(rotation, rotation.T), np.eye(3), atol=1e-8):
-        raise ValueError("旋转矩阵不满足正交条件")
+        raise ValueError("Rotation matrix must be orthogonal.")
+    if not np.isclose(np.linalg.det(rotation), 1.0, atol=1e-8):
+        raise ValueError("Rotation matrix determinant must be +1.")
 
     quaternion = np.zeros(4)
     trace = np.trace(rotation)
@@ -100,4 +136,7 @@ def rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
         quaternion[1] = (rotation[1, 2] + rotation[2, 1]) / scalar
         quaternion[2] = 0.25 * scalar
 
-    return quaternion / np.linalg.norm(quaternion)
+    norm = np.linalg.norm(quaternion)
+    if not np.isfinite(norm) or np.isclose(norm, 0.0):
+        raise ValueError("Quaternion norm must be finite and non-zero.")
+    return quaternion / norm

@@ -66,12 +66,128 @@ def test_solve_o10_ik_falls_back_to_old_signature():
     from lerobot_play.utils.o10_motion import solve_o10_ik
 
     class FakeKdl:
-        def inverse_kinematics(self, target_pose, seed_joints, force_calculate=False):
-            if force_calculate is not False:
-                raise TypeError("old signature")
+        def inverse_kinematics(self, target_pose, seed_joints):
             return [[6, 5, 4, 3, 2, 1]]
 
     assert solve_o10_ik(FakeKdl(), np.eye(4), [0.0] * 6) == [6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
+
+
+def test_solve_o10_ik_does_not_hide_internal_type_error():
+    from lerobot_play.utils.o10_motion import solve_o10_ik
+
+    class FakeKdl:
+        def __init__(self):
+            self.calls = []
+
+        def inverse_kinematics(self, target_pose, seed_joints, force_calculate=False):
+            self.calls.append(force_calculate)
+            if force_calculate:
+                raise TypeError("internal failure")
+            return [[6, 5, 4, 3, 2, 1]]
+
+    kdl = FakeKdl()
+    with pytest.raises(TypeError, match="internal failure"):
+        solve_o10_ik(kdl, np.eye(4), [0.0] * 6)
+
+    assert kdl.calls == [True]
+
+
+def test_solve_o10_ik_falls_back_for_uninspectable_unknown_keyword_error():
+    from lerobot_play.utils.o10_motion import solve_o10_ik
+
+    class UninspectableInverseKinematics:
+        __signature__ = object()
+
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, target_pose, seed_joints, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs:
+                raise TypeError("got an unexpected keyword argument 'force_calculate'")
+            return [[6, 5, 4, 3, 2, 1]]
+
+    class FakeKdl:
+        inverse_kinematics = UninspectableInverseKinematics()
+
+    kdl = FakeKdl()
+    assert solve_o10_ik(kdl, np.eye(4), [0.0] * 6) == [6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
+    assert kdl.inverse_kinematics.calls == [{"force_calculate": True}, {}]
+
+
+def test_solve_o10_ik_does_not_hide_uninspectable_internal_type_error():
+    from lerobot_play.utils.o10_motion import solve_o10_ik
+
+    class UninspectableInverseKinematics:
+        __signature__ = object()
+
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, target_pose, seed_joints, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs:
+                raise TypeError("internal failure")
+            return [[6, 5, 4, 3, 2, 1]]
+
+    class FakeKdl:
+        inverse_kinematics = UninspectableInverseKinematics()
+
+    kdl = FakeKdl()
+    with pytest.raises(TypeError, match="internal failure"):
+        solve_o10_ik(kdl, np.eye(4), [0.0] * 6)
+
+    assert kdl.inverse_kinematics.calls == [{"force_calculate": True}]
+
+
+def test_solve_o10_ik_does_not_fallback_for_ambiguous_uninspectable_type_error():
+    from lerobot_play.utils.o10_motion import solve_o10_ik
+
+    class UninspectableInverseKinematics:
+        __signature__ = object()
+
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, target_pose, seed_joints, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs:
+                raise TypeError("takes no keyword arguments")
+            return [[6, 5, 4, 3, 2, 1]]
+
+    class FakeKdl:
+        inverse_kinematics = UninspectableInverseKinematics()
+
+    kdl = FakeKdl()
+    with pytest.raises(TypeError, match="takes no keyword arguments"):
+        solve_o10_ik(kdl, np.eye(4), [0.0] * 6)
+
+    assert kdl.inverse_kinematics.calls == [{"force_calculate": True}]
+
+
+def test_solve_o10_ik_does_not_fallback_for_internal_keyword_message():
+    from lerobot_play.utils.o10_motion import solve_o10_ik
+
+    class UninspectableInverseKinematics:
+        __signature__ = object()
+
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, target_pose, seed_joints, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs:
+                raise TypeError("failed handling keyword argument force_calculate internally")
+            return [[6, 5, 4, 3, 2, 1]]
+
+    class FakeKdl:
+        inverse_kinematics = UninspectableInverseKinematics()
+
+    kdl = FakeKdl()
+    with pytest.raises(TypeError, match="failed handling keyword argument"):
+        solve_o10_ik(kdl, np.eye(4), [0.0] * 6)
+
+    assert kdl.inverse_kinematics.calls == [{"force_calculate": True}]
 
 
 def test_solve_o10_ik_rejects_empty_result():
@@ -101,3 +217,37 @@ def test_homogeneous_matrix_to_pose_rejects_non_4x4():
 
     with pytest.raises(ValueError, match="4x4"):
         homogeneous_matrix_to_pose(np.eye(3))
+
+
+def test_rotation_matrix_to_quaternion_rejects_non_3x3():
+    from lerobot_play.utils.o10_motion import rotation_matrix_to_quaternion
+
+    with pytest.raises(ValueError, match="3x3"):
+        rotation_matrix_to_quaternion(np.eye(2))
+
+
+def test_rotation_matrix_to_quaternion_rejects_non_finite_values():
+    from lerobot_play.utils.o10_motion import rotation_matrix_to_quaternion
+
+    rotation = np.eye(3)
+    rotation[0, 0] = np.nan
+
+    with pytest.raises(ValueError, match="finite"):
+        rotation_matrix_to_quaternion(rotation)
+
+
+def test_rotation_matrix_to_quaternion_rejects_non_orthogonal_matrix():
+    from lerobot_play.utils.o10_motion import rotation_matrix_to_quaternion
+
+    rotation = np.eye(3)
+    rotation[0, 1] = 0.25
+
+    with pytest.raises(ValueError, match="orthogonal"):
+        rotation_matrix_to_quaternion(rotation)
+
+
+def test_rotation_matrix_to_quaternion_rejects_reflection():
+    from lerobot_play.utils.o10_motion import rotation_matrix_to_quaternion
+
+    with pytest.raises(ValueError, match="determinant"):
+        rotation_matrix_to_quaternion(np.diag([1.0, 1.0, -1.0]))
