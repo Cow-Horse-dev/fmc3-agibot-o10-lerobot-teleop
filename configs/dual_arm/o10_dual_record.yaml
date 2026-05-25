@@ -100,7 +100,7 @@ robot:
   action_control_mode: joint  # 可选: joint, eef_delta, eef_absolute
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   allow_camera_read_failures: true  # 可选: true, false
-  camera_read_timeout_ms: 35  # 相机单帧读取超时；fallback 开启时避免录制循环被坏帧长时间卡住
+  camera_read_timeout_ms: 35   # 相机单帧读取超时；fallback 开启时避免录制循环被坏帧长时间卡住
   reset_timeout_s: 8.0  # reset_zero 最长等待秒数，避免某一侧不到位时无限卡住
   tactile_mode: "none" # 130d 定数据集 root 子目录 (none -> without_tactile, 其他 -> with_tactile)
   left:
