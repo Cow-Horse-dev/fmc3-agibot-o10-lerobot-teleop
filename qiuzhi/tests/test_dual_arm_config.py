@@ -246,11 +246,20 @@ def test_dual_pi05_fullft_infer_yaml_uses_async_rtc_schema():
     assert config["robot"]["right"]["reset_gesture"] == "cylindrical_straight"
 
 
-def test_dual_record_yaml_keeps_left_trigger_mode_and_original_gestures():
+def test_dual_control_and_record_yaml_use_left_trigger_mode_for_two_arm_enable():
+    with open("configs/dual_arm/o10_dual_control.yaml") as f:
+        control_config = yaml.safe_load(f)
+    with open("configs/dual_arm/o10_dual_record.yaml") as f:
+        record_config = yaml.safe_load(f)
+
+    assert control_config["teleop"]["arm_trigger_mode"] == "left"
+    assert record_config["teleop"]["arm_trigger_mode"] == "left"
+
+
+def test_dual_record_yaml_keeps_original_gestures():
     with open("configs/dual_arm/o10_dual_record.yaml") as f:
         config = yaml.safe_load(f)
 
-    assert config["teleop"]["arm_trigger_mode"] == "left"
     assert config["teleop"]["left"]["trigger_gesture"] == "cylindrical_straight"
     assert config["teleop"]["right"]["trigger_gesture"] == "cylindrical_straight"
     assert config["teleop"]["left"]["gripper_gesture"] == "cylindrical_straight"

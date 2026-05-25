@@ -54,6 +54,11 @@ teleop:
   vr_ctrl_port: 8001  # VR 控制端口
   vr_device: pico  # 可选: pico, pico_wrist
   enable_hand: true  # 可选: true, false
+  # 双臂控臂“使能扳机”模式，不是选择只控制哪一只臂：
+  # - left:  按住左扳机 LTr 时，双臂都允许跟随；左右臂仍分别使用 left/right pose
+  # - split: 左臂看 LTr，右臂看 RTr
+  # - right: 按住右扳机 RTr 时，双臂都允许跟随
+  # - both:  同时按住 LTr + RTr 时，双臂都允许跟随
   arm_trigger_mode: left  # 可选: split, left, right, both
   hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
   trigger_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight (仅 trigger_gesture 模式生效)
