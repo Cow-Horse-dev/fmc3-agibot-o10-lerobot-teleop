@@ -16,21 +16,32 @@
 from __future__ import annotations
 
 import multiprocessing
+import functools
+import logging
 import queue
 import threading
+import time
 import traceback
 from pathlib import Path
 
 import numpy as np
 import PIL.Image
 import torch
-from mcap.writer import Writer
-from mcap.reader import make_reader
 from io import BytesIO
 import os
 
+try:
+    from mcap.writer import Writer
+    from mcap.reader import make_reader
+except ModuleNotFoundError as exc:
+    if exc.name != "mcap":
+        raise
+    Writer = None
+    make_reader = None
+
 
 def safe_stop_image_writer(func):
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
@@ -88,12 +99,21 @@ def image_array_to_pil_image(
     return PIL.Image.fromarray(image_array)
 
 
+def _require_mcap() -> None:
+    if Writer is None or make_reader is None:
+        raise ModuleNotFoundError(
+            "MCAP support requires the optional 'mcap' package to be installed.",
+            name="mcap",
+        )
+
+
 def append_image_to_mcap(
     image: PIL.Image.Image,
     mcap_file: Path,
     topic_name: str = "mcap",
     frame_index: int = 0,
 ):
+    _require_mcap()
     # print(f"=== 调试信息 ===")
     # print(f"文件路径: {mcap_file}")
     # print(f"frame_index 值: {frame_index}")
@@ -137,10 +157,10 @@ def _append_by_recreating(image_data, file_path, topic_name, frame_index):
     """
     通过重新创建文件来追加数据（最可靠的方法）
     """
-    from mcap.reader import make_reader
     import tempfile
     import shutil
 
+    _require_mcap()
     print("使用重新创建方式追加...")
 
     # 收集现有消息
@@ -319,14 +339,27 @@ class AsyncImageWriter:
     the number of threads. If it is still not stable, try to use 1 subprocess, or more.
     """
 
-    def __init__(self, num_processes: int = 0, num_threads: int = 1):
+    def __init__(
+        self,
+        num_processes: int = 0,
+        num_threads: int = 1,
+        max_queue_size: int = 0,
+        backlog_warning_threshold: int | None = None,
+    ):
         self.num_processes = num_processes
         self.num_threads = num_threads
+        self.max_queue_size = max(0, int(max_queue_size))
+        self.backlog_warning_threshold = (
+            int(backlog_warning_threshold)
+            if backlog_warning_threshold is not None
+            else max(64, self.num_threads * 16)
+        )
         self.queue = None
         self.error_queue = None
         self.threads = []
         self.processes = []
         self._stopped = False
+        self._last_backlog_warning_t = 0.0
 
         if num_threads <= 0 and num_processes <= 0:
             raise ValueError(
@@ -335,7 +368,7 @@ class AsyncImageWriter:
 
         if self.num_processes == 0:
             # Use threading
-            self.queue = queue.Queue()
+            self.queue = queue.Queue(maxsize=self.max_queue_size)
             self.error_queue = queue.Queue()
             for _ in range(self.num_threads):
                 t = threading.Thread(
@@ -346,7 +379,8 @@ class AsyncImageWriter:
                 self.threads.append(t)
         else:
             # Use multiprocessing
-            self.queue = multiprocessing.JoinableQueue()
+            queue_maxsize = self.max_queue_size if self.max_queue_size > 0 else 0
+            self.queue = multiprocessing.JoinableQueue(maxsize=queue_maxsize)
             self.error_queue = multiprocessing.Queue()
             for _ in range(self.num_processes):
                 p = multiprocessing.Process(
@@ -380,6 +414,31 @@ class AsyncImageWriter:
             message = f"{message} (and {len(errors) - 1} more image write errors)"
         raise RuntimeError(message)
 
+    def qsize(self) -> int | None:
+        if self.queue is None:
+            return None
+        try:
+            return self.queue.qsize()
+        except (NotImplementedError, AttributeError):
+            return None
+
+    def _warn_if_backlogged(self) -> None:
+        backlog = self.qsize()
+        if backlog is None or backlog < self.backlog_warning_threshold:
+            return
+        now = time.perf_counter()
+        if now - self._last_backlog_warning_t < 2.0:
+            return
+        self._last_backlog_warning_t = now
+        logging.warning(
+            "Async image writer backlog is high: %s queued frames "
+            "(threads=%s, processes=%s, max_queue_size=%s)",
+            backlog,
+            self.num_threads,
+            self.num_processes,
+            self.max_queue_size or "unbounded",
+        )
+
     def save_image(
         self,
         image: torch.Tensor | np.ndarray | PIL.Image.Image,
@@ -390,7 +449,14 @@ class AsyncImageWriter:
         if isinstance(image, torch.Tensor):
             # Convert tensor to numpy array to minimize main process time
             image = image.cpu().numpy()
-        self.queue.put((image, fpath, compress_level))
+        self._warn_if_backlogged()
+        try:
+            self.queue.put((image, fpath, compress_level), block=False)
+        except queue.Full as exc:
+            raise RuntimeError(
+                "Async image writer queue is full; disk/image encoding is falling behind "
+                f"(max_queue_size={self.max_queue_size})."
+            ) from exc
 
     def wait_until_done(self):
         self.queue.join()

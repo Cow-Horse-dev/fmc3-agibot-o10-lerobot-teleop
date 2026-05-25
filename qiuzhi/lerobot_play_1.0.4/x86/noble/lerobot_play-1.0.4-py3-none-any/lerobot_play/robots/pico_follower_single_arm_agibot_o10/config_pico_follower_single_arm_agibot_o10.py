@@ -15,6 +15,7 @@ class PicoFollowerSingleArmAgibotO10Config(RobotConfig):
     enable_hand: bool = True
     allow_camera_read_failures: bool = False
     camera_read_timeout_ms: int = 200
+    reset_timeout_s: float = 8.0
     channel_mode: str = "multiChannel"
     device_id: int = 1
     canfd_id: int = 0
@@ -22,7 +23,7 @@ class PicoFollowerSingleArmAgibotO10Config(RobotConfig):
     reset_poses_path: str | None = None
     reset_gesture: str | None = None
     include_eef_pose: bool = True
-    action_control_mode: str = "joint"  # "joint" or "eef_delta"
+    action_control_mode: str = "joint"  # "joint", "eef_delta", or "eef_absolute"
     hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"
     gripper_gesture: str | None = None
     tactile_mode: str = "none"

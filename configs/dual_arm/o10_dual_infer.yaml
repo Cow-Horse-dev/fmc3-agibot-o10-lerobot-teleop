@@ -14,7 +14,7 @@
 # - infer.task_description/id/serial_number_or_name: 普通字符串。
 # - infer.num_episodes/episode_time_sec/fps 和 camera width/height/fps/device_id/canfd_id: 整数。
 # - robot.type: pico_follower_dual_arm_agibot_o10；left/right.port: can0/can1 或实际 CAN 口。
-# - handedness: left, right；action_control_mode: joint, eef_delta；hand_action_mode: dexterous_10d, gripper_1d。
+# - handedness: left, right；action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode: dexterous_10d, gripper_1d。
 # - tactile_mode: none, 130d；channel_mode: multiChannel。
 # - channel_id: null 或整数，null 自动 left->0、right->1。
 # - gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
@@ -65,7 +65,7 @@ robot:
   id: o10_dual  # 机器人端 id
   enable_hand: true  # 可选: true, false
   include_eef_pose: false  # 可选: true, false；与 o10_dual_record.yaml 保持一致
-  action_control_mode: joint  # 可选: joint, eef_delta；与训练数据集 action schema 保持一致
+  action_control_mode: joint  # 可选: joint, eef_delta, eef_absolute；与训练数据集 action schema 保持一致
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d；与 o10_dual_record.yaml 保持一致
   tactile_mode: "none"  # 可选: none, 130d；与 20260427 gripper_1d 训练数据集一致
   left:

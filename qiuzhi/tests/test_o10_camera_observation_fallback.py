@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import time
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -135,6 +136,7 @@ def _install_common_robot_stubs(monkeypatch):
         AGIBOT_O10_HAND_FEATURE_NAMES=hand_feature_names,
         AGIBOT_O10_POSE_FEATURE_NAMES=pose_feature_names,
         AgibotO10Hand=FakeAgibotO10Hand,
+        agibot_o10_eef_absolute_pose_to_matrix=lambda eef_pose: np.eye(4),
         agibot_o10_gripper_value_from_hand_joints=lambda *args, **kwargs: 0.0,
         agibot_o10_hand_joints_from_gripper_value=lambda *args, **kwargs: [0.0] * len(hand_feature_names),
         agibot_o10_action_feature_types=lambda: {
@@ -142,6 +144,12 @@ def _install_common_robot_stubs(monkeypatch):
         },
         agibot_o10_joint_action_feature_types=lambda: {
             name: float for name in (*arm_feature_names, *hand_feature_names)
+        },
+        agibot_o10_eef_absolute_action_feature_types=lambda: {
+            name: float for name in (*pose_feature_names, *hand_feature_names)
+        },
+        agibot_o10_eef_absolute_gripper_action_feature_types=lambda: {
+            name: float for name in (*pose_feature_names, *gripper_feature_names)
         },
         agibot_o10_eef_delta_action_feature_types=lambda: {
             name: float for name in (*eef_delta_feature_names, *hand_feature_names)
@@ -163,6 +171,10 @@ def _install_common_robot_stubs(monkeypatch):
             name: float(value)
             for name, value in zip((*eef_delta_feature_names, *hand_feature_names), values, strict=True)
         },
+        build_agibot_o10_eef_absolute_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*pose_feature_names, *hand_feature_names), values, strict=True)
+        },
         build_agibot_o10_gripper_action_dict=lambda values: {
             name: float(value)
             for name, value in zip((*arm_feature_names, *gripper_feature_names), values, strict=True)
@@ -170,6 +182,10 @@ def _install_common_robot_stubs(monkeypatch):
         build_agibot_o10_eef_delta_gripper_action_dict=lambda values: {
             name: float(value)
             for name, value in zip((*eef_delta_feature_names, *gripper_feature_names), values, strict=True)
+        },
+        build_agibot_o10_eef_absolute_gripper_action_dict=lambda values: {
+            name: float(value)
+            for name, value in zip((*pose_feature_names, *gripper_feature_names), values, strict=True)
         },
         normalize_agibot_o10_action_control_mode=lambda mode: (mode or "joint").strip().lower(),
         normalize_agibot_o10_hand_action_mode=lambda mode: (mode or "dexterous_10d").strip().lower(),
@@ -253,6 +269,16 @@ class _TimeoutRecordingCamera:
     def async_read(self, timeout_ms=200):
         self.timeout_ms_calls.append(timeout_ms)
         raise TimeoutError("camera timeout")
+
+
+class _SlowColorCamera:
+    def __init__(self, value: int, sleep_s: float):
+        self.value = value
+        self.sleep_s = sleep_s
+
+    def async_read(self, timeout_ms=200):
+        time.sleep(self.sleep_s)
+        return np.full((2, 4, 3), self.value, dtype=np.uint8)
 
 
 class _ConnectCamera:
@@ -380,6 +406,39 @@ def test_single_arm_camera_timeout_still_raises_when_fallback_is_disabled(monkey
         robot.get_observation()
 
 
+def test_single_arm_camera_reads_run_in_parallel(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        allow_camera_read_failures=True,
+        camera_read_timeout_ms=100,
+        cameras={
+            "top": SimpleNamespace(height=2, width=4, use_depth=False),
+            "wrist": SimpleNamespace(height=2, width=4, use_depth=False),
+        },
+    )
+    robot.hand = None
+    robot.cameras = {
+        "top": _SlowColorCamera(1, 0.05),
+        "wrist": _SlowColorCamera(2, 0.05),
+    }
+    robot.get_joint_pos = lambda: (
+        [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+        [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+    )
+
+    start = time.perf_counter()
+    obs = robot.get_observation()
+    elapsed_s = time.perf_counter() - start
+
+    assert elapsed_s < 0.09
+    assert int(obs["top"][0, 0, 0]) == 1
+    assert int(obs["wrist"][0, 0, 0]) == 2
+
+
 def test_single_arm_safe_shutdown_disconnects_connected_cameras(monkeypatch):
     module = _load_single_arm_module(monkeypatch)
     camera = _ConnectCamera()
@@ -394,6 +453,27 @@ def test_single_arm_safe_shutdown_disconnects_connected_cameras(monkeypatch):
     assert camera.connected is False
     assert robot.arm.disabled is True
     assert robot.arm.uninitialized is True
+
+
+def test_single_arm_return_zero_times_out_instead_of_looping_forever(monkeypatch, caplog):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        enable_hand=False,
+        arm_joints_num=7,
+        reset_timeout_s=0.01,
+    )
+    robot.arm = _NeverArrivingArm()
+    robot.hand = None
+    robot.reset_arm_joint_pos = [0.0] * 6
+    robot.reset_hand_joint_pos = [0.0] * 10
+
+    with caplog.at_level("WARNING"):
+        robot.return_zero()
+
+    assert robot.arm.pvt_calls > 0
+    assert "Timed out resetting Agibot O10" in caplog.text
 
 
 def test_dual_arm_skips_camera_connect_failures_when_allowed(monkeypatch):
@@ -487,3 +567,80 @@ def test_dual_arm_camera_fallback_uses_short_configured_read_timeout(monkeypatch
     robot.get_observation()
 
     assert camera.timeout_ms_calls == [35]
+
+
+def test_dual_arm_camera_reads_run_in_parallel(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        include_eef_pose=False,
+        tactile_mode="none",
+        enable_hand=False,
+        allow_camera_read_failures=True,
+        camera_read_timeout_ms=100,
+        cameras={
+            "top": SimpleNamespace(height=2, width=4, use_depth=False),
+            "left_wrist": SimpleNamespace(height=2, width=4, use_depth=False),
+            "right_wrist": SimpleNamespace(height=2, width=4, use_depth=False),
+        },
+    )
+    robot.cameras = {
+        "top": _SlowColorCamera(1, 0.05),
+        "left_wrist": _SlowColorCamera(2, 0.05),
+        "right_wrist": _SlowColorCamera(3, 0.05),
+    }
+    robot.get_joint_pos = lambda: {
+        "left": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+        "right": [
+            [0.0] * len(module.AGIBOT_O10_ARM_FEATURE_NAMES),
+            [0.0] * len(module.AGIBOT_O10_HAND_FEATURE_NAMES),
+        ],
+    }
+
+    start = time.perf_counter()
+    obs = robot.get_observation()
+    elapsed_s = time.perf_counter() - start
+
+    assert elapsed_s < 0.11
+    assert int(obs["top"][0, 0, 0]) == 1
+    assert int(obs["left_wrist"][0, 0, 0]) == 2
+    assert int(obs["right_wrist"][0, 0, 0]) == 3
+
+
+class _NeverArrivingArm:
+    def __init__(self):
+        self.pvt_calls = 0
+
+    def state(self):
+        return SimpleNamespace(pos=[1.0] * 6)
+
+    def pvt(self, *args, **kwargs):
+        self.pvt_calls += 1
+
+
+def test_dual_arm_return_zero_times_out_instead_of_looping_forever(monkeypatch, caplog):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        enable_hand=False,
+        arm_joints_num=7,
+        reset_timeout_s=0.01,
+    )
+    robot.left_arm = _NeverArrivingArm()
+    robot.right_arm = _NeverArrivingArm()
+    robot.left_reset_arm_joint_pos = [0.0] * 6
+    robot.right_reset_arm_joint_pos = [0.0] * 6
+    robot.left_reset_hand_joint_pos = [0.0] * 10
+    robot.right_reset_hand_joint_pos = [0.0] * 10
+
+    with caplog.at_level("WARNING"):
+        robot.return_zero()
+
+    assert robot.left_arm.pvt_calls > 0
+    assert robot.right_arm.pvt_calls > 0
+    assert "Timed out resetting dual-arm O10" in caplog.text

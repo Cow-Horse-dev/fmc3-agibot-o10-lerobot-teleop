@@ -18,7 +18,7 @@ class PicoLeaderSingleArmAgibotO10Config(TeleoperatorConfig):
     enable_hand: bool = True
     hand_mode: str = "glove"
     trigger_gesture: str = "pinch"
-    action_control_mode: str = "joint"  # "joint" or "eef_delta"
+    action_control_mode: str = "joint"  # "joint", "eef_delta", or "eef_absolute"
     hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"
     gripper_gesture: str | None = None
     reset_poses_path: str | None = None

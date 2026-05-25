@@ -65,6 +65,15 @@ def _install_stub_module(monkeypatch, name: str, **attrs):
     return module
 
 
+def _build_action_dict(feature_names, values):
+    if len(values) != len(feature_names):
+        raise ValueError(f"expected {len(feature_names)} values, got {len(values)}")
+    return {
+        name: float(value)
+        for name, value in zip(feature_names, values, strict=True)
+    }
+
+
 class _FakeRobot:
     def __init__(self, config):
         self.config = config
@@ -115,7 +124,12 @@ def _install_common_stubs(monkeypatch):
     )
     _install_stub_module(monkeypatch, "lerobot.cameras.utils", make_cameras_from_configs=lambda configs: {})
     _install_stub_module(monkeypatch, "lerobot.robots.robot", Robot=_FakeRobot)
-    _install_stub_module(monkeypatch, "lerobot.utils.errors", DeviceNotConnectedError=RuntimeError)
+    _install_stub_module(
+        monkeypatch,
+        "lerobot.utils.errors",
+        DeviceAlreadyConnectedError=RuntimeError,
+        DeviceNotConnectedError=RuntimeError,
+    )
     _install_stub_module(
         monkeypatch,
         "mmk2_kdl_py",
@@ -130,8 +144,18 @@ def _install_common_stubs(monkeypatch):
         AGIBOT_O10_EEF_DELTA_FEATURE_NAMES=EEF_DELTA_FEATURE_NAMES,
         AGIBOT_O10_POSE_FEATURE_NAMES=POSE_FEATURE_NAMES,
         AgibotO10Hand=_FakeHand,
+        agibot_o10_eef_absolute_pose_to_matrix=lambda eef_pose: np.array(
+            [
+                [1.0, 0.0, 0.0, float(eef_pose[0])],
+                [0.0, 1.0, 0.0, float(eef_pose[1])],
+                [0.0, 0.0, 1.0, float(eef_pose[2])],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        ),
         agibot_o10_gripper_value_from_hand_joints=lambda *args, **kwargs: 0.0,
         agibot_o10_hand_joints_from_gripper_value=lambda *args, **kwargs: [0.0] * len(HAND_FEATURE_NAMES),
+        get_agibot_o10_reset_pose_gesture_joint_angles=lambda *args, **kwargs: None,
+        get_agibot_o10_trigger_gesture_joint_angles=lambda *args, **kwargs: [0.0] * len(HAND_FEATURE_NAMES),
         agibot_o10_joint_action_feature_types=lambda: {
             name: float for name in (*ARM_FEATURE_NAMES, *HAND_FEATURE_NAMES)
         },
@@ -141,31 +165,39 @@ def _install_common_stubs(monkeypatch):
         agibot_o10_eef_delta_action_feature_types=lambda: {
             name: float for name in (*EEF_DELTA_FEATURE_NAMES, *HAND_FEATURE_NAMES)
         },
+        agibot_o10_eef_absolute_action_feature_types=lambda: {
+            name: float for name in (*POSE_FEATURE_NAMES, *HAND_FEATURE_NAMES)
+        },
         agibot_o10_gripper_action_feature_types=lambda: {
             name: float for name in (*ARM_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES)
         },
         agibot_o10_eef_delta_gripper_action_feature_types=lambda: {
             name: float for name in (*EEF_DELTA_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES)
         },
+        agibot_o10_eef_absolute_gripper_action_feature_types=lambda: {
+            name: float for name in (*POSE_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES)
+        },
         agibot_o10_gripper_state_feature_types=lambda: {
             name: float for name in (*ARM_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES)
         },
-        build_agibot_o10_joint_action_dict=lambda values: {
-            name: float(value)
-            for name, value in zip((*ARM_FEATURE_NAMES, *HAND_FEATURE_NAMES), values, strict=True)
-        },
-        build_agibot_o10_eef_delta_action_dict=lambda values: {
-            name: float(value)
-            for name, value in zip((*EEF_DELTA_FEATURE_NAMES, *HAND_FEATURE_NAMES), values, strict=True)
-        },
-        build_agibot_o10_gripper_action_dict=lambda values: {
-            name: float(value)
-            for name, value in zip((*ARM_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES), values, strict=True)
-        },
-        build_agibot_o10_eef_delta_gripper_action_dict=lambda values: {
-            name: float(value)
-            for name, value in zip((*EEF_DELTA_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES), values, strict=True)
-        },
+        build_agibot_o10_joint_action_dict=lambda values: _build_action_dict(
+            (*ARM_FEATURE_NAMES, *HAND_FEATURE_NAMES), values
+        ),
+        build_agibot_o10_eef_delta_action_dict=lambda values: _build_action_dict(
+            (*EEF_DELTA_FEATURE_NAMES, *HAND_FEATURE_NAMES), values
+        ),
+        build_agibot_o10_eef_absolute_action_dict=lambda values: _build_action_dict(
+            (*POSE_FEATURE_NAMES, *HAND_FEATURE_NAMES), values
+        ),
+        build_agibot_o10_gripper_action_dict=lambda values: _build_action_dict(
+            (*ARM_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES), values
+        ),
+        build_agibot_o10_eef_delta_gripper_action_dict=lambda values: _build_action_dict(
+            (*EEF_DELTA_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES), values
+        ),
+        build_agibot_o10_eef_absolute_gripper_action_dict=lambda values: _build_action_dict(
+            (*POSE_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES), values
+        ),
         normalize_agibot_o10_action_control_mode=lambda mode: (mode or "joint").strip().lower(),
         normalize_agibot_o10_hand_action_mode=lambda mode: (mode or "dexterous_10d").strip().lower(),
     )
@@ -180,6 +212,12 @@ def _install_common_stubs(monkeypatch):
         PersistentJointTargetStore=object,
         load_reset_poses=lambda *args, **kwargs: (None, None),
     )
+    for helper_module_name in (
+        "lerobot_play.utils.o10_hand_control",
+        "lerobot_play.utils.o10_reset",
+        "lerobot_play.utils.o10_schema",
+    ):
+        monkeypatch.delitem(sys.modules, helper_module_name, raising=False)
 
 
 def _load_single_arm_module(monkeypatch):
@@ -244,6 +282,56 @@ def test_dual_arm_eef_delta_mode_exposes_per_side_delta_pose_and_hand_action_fea
     assert list(robot.action_features) == expected
 
 
+def test_single_arm_eef_absolute_mode_exposes_pose_and_hand_action_features(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot.config = SimpleNamespace(action_control_mode="eef_absolute")
+
+    assert list(robot.action_features) == [*POSE_FEATURE_NAMES, *HAND_FEATURE_NAMES]
+
+
+def test_single_arm_eef_absolute_gripper_mode_exposes_pose_and_gripper_action_features(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot.config = SimpleNamespace(
+        action_control_mode="eef_absolute",
+        hand_action_mode="gripper_1d",
+    )
+
+    assert list(robot.action_features) == [*POSE_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES]
+
+
+def test_dual_arm_eef_absolute_mode_exposes_per_side_pose_and_hand_action_features(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot.config = SimpleNamespace(action_control_mode="eef_absolute")
+
+    expected = [
+        *(f"left.{name}" for name in POSE_FEATURE_NAMES),
+        *(f"left.{name}" for name in HAND_FEATURE_NAMES),
+        *(f"right.{name}" for name in POSE_FEATURE_NAMES),
+        *(f"right.{name}" for name in HAND_FEATURE_NAMES),
+    ]
+    assert list(robot.action_features) == expected
+
+
+def test_dual_arm_eef_absolute_gripper_mode_exposes_per_side_pose_and_gripper_action_features(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot.config = SimpleNamespace(
+        action_control_mode="eef_absolute",
+        hand_action_mode="gripper_1d",
+    )
+
+    expected = [
+        *(f"left.{name}" for name in POSE_FEATURE_NAMES),
+        *(f"left.{name}" for name in GRIPPER_FEATURE_NAMES),
+        *(f"right.{name}" for name in POSE_FEATURE_NAMES),
+        *(f"right.{name}" for name in GRIPPER_FEATURE_NAMES),
+    ]
+    assert list(robot.action_features) == expected
+
+
 def test_single_arm_send_action_converts_eef_delta_to_joint_target(monkeypatch):
     module = _load_single_arm_module(monkeypatch)
     robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
@@ -265,6 +353,73 @@ def test_single_arm_send_action_converts_eef_delta_to_joint_target(monkeypatch):
     assert robot.arm.pvt_calls[0][0] == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     assert robot.hand.writes[0] == pytest.approx(hand_values)
     assert list(sent_action) == [*EEF_DELTA_FEATURE_NAMES, *HAND_FEATURE_NAMES]
+
+
+def test_single_arm_send_action_converts_eef_absolute_pose_to_joint_target(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(action_control_mode="eef_absolute", enable_hand=True, arm_joints_num=7)
+    robot.arm = _FakeArm()
+    robot.hand = _FakeHand()
+    robot.arm_kdl = _FakeArmKdl([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    robot.get_joint_pos = lambda: ([0.1, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0] * 10)
+
+    hand_values = [float(index) for index in range(10)]
+    action = {
+        **{
+            name: value
+            for name, value in zip(
+                POSE_FEATURE_NAMES,
+                [0.25, -0.1, 0.4, 0.0, 0.0, 0.0, 1.0],
+                strict=True,
+            )
+        },
+        **{name: value for name, value in zip(HAND_FEATURE_NAMES, hand_values, strict=True)},
+    }
+
+    sent_action = robot.send_action(action)
+
+    target_pose = robot.arm_kdl.inverse_targets[0][0]
+    assert target_pose[:3, 3] == pytest.approx([0.25, -0.1, 0.4])
+    assert robot.arm.pvt_calls[0][0] == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    assert robot.hand.writes[0] == pytest.approx(hand_values)
+    assert list(sent_action) == [*POSE_FEATURE_NAMES, *HAND_FEATURE_NAMES]
+
+
+def test_single_arm_send_action_converts_eef_absolute_gripper_to_joint_target(monkeypatch):
+    module = _load_single_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerSingleArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(
+        action_control_mode="eef_absolute",
+        hand_action_mode="gripper_1d",
+        enable_hand=True,
+        arm_joints_num=7,
+    )
+    robot.arm = _FakeArm()
+    robot.hand = _FakeHand()
+    robot.arm_kdl = _FakeArmKdl([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    robot.get_joint_pos = lambda: ([0.1, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0] * 10)
+
+    action = {
+        **{
+            name: value
+            for name, value in zip(
+                POSE_FEATURE_NAMES,
+                [0.25, -0.1, 0.4, 0.0, 0.0, 0.0, 1.0],
+                strict=True,
+            )
+        },
+        GRIPPER_FEATURE_NAMES[0]: 0.75,
+    }
+
+    sent_action = robot.send_action(action)
+
+    target_pose = robot.arm_kdl.inverse_targets[0][0]
+    assert target_pose[:3, 3] == pytest.approx([0.25, -0.1, 0.4])
+    assert robot.hand.writes[0] == pytest.approx([0.0] * len(HAND_FEATURE_NAMES))
+    assert list(sent_action) == [*POSE_FEATURE_NAMES, *GRIPPER_FEATURE_NAMES]
 
 
 def test_dual_arm_send_action_converts_each_side_eef_delta_to_joint_targets(monkeypatch):
@@ -297,5 +452,48 @@ def test_dual_arm_send_action_converts_each_side_eef_delta_to_joint_targets(monk
         *(f"left.{name}" for name in EEF_DELTA_FEATURE_NAMES),
         *(f"left.{name}" for name in HAND_FEATURE_NAMES),
         *(f"right.{name}" for name in EEF_DELTA_FEATURE_NAMES),
+        *(f"right.{name}" for name in HAND_FEATURE_NAMES),
+    ]
+
+
+def test_dual_arm_send_action_converts_each_side_eef_absolute_pose_to_joint_targets(monkeypatch):
+    module = _load_dual_arm_module(monkeypatch)
+    robot = object.__new__(module.PicoFollowerDualArmAgibotO10)
+    robot._is_connected = True
+    robot.config = SimpleNamespace(action_control_mode="eef_absolute", enable_hand=True, arm_joints_num=7)
+    robot.left_arm = _FakeArm()
+    robot.right_arm = _FakeArm()
+    robot.left_hand = _FakeHand()
+    robot.right_hand = _FakeHand()
+    robot.arm_kdl = _FakeArmKdl([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    robot.get_joint_pos = lambda: {
+        "left": ([0.1, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0] * 10),
+        "right": ([0.2, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0] * 10),
+    }
+
+    action = {}
+    for side, x_value in (("left", 0.25), ("right", -0.25)):
+        action.update({
+            f"{side}.{name}": value
+            for name, value in zip(
+                POSE_FEATURE_NAMES,
+                [x_value, -0.1, 0.4, 0.0, 0.0, 0.0, 1.0],
+                strict=True,
+            )
+        })
+        action.update({f"{side}.{name}": float(index) for index, name in enumerate(HAND_FEATURE_NAMES)})
+
+    sent_action = robot.send_action(action)
+
+    left_target_pose = robot.arm_kdl.inverse_targets[0][0]
+    right_target_pose = robot.arm_kdl.inverse_targets[1][0]
+    assert left_target_pose[:3, 3] == pytest.approx([0.25, -0.1, 0.4])
+    assert right_target_pose[:3, 3] == pytest.approx([-0.25, -0.1, 0.4])
+    assert robot.left_arm.pvt_calls[0][0] == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    assert robot.right_arm.pvt_calls[0][0] == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    assert list(sent_action) == [
+        *(f"left.{name}" for name in POSE_FEATURE_NAMES),
+        *(f"left.{name}" for name in HAND_FEATURE_NAMES),
+        *(f"right.{name}" for name in POSE_FEATURE_NAMES),
         *(f"right.{name}" for name in HAND_FEATURE_NAMES),
     ]

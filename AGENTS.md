@@ -4,6 +4,8 @@
 
 `yudie/` contains the active glove-to-hand runtime: `DexHand_Motion_Control_Program.py`, `Data_Receiver.py`, `sdk_bootstrap.py`, hand adapters in `AGIBOT/`, and the local `omnihand_2025/` SDK binaries. `qiuzhi/` holds the vendored `lerobot_play` snapshot plus regression tests in `qiuzhi/tests/`. `run_lerobot_play.py` is the root launcher that bootstraps the `qiuzhi` package tree. Treat `*.zip`, `*.whl`, shared libraries, `__pycache__/`, and generated `Protobuf/*_pb2.py` files as vendor artifacts unless regeneration is part of the task.
 
+External LeRobot reference source lives at `/home/phl/workspace/lerobot-versions/lerobot`. When asked to reference, compare, or borrow LeRobot implementation details, inspect that directory first. Treat it as external reference code and do not modify it unless the task explicitly asks for changes there.
+
 ## Build, Test, and Development Commands
 
 - `python yudie/DexHand_Motion_Control_Program.py --mode agibotHand_O10 --hand right` starts the main control loop.
@@ -27,4 +29,4 @@ Add Python tests under `qiuzhi/tests/` as `test_<feature>.py`. Prefer pure-Pytho
 
 ## Commit & Pull Request Guidelines
 
-History is sparse and uses short summary lines such as `第一次合并` and `宇叠手套控制手跑通版本`. Keep commits short, scoped, and single-purpose, for example `yudie: fix JSON role fallback`. Commit messages must follow the `heliangp:提交内容` format (e.g. `heliangp:fix JSON role fallback`). `qiuzhi/` and `yudie/` each contain their own Git metadata while the root repo tracks gitlinks, so be explicit about whether you changed nested repos, root pointers, or both. PRs should list the affected area, hardware assumptions, exact test commands, and logs or screenshots for runtime control changes.
+History is sparse and uses short summary lines such as `第一次合并` and `宇叠手套控制手跑通版本`. Keep commits short, scoped, and single-purpose. Git commit messages must use the `heliangp:提交内容` format, for example `heliangp:fix JSON role fallback` or `heliangp:更新配置说明`. `qiuzhi/` and `yudie/` each contain their own Git metadata while the root repo tracks gitlinks, so be explicit about whether you changed nested repos, root pointers, or both. PRs should list the affected area, hardware assumptions, exact test commands, and logs or screenshots for runtime control changes.

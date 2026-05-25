@@ -18,5 +18,5 @@ def test_single_arm_observation_source_supports_optional_eef_pose_and_tactile():
     assert 'tactile_mode == "130d"' in source
     assert 'tactile_mode == "7d"' not in source
     assert 'tactile_mode == "80d"' not in source
-    assert "observation.tactile." in source
+    assert "tactile_raw_key" in source
     assert 'if self.hand is not None and tactile_mode != "none":' in source

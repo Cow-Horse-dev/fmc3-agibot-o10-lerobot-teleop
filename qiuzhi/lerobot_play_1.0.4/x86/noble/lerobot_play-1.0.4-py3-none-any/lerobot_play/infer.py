@@ -34,7 +34,6 @@ from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say, init_logging
 from lerobot.utils.visualization_utils import init_rerun
-from lerobot.scripts.lerobot_record import record_loop
 from lerobot.processor import make_default_processors
 
 # 异步推理相关导入
@@ -55,6 +54,7 @@ from .robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agi
     PicoFollowerDualArmAgibotO10Config,
 )
 from .robots.utils import make_robot_from_config
+from .utils.lerobot_record import record_loop
 from .utils.policy_preprocessor import load_observation_rename_map
 from .utils.runtime_helpers import build_dataset_features
 from .utils.camera_config_parser import parse_camera_configs

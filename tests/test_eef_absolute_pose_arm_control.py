@@ -22,6 +22,7 @@ orientation.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import math
 import sys
@@ -70,6 +71,15 @@ HAND_FEATURE_NAMES = (
     "pinky_mp_yaw.pos",
     "pinky_mp_pitch.pos",
 )
+POSE_FEATURE_NAMES = (
+    "pose.x",
+    "pose.y",
+    "pose.z",
+    "quaternion.qx",
+    "quaternion.qy",
+    "quaternion.qz",
+    "quaternion.qw",
+)
 
 
 @dataclass(frozen=True)
@@ -88,8 +98,22 @@ class IkCandidate:
     joints: list[float]
 
 
+@dataclass(frozen=True)
+class EefBounds:
+    minimum: tuple[float, float, float]
+    maximum: tuple[float, float, float]
+
+
+DEFAULT_EEF_BOUNDS_MIN = (-0.10, -0.45, 0.02)
+DEFAULT_EEF_BOUNDS_MAX = (0.65, 0.45, 0.70)
+
+
 def default_port(handedness: str) -> str:
     return "can0" if handedness == "left" else "can1"
+
+
+def default_dual_port(side: str) -> str:
+    return "can0" if side == "left" else "can1"
 
 
 def default_reset_poses_path() -> Path:
@@ -155,6 +179,52 @@ def absolute_pose_from_matrix(matrix: np.ndarray) -> AbsolutePose:
     )
 
 
+def quaternion_from_rotation_matrix(rotation: np.ndarray) -> list[float]:
+    rotation = np.asarray(rotation, dtype=float)
+    if rotation.shape != (3, 3):
+        raise ValueError(f"Expected 3x3 rotation matrix, got shape {rotation.shape}")
+    quaternion = np.zeros(4, dtype=float)
+    trace = float(np.trace(rotation))
+    if trace > 0:
+        scalar = math.sqrt(trace + 1.0) * 2
+        quaternion[3] = 0.25 * scalar
+        quaternion[0] = (rotation[2, 1] - rotation[1, 2]) / scalar
+        quaternion[1] = (rotation[0, 2] - rotation[2, 0]) / scalar
+        quaternion[2] = (rotation[1, 0] - rotation[0, 1]) / scalar
+    elif rotation[0, 0] > rotation[1, 1] and rotation[0, 0] > rotation[2, 2]:
+        scalar = math.sqrt(1.0 + rotation[0, 0] - rotation[1, 1] - rotation[2, 2]) * 2
+        quaternion[3] = (rotation[2, 1] - rotation[1, 2]) / scalar
+        quaternion[0] = 0.25 * scalar
+        quaternion[1] = (rotation[0, 1] + rotation[1, 0]) / scalar
+        quaternion[2] = (rotation[0, 2] + rotation[2, 0]) / scalar
+    elif rotation[1, 1] > rotation[2, 2]:
+        scalar = math.sqrt(1.0 + rotation[1, 1] - rotation[0, 0] - rotation[2, 2]) * 2
+        quaternion[3] = (rotation[0, 2] - rotation[2, 0]) / scalar
+        quaternion[0] = (rotation[0, 1] + rotation[1, 0]) / scalar
+        quaternion[1] = 0.25 * scalar
+        quaternion[2] = (rotation[1, 2] + rotation[2, 1]) / scalar
+    else:
+        scalar = math.sqrt(1.0 + rotation[2, 2] - rotation[0, 0] - rotation[1, 1]) * 2
+        quaternion[3] = (rotation[1, 0] - rotation[0, 1]) / scalar
+        quaternion[0] = (rotation[0, 2] + rotation[2, 0]) / scalar
+        quaternion[1] = (rotation[1, 2] + rotation[2, 1]) / scalar
+        quaternion[2] = 0.25 * scalar
+    norm = float(np.linalg.norm(quaternion))
+    if norm <= 1e-8:
+        raise ValueError("Rotation matrix produced a zero quaternion")
+    return [float(value) for value in quaternion / norm]
+
+
+def pose_feature_values(pose: AbsolutePose) -> list[float]:
+    matrix = pose_matrix_from_xyz_rpy(pose)
+    return [
+        pose.x,
+        pose.y,
+        pose.z,
+        *quaternion_from_rotation_matrix(matrix[:3, :3]),
+    ]
+
+
 def translation_distance(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.linalg.norm(np.array(a[:3, 3], dtype=float) - np.array(b[:3, 3], dtype=float)))
 
@@ -169,6 +239,72 @@ def validate_target_distance(current_pose: np.ndarray, target_pose: np.ndarray, 
             f"exceeds --max-distance {max_distance:.4f} m "
             f"(current xyz=[{current_xyz}], target xyz=[{target_xyz}])"
         )
+
+
+def eef_bounds_from_args(args: argparse.Namespace) -> EefBounds:
+    minimum = tuple(float(value) for value in args.eef_bounds_min)
+    maximum = tuple(float(value) for value in args.eef_bounds_max)
+    invalid_axes = [
+        axis
+        for axis, min_value, max_value in zip(("x", "y", "z"), minimum, maximum, strict=True)
+        if min_value >= max_value
+    ]
+    if invalid_axes:
+        axes = ", ".join(invalid_axes)
+        raise ValueError(f"EEF bounds min must be less than max for axis: {axes}")
+    return EefBounds(minimum=minimum, maximum=maximum)
+
+
+def apply_eef_bounds(pose: AbsolutePose, bounds: EefBounds) -> tuple[AbsolutePose, bool]:
+    xyz = np.array([pose.x, pose.y, pose.z], dtype=float)
+    clipped = np.clip(xyz, np.array(bounds.minimum, dtype=float), np.array(bounds.maximum, dtype=float))
+    was_clipped = not np.allclose(xyz, clipped, atol=1e-12, rtol=0.0)
+    return (
+        AbsolutePose(
+            x=float(clipped[0]),
+            y=float(clipped[1]),
+            z=float(clipped[2]),
+            roll=pose.roll,
+            pitch=pose.pitch,
+            yaw=pose.yaw,
+        ),
+        was_clipped,
+    )
+
+
+def print_bounds_clip(title: str, original: AbsolutePose, clipped: AbsolutePose, bounds: EefBounds) -> None:
+    print(f"\nClipped {title} to workspace bounds:")
+    print(f"  bounds min xyz: [{bounds.minimum[0]:+.6f}, {bounds.minimum[1]:+.6f}, {bounds.minimum[2]:+.6f}]")
+    print(f"  bounds max xyz: [{bounds.maximum[0]:+.6f}, {bounds.maximum[1]:+.6f}, {bounds.maximum[2]:+.6f}]")
+    print_pose("Original absolute EEF pose", original)
+    print_pose("Clipped absolute EEF pose", clipped)
+
+
+def bounded_target_pose_from_args(
+    args: argparse.Namespace,
+    fallback_orientation: AbsolutePose | None = None,
+) -> AbsolutePose:
+    target = target_pose_from_args(args, fallback_orientation=fallback_orientation)
+    bounds = eef_bounds_from_args(args)
+    clipped, was_clipped = apply_eef_bounds(target, bounds)
+    if was_clipped:
+        print_bounds_clip("target absolute EEF pose", target, clipped, bounds)
+    return clipped
+
+
+def bounded_target_pose_from_side_args(
+    args: argparse.Namespace,
+    side: str,
+    fallback_pose: AbsolutePose | None = None,
+) -> AbsolutePose | None:
+    target = target_pose_from_side_args(args, side, fallback_pose=fallback_pose)
+    if target is None:
+        return None
+    bounds = eef_bounds_from_args(args)
+    clipped, was_clipped = apply_eef_bounds(target, bounds)
+    if was_clipped:
+        print_bounds_clip(f"{side} target absolute EEF pose", target, clipped, bounds)
+    return clipped
 
 
 def interpolate_pose_matrices(start_pose: np.ndarray, target_pose: np.ndarray, max_step_distance: float) -> list[np.ndarray]:
@@ -489,8 +625,73 @@ def target_pose_from_args(
     )
 
 
+def target_pose_from_side_args(
+    args: argparse.Namespace,
+    side: str,
+    fallback_pose: AbsolutePose | None = None,
+) -> AbsolutePose | None:
+    values = {
+        name: getattr(args, f"{side}_{name}")
+        for name in ("x", "y", "z", "roll", "pitch", "yaw")
+    }
+    xyz_values = [values[name] for name in ("x", "y", "z")]
+    if all(value is None for value in xyz_values):
+        return None
+    missing = [name for name in ("x", "y", "z") if values[name] is None]
+    if missing:
+        raise ValueError(
+            f"{side} absolute pose requires --{side}-x, --{side}-y, and --{side}-z; "
+            f"missing: {', '.join(f'--{side}-{name}' for name in missing)}"
+        )
+
+    fallback = fallback_pose or AbsolutePose(x=0.0, y=0.0, z=0.0)
+    return AbsolutePose(
+        x=float(values["x"]),
+        y=float(values["y"]),
+        z=float(values["z"]),
+        roll=float(values["roll"] if values["roll"] is not None else fallback.roll),
+        pitch=float(values["pitch"] if values["pitch"] is not None else fallback.pitch),
+        yaw=float(values["yaw"] if values["yaw"] is not None else fallback.yaw),
+    )
+
+
+def build_dual_eef_absolute_action(
+    left_pose: AbsolutePose,
+    right_pose: AbsolutePose,
+    left_hand_joints: Sequence[float] | None = None,
+    right_hand_joints: Sequence[float] | None = None,
+) -> dict[str, float]:
+    if left_hand_joints is None:
+        left_hand_joints = [0.0] * len(HAND_FEATURE_NAMES)
+    if right_hand_joints is None:
+        right_hand_joints = [0.0] * len(HAND_FEATURE_NAMES)
+    if len(left_hand_joints) != len(HAND_FEATURE_NAMES):
+        raise ValueError(f"Expected {len(HAND_FEATURE_NAMES)} left hand joints, got {len(left_hand_joints)}")
+    if len(right_hand_joints) != len(HAND_FEATURE_NAMES):
+        raise ValueError(f"Expected {len(HAND_FEATURE_NAMES)} right hand joints, got {len(right_hand_joints)}")
+
+    action: dict[str, float] = {}
+    for side, pose, hand_joints in (
+        ("left", left_pose, left_hand_joints),
+        ("right", right_pose, right_hand_joints),
+    ):
+        action.update(
+            {
+                f"{side}.{name}": float(value)
+                for name, value in zip(POSE_FEATURE_NAMES, pose_feature_values(pose), strict=True)
+            }
+        )
+        action.update(
+            {
+                f"{side}.{name}": float(value)
+                for name, value in zip(HAND_FEATURE_NAMES, hand_joints, strict=True)
+            }
+        )
+    return action
+
+
 def run_dry_run(args: argparse.Namespace) -> int:
-    target = target_pose_from_args(args)
+    target = bounded_target_pose_from_args(args)
     target_matrix = pose_matrix_from_xyz_rpy(target)
     current_for_preview = pose_matrix_from_xyz_rpy(AbsolutePose(x=0.0, y=0.0, z=0.0))
     preview_waypoints = interpolate_pose_matrices(current_for_preview, target_matrix, args.max_step_distance)
@@ -510,8 +711,49 @@ def run_dry_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_dual_dry_run(args: argparse.Namespace) -> int:
+    left_target = bounded_target_pose_from_side_args(args, "left")
+    right_target = bounded_target_pose_from_side_args(args, "right")
+    if left_target is None and right_target is None:
+        raise ValueError("Dual mode requires at least one side target: --left-x/y/z or --right-x/y/z")
+
+    print("DUAL DRY RUN: no hardware connection and no arm movement.")
+    print(f"Left CAN port: {args.left_port or default_dual_port('left')}")
+    print(f"Right CAN port: {args.right_port or default_dual_port('right')}")
+    for side, target in (("left", left_target), ("right", right_target)):
+        if target is None:
+            print(f"\n{side}: no target, execute mode will keep current EEF pose.")
+            continue
+        target_matrix = pose_matrix_from_xyz_rpy(target)
+        preview_waypoints = interpolate_pose_matrices(
+            pose_matrix_from_xyz_rpy(AbsolutePose(x=0.0, y=0.0, z=0.0)),
+            target_matrix,
+            args.max_step_distance,
+        )
+        print_pose(f"{side} requested absolute EEF pose", target)
+        print(f"\n{side} preview from origin would use {len(preview_waypoints)} waypoint(s).")
+        print(f"{side} target 4x4 matrix:")
+        print(np.array2string(target_matrix, precision=6, suppress_small=False))
+    print("\nPass --execute to connect and move the real dual-arm robot.")
+    print("Use --mode dual --execute --read-current first to read both current EEF poses.")
+    return 0
+
+
+def load_arm_kdl_numerical():
+    try:
+        return importlib.import_module("mmk2_kdl_py").ArmKdlNumerical
+    except ModuleNotFoundError as exc:
+        missing_name = exc.name or "unknown"
+        if missing_name in {"mmk2_kdl_py", "casadi"}:
+            raise RuntimeError(
+                f"--ik-only requires '{missing_name}'. Activate the arm-hand-teleop "
+                "environment or install the missing IK dependency before running IK checks."
+            ) from exc
+        raise
+
+
 def run_ik_only(args: argparse.Namespace) -> int:
-    from mmk2_kdl_py import ArmKdlNumerical
+    ArmKdlNumerical = load_arm_kdl_numerical()
 
     seed_joints = (
         [float(value) for value in args.seed_joints]
@@ -523,7 +765,7 @@ def run_ik_only(args: argparse.Namespace) -> int:
 
     arm_kdl = ArmKdlNumerical(eef_type=args.eef_type)
     seed_pose = absolute_pose_from_matrix(arm_kdl.forward_kinematics(seed_joints))
-    target = target_pose_from_args(args, fallback_orientation=seed_pose)
+    target = bounded_target_pose_from_args(args, fallback_orientation=seed_pose)
     target_matrix = pose_matrix_from_xyz_rpy(target)
     candidates = collect_ik_candidates(arm_kdl, target_matrix, seed_joints)
 
@@ -562,6 +804,37 @@ def run_ik_only(args: argparse.Namespace) -> int:
     return 0 if candidates or numerical_solution is not None else 1
 
 
+def run_dual_ik_only(args: argparse.Namespace) -> int:
+    ArmKdlNumerical = load_arm_kdl_numerical()
+
+    arm_kdl = ArmKdlNumerical(eef_type=args.eef_type)
+    printed_any = False
+    for side in ("left", "right"):
+        seed_joints = load_reset_arm_joints(args.reset_poses_path, side)
+        seed_pose = absolute_pose_from_matrix(arm_kdl.forward_kinematics(seed_joints))
+        target = bounded_target_pose_from_side_args(args, side, fallback_pose=seed_pose)
+        if target is None:
+            continue
+        printed_any = True
+        target_matrix = pose_matrix_from_xyz_rpy(target)
+        candidates = collect_ik_candidates(arm_kdl, target_matrix, seed_joints)
+        print(f"\n{side.upper()} IK ONLY: no CAN connection and no arm movement.")
+        print_joint_vector(f"{side} seed arm joints", ARM_FEATURE_NAMES, seed_joints)
+        print_pose(f"{side} seed absolute EEF pose", seed_pose)
+        print_pose(f"{side} target absolute EEF pose", target)
+        if candidates:
+            ranked_candidates = rank_ik_candidates(candidates, seed_joints)
+            print_ik_candidates(
+                ranked_candidates if args.show_all_ik else ranked_candidates[:1],
+                seed_joints,
+            )
+        else:
+            print_ik_candidates(candidates, seed_joints)
+    if not printed_any:
+        raise ValueError("Dual IK-only requires at least one side target: --left-x/y/z or --right-x/y/z")
+    return 0
+
+
 def move_to_joint_target(
     robot,
     target_joints: Sequence[float],
@@ -580,6 +853,42 @@ def move_to_joint_target(
         if all(abs(target_value - current_value) <= tolerance for target_value, current_value in zip(target, current, strict=True)):
             return True
         robot.servo_joint_pos(target, vel=velocity, eff=effort)
+        time.sleep(interval)
+    return False
+
+
+def move_dual_to_joint_targets(
+    robot,
+    left_target_joints: Sequence[float],
+    right_target_joints: Sequence[float],
+    *,
+    timeout: float,
+    interval: float,
+    tolerance: float,
+    velocity: float,
+    effort: float,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    left_target = [float(value) for value in left_target_joints]
+    right_target = [float(value) for value in right_target_joints]
+    while time.monotonic() < deadline:
+        positions = robot.get_joint_pos()
+        left_current = positions["left"][0][: len(ARM_FEATURE_NAMES)]
+        right_current = positions["right"][0][: len(ARM_FEATURE_NAMES)]
+        left_arrived = all(
+            abs(target_value - current_value) <= tolerance
+            for target_value, current_value in zip(left_target, left_current, strict=True)
+        )
+        right_arrived = all(
+            abs(target_value - current_value) <= tolerance
+            for target_value, current_value in zip(right_target, right_current, strict=True)
+        )
+        if left_arrived and right_arrived:
+            return True
+        if not left_arrived:
+            robot.servo_joint_pos(robot.left_arm, left_target, vel=velocity, eff=effort)
+        if not right_arrived:
+            robot.servo_joint_pos(robot.right_arm, right_target, vel=velocity, eff=effort)
         time.sleep(interval)
     return False
 
@@ -614,6 +923,38 @@ def build_robot(args: argparse.Namespace):
     return PicoFollowerSingleArmAgibotO10(config)
 
 
+def build_dual_robot(args: argparse.Namespace):
+    from lerobot_play.robots.pico_follower_dual_arm_agibot_o10.airbot_pico_follower_dual_arm_agibot_o10 import (
+        PicoFollowerDualArmAgibotO10,
+    )
+    from lerobot_play.robots.pico_follower_dual_arm_agibot_o10.config_pico_follower_dual_arm_agibot_o10 import (
+        PicoFollowerDualArmAgibotO10Config,
+    )
+
+    reset_poses_path = str(Path(args.reset_poses_path).expanduser())
+    config = PicoFollowerDualArmAgibotO10Config(
+        left={
+            "port": args.left_port or default_dual_port("left"),
+            "handedness": "left",
+            "reset_poses_path": reset_poses_path,
+            "reset_gesture": args.reset_gesture,
+        },
+        right={
+            "port": args.right_port or default_dual_port("right"),
+            "handedness": "right",
+            "reset_poses_path": reset_poses_path,
+            "reset_gesture": args.reset_gesture,
+        },
+        enable_hand=args.enable_hand,
+        allow_camera_read_failures=True,
+        cameras={},
+        action_control_mode="eef_absolute",
+        hand_action_mode="dexterous_10d",
+        include_eef_pose=True,
+    )
+    return PicoFollowerDualArmAgibotO10(config)
+
+
 def run_execute(args: argparse.Namespace) -> int:
     robot = build_robot(args)
     port = args.port or default_port(args.hand)
@@ -636,7 +977,7 @@ def run_execute(args: argparse.Namespace) -> int:
             print("\nRead-only mode, no movement.")
             return 0
 
-        target = target_pose_from_args(args, fallback_orientation=current_pose)
+        target = bounded_target_pose_from_args(args, fallback_orientation=current_pose)
         if args.roll is None or args.pitch is None or args.yaw is None:
             print("\nMissing --roll/--pitch/--yaw values will preserve the current EEF orientation.")
         target_pose_matrix = pose_matrix_from_xyz_rpy(target)
@@ -694,19 +1035,169 @@ def run_execute(args: argparse.Namespace) -> int:
         robot.disconnect()
 
 
+def run_dual_execute(args: argparse.Namespace) -> int:
+    robot = build_dual_robot(args)
+    print(
+        "Connecting dual arm "
+        f"(left={args.left_port or default_dual_port('left')}, "
+        f"right={args.right_port or default_dual_port('right')})..."
+    )
+    robot.connect()
+    try:
+        perform_start_reset(robot, args)
+        positions = robot.get_joint_pos()
+        current: dict[str, dict[str, object]] = {}
+        for side in ("left", "right"):
+            arm_joints = positions[side][0][: len(ARM_FEATURE_NAMES)]
+            hand_joints = positions[side][1]
+            pose_matrix = robot.arm_kdl.forward_kinematics(arm_joints)
+            pose = absolute_pose_from_matrix(pose_matrix)
+            current[side] = {
+                "arm_joints": arm_joints,
+                "hand_joints": hand_joints,
+                "pose_matrix": pose_matrix,
+                "pose": pose,
+            }
+            print_joint_vector(f"{side} current arm joints", ARM_FEATURE_NAMES, arm_joints)
+            print_pose(f"{side} current absolute EEF pose", pose)
+            if args.enable_hand:
+                print_joint_vector(f"{side} current hand joints", HAND_FEATURE_NAMES, hand_joints)
+
+        if args.read_current:
+            print("\nRead-only dual mode, no movement.")
+            return 0
+
+        left_target = bounded_target_pose_from_side_args(args, "left", fallback_pose=current["left"]["pose"])
+        right_target = bounded_target_pose_from_side_args(args, "right", fallback_pose=current["right"]["pose"])
+        if left_target is None and right_target is None:
+            raise ValueError("Dual execute requires at least one side target: --left-x/y/z or --right-x/y/z")
+        if left_target is None:
+            left_target = current["left"]["pose"]
+        if right_target is None:
+            right_target = current["right"]["pose"]
+
+        left_target_matrix = pose_matrix_from_xyz_rpy(left_target)
+        right_target_matrix = pose_matrix_from_xyz_rpy(right_target)
+        validate_target_distance(current["left"]["pose_matrix"], left_target_matrix, args.max_distance)
+        validate_target_distance(current["right"]["pose_matrix"], right_target_matrix, args.max_distance)
+        left_waypoints = interpolate_pose_matrices(
+            current["left"]["pose_matrix"],
+            left_target_matrix,
+            args.max_step_distance,
+        )
+        right_waypoints = interpolate_pose_matrices(
+            current["right"]["pose_matrix"],
+            right_target_matrix,
+            args.max_step_distance,
+        )
+        waypoint_count = max(len(left_waypoints), len(right_waypoints))
+        if waypoint_count <= 0:
+            raise RuntimeError("No dual-arm waypoints were generated")
+        if len(left_waypoints) < waypoint_count:
+            left_waypoints.extend([left_waypoints[-1]] * (waypoint_count - len(left_waypoints)))
+        if len(right_waypoints) < waypoint_count:
+            right_waypoints.extend([right_waypoints[-1]] * (waypoint_count - len(right_waypoints)))
+
+        print_pose("left target absolute EEF pose", left_target)
+        print_pose("right target absolute EEF pose", right_target)
+        print(f"\nMoving dual arm through {waypoint_count} absolute EEF waypoint(s)...")
+
+        left_seed = current["left"]["arm_joints"]
+        right_seed = current["right"]["arm_joints"]
+        arrived = True
+        for index, (left_waypoint, right_waypoint) in enumerate(zip(left_waypoints, right_waypoints, strict=True), start=1):
+            left_pose = absolute_pose_from_matrix(left_waypoint)
+            right_pose = absolute_pose_from_matrix(right_waypoint)
+            left_joints = solve_ik(robot.arm_kdl, left_waypoint, left_seed)
+            right_joints = solve_ik(robot.arm_kdl, right_waypoint, right_seed)
+            validate_joint_delta(left_seed, left_joints, args.max_joint_delta)
+            validate_joint_delta(right_seed, right_joints, args.max_joint_delta)
+            print_pose(f"left waypoint {index}/{waypoint_count}", left_pose)
+            print_joint_vector(f"left waypoint {index}/{waypoint_count} IK joints", ARM_FEATURE_NAMES, left_joints)
+            print_pose(f"right waypoint {index}/{waypoint_count}", right_pose)
+            print_joint_vector(f"right waypoint {index}/{waypoint_count} IK joints", ARM_FEATURE_NAMES, right_joints)
+
+            returned_action = robot.send_action(build_dual_eef_absolute_action(
+                left_pose,
+                right_pose,
+                current["left"]["hand_joints"],
+                current["right"]["hand_joints"],
+            ))
+            print(f"  sent dual eef_absolute action with {len(returned_action)} features")
+            waypoint_arrived = move_dual_to_joint_targets(
+                robot,
+                left_joints,
+                right_joints,
+                timeout=args.timeout,
+                interval=args.interval,
+                tolerance=args.tolerance,
+                velocity=args.velocity,
+                effort=args.effort,
+            )
+            if not waypoint_arrived:
+                arrived = False
+                print(f"\nWaypoint {index}/{waypoint_count} did not arrive within tolerance.")
+                break
+            positions = robot.get_joint_pos()
+            left_seed = positions["left"][0][: len(ARM_FEATURE_NAMES)]
+            right_seed = positions["right"][0][: len(ARM_FEATURE_NAMES)]
+
+        final_positions = robot.get_joint_pos()
+        for side in ("left", "right"):
+            final_joints = final_positions[side][0][: len(ARM_FEATURE_NAMES)]
+            final_pose = absolute_pose_from_matrix(robot.arm_kdl.forward_kinematics(final_joints))
+            print_joint_vector(f"{side} final arm joints", ARM_FEATURE_NAMES, final_joints)
+            print_pose(f"{side} final absolute EEF pose", final_pose)
+        print(f"\nDual command sent: {arrived}")
+
+        if args.return_zero:
+            print("\nReturning both arms to configured reset pose...")
+            robot.return_zero()
+        return 0 if arrived else 1
+    finally:
+        print("\nDisconnecting dual arm...")
+        robot.disconnect()
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Test O10 absolute EEF pose control")
+    parser.add_argument("--mode", choices=("single", "dual"), default="single", help="single keeps the original one-arm flow; dual targets both O10 arms")
     parser.add_argument("--hand", choices=("left", "right"), default="right")
     parser.add_argument("--port", help="CAN port; defaults to can0 for left, can1 for right")
+    parser.add_argument("--left-port", help="Dual-arm left CAN port; defaults to can0")
+    parser.add_argument("--right-port", help="Dual-arm right CAN port; defaults to can1")
     parser.add_argument("--x", type=float, help="Absolute EEF x in robot base frame, meters")
     parser.add_argument("--y", type=float, help="Absolute EEF y in robot base frame, meters")
     parser.add_argument("--z", type=float, help="Absolute EEF z in robot base frame, meters")
     parser.add_argument("--roll", type=float, help="Absolute EEF roll in radians; omitted keeps current/seed roll")
     parser.add_argument("--pitch", type=float, help="Absolute EEF pitch in radians; omitted keeps current/seed pitch")
     parser.add_argument("--yaw", type=float, help="Absolute EEF yaw in radians; omitted keeps current/seed yaw")
+    for side in ("left", "right"):
+        parser.add_argument(f"--{side}-x", type=float, help=f"Dual-arm {side} absolute EEF x in meters")
+        parser.add_argument(f"--{side}-y", type=float, help=f"Dual-arm {side} absolute EEF y in meters")
+        parser.add_argument(f"--{side}-z", type=float, help=f"Dual-arm {side} absolute EEF z in meters")
+        parser.add_argument(f"--{side}-roll", type=float, help=f"Dual-arm {side} absolute EEF roll in radians")
+        parser.add_argument(f"--{side}-pitch", type=float, help=f"Dual-arm {side} absolute EEF pitch in radians")
+        parser.add_argument(f"--{side}-yaw", type=float, help=f"Dual-arm {side} absolute EEF yaw in radians")
     parser.add_argument("--max-distance", type=float, default=0.30, help="Max total target distance from current EEF pose")
     parser.add_argument("--max-step-distance", type=float, default=0.02, help="Max interpolated waypoint distance")
     parser.add_argument("--max-joint-delta", type=float, default=0.50, help="Max IK change for any one joint")
+    parser.add_argument(
+        "--eef-bounds-min",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=DEFAULT_EEF_BOUNDS_MIN,
+        help="Minimum allowed absolute EEF xyz; target xyz is clipped like LeRobot EEBoundsAndSafety",
+    )
+    parser.add_argument(
+        "--eef-bounds-max",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=DEFAULT_EEF_BOUNDS_MAX,
+        help="Maximum allowed absolute EEF xyz; target xyz is clipped like LeRobot EEBoundsAndSafety",
+    )
     parser.add_argument("--timeout", type=float, default=8.0, help="Move timeout in seconds")
     parser.add_argument("--interval", type=float, default=0.02, help="Seconds between PVT sends")
     parser.add_argument("--tolerance", type=float, default=0.02, help="Joint arrival tolerance in radians")
@@ -745,12 +1236,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("--read-current needs --execute because it must query the real arm.")
         return 2
     try:
+        if args.mode == "dual":
+            if args.ik_only:
+                return run_dual_ik_only(args)
+            if args.execute:
+                return run_dual_execute(args)
+            return run_dual_dry_run(args)
         if args.ik_only:
             return run_ik_only(args)
         if args.execute:
             return run_execute(args)
         return run_dry_run(args)
-    except ValueError as exc:
+    except (RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2
 
@@ -803,12 +1300,79 @@ def test_interpolate_pose_matrices_splits_translation_into_safe_steps() -> None:
     assert np.allclose(waypoints[-1][:3, :3], target[:3, :3])
 
 
+def test_parse_eef_bounds_rejects_invalid_min_max() -> None:
+    args = parse_args(["--x", "0.1", "--y", "0.0", "--z", "0.2", "--eef-bounds-min", "0", "0", "0", "--eef-bounds-max", "0", "1", "1"])
+
+    try:
+        eef_bounds_from_args(args)
+    except ValueError as exc:
+        assert "must be less than" in str(exc)
+    else:
+        raise AssertionError("Expected invalid EEF bounds to be rejected")
+
+
+def test_apply_eef_bounds_clamps_translation_like_lerobot() -> None:
+    bounds = EefBounds(minimum=(0.0, -0.2, 0.1), maximum=(0.5, 0.2, 0.4))
+    pose = AbsolutePose(x=0.8, y=-0.5, z=0.2, roll=0.1, pitch=0.2, yaw=0.3)
+
+    clipped, was_clipped = apply_eef_bounds(pose, bounds)
+
+    assert was_clipped
+    assert clipped == AbsolutePose(x=0.5, y=-0.2, z=0.2, roll=0.1, pitch=0.2, yaw=0.3)
+
+
+def test_run_dry_run_reports_eef_bounds_clamp(capsys) -> None:
+    args = parse_args([
+        "--x",
+        "0.8",
+        "--y",
+        "0.0",
+        "--z",
+        "0.2",
+        "--eef-bounds-min",
+        "0",
+        "-0.2",
+        "0.1",
+        "--eef-bounds-max",
+        "0.5",
+        "0.2",
+        "0.4",
+    ])
+
+    assert run_dry_run(args) == 0
+
+    output = capsys.readouterr().out
+    assert "Clipped target absolute EEF pose to workspace bounds" in output
+    assert "pose.x: +0.500000" in output
+
+
 class _FakeResetRobot:
     def __init__(self) -> None:
         self.reset_calls = 0
 
     def return_zero(self) -> None:
         self.reset_calls += 1
+
+
+class _FakeDualMoveRobot:
+    def __init__(self) -> None:
+        self.left_arm = object()
+        self.right_arm = object()
+        self.calls: list[tuple[object, list[float]]] = []
+        self.positions = {
+            "left": [[0.0] * len(ARM_FEATURE_NAMES), []],
+            "right": [[0.0] * len(ARM_FEATURE_NAMES), []],
+        }
+
+    def get_joint_pos(self):
+        return self.positions
+
+    def servo_joint_pos(self, arm, joints, vel=3.0, eff=8.0):
+        self.calls.append((arm, list(joints)))
+        if arm is self.left_arm:
+            self.positions["left"][0] = list(joints)
+        if arm is self.right_arm:
+            self.positions["right"][0] = list(joints)
 
 
 class _FakeMultiSolutionKdl:
@@ -978,6 +1542,21 @@ def test_run_ik_only_can_print_numerical_solution(monkeypatch, capsys) -> None:
     assert _FakeNumericalIkKdl.numerical_calls
 
 
+def test_main_reports_missing_casadi_for_ik_only(monkeypatch, capsys) -> None:
+    class _MissingCasadiModule:
+        def __getattr__(self, name: str):
+            if name == "ArmKdlNumerical":
+                raise ModuleNotFoundError("No module named 'casadi'", name="casadi")
+            raise AttributeError(name)
+
+    monkeypatch.setitem(sys.modules, "mmk2_kdl_py", _MissingCasadiModule())
+
+    status = main(["--hand", "right", "--x", "0.12", "--y", "0.0", "--z", "0.22", "--ik-only"])
+
+    assert status == 2
+    assert "--ik-only requires 'casadi'" in capsys.readouterr().out
+
+
 def test_parse_args_accepts_local_ik_method_for_execute() -> None:
     args = parse_args(
         [
@@ -1073,6 +1652,100 @@ def test_target_pose_from_args_allows_explicit_orientation_override() -> None:
     target = target_pose_from_args(args, fallback_orientation=fallback)
 
     assert target == AbsolutePose(x=0.12, y=0.0, z=0.22, roll=0.1, pitch=-0.2, yaw=0.7)
+
+
+def test_parse_args_accepts_dual_mode_with_per_side_targets() -> None:
+    args = parse_args(
+        [
+            "--mode",
+            "dual",
+            "--left-x",
+            "0.12",
+            "--left-y",
+            "0.03",
+            "--left-z",
+            "0.25",
+            "--right-x",
+            "0.10",
+            "--right-y",
+            "-0.03",
+            "--right-z",
+            "0.24",
+        ]
+    )
+
+    assert args.mode == "dual"
+    assert args.left_x == 0.12
+    assert args.right_y == -0.03
+
+
+def test_target_pose_from_side_args_preserves_fallback_orientation() -> None:
+    args = parse_args(
+        [
+            "--mode",
+            "dual",
+            "--left-x",
+            "0.12",
+            "--left-y",
+            "0.03",
+            "--left-z",
+            "0.25",
+            "--left-yaw",
+            "0.8",
+        ]
+    )
+    fallback = AbsolutePose(x=1.0, y=2.0, z=3.0, roll=0.1, pitch=-0.2, yaw=0.3)
+
+    target = target_pose_from_side_args(args, "left", fallback_pose=fallback)
+
+    assert target == AbsolutePose(x=0.12, y=0.03, z=0.25, roll=0.1, pitch=-0.2, yaw=0.8)
+
+
+def test_target_pose_from_side_args_returns_none_when_side_target_omitted() -> None:
+    args = parse_args(["--mode", "dual", "--left-x", "0.12", "--left-y", "0.0", "--left-z", "0.22"])
+
+    assert target_pose_from_side_args(args, "right") is None
+
+
+def test_build_dual_eef_absolute_action_uses_prefixed_pose_and_hand_features() -> None:
+    left_pose = AbsolutePose(x=0.12, y=0.03, z=0.25, roll=0.1, pitch=0.2, yaw=0.3)
+    right_pose = AbsolutePose(x=0.10, y=-0.03, z=0.24, roll=-0.1, pitch=-0.2, yaw=-0.3)
+    left_hand = [float(index) for index in range(len(HAND_FEATURE_NAMES))]
+    right_hand = [float(index + 10) for index in range(len(HAND_FEATURE_NAMES))]
+
+    action = build_dual_eef_absolute_action(left_pose, right_pose, left_hand, right_hand)
+
+    assert list(action) == [
+        *(f"left.{name}" for name in ("pose.x", "pose.y", "pose.z", "quaternion.qx", "quaternion.qy", "quaternion.qz", "quaternion.qw")),
+        *(f"left.{name}" for name in HAND_FEATURE_NAMES),
+        *(f"right.{name}" for name in ("pose.x", "pose.y", "pose.z", "quaternion.qx", "quaternion.qy", "quaternion.qz", "quaternion.qw")),
+        *(f"right.{name}" for name in HAND_FEATURE_NAMES),
+    ]
+    assert action["left.pose.x"] == 0.12
+    assert action["right.pose.y"] == -0.03
+    assert [action[f"left.{name}"] for name in HAND_FEATURE_NAMES] == left_hand
+    assert [action[f"right.{name}"] for name in HAND_FEATURE_NAMES] == right_hand
+
+
+def test_move_dual_to_joint_targets_sends_each_side_until_arrived() -> None:
+    robot = _FakeDualMoveRobot()
+    left_target = [0.1, 0.0, 0.0, 0.0, 0.0, 0.0]
+    right_target = [0.0, -0.1, 0.0, 0.0, 0.0, 0.0]
+
+    arrived = move_dual_to_joint_targets(
+        robot,
+        left_target,
+        right_target,
+        timeout=0.1,
+        interval=0.0,
+        tolerance=1e-6,
+        velocity=0.5,
+        effort=4.0,
+    )
+
+    assert arrived
+    assert (robot.left_arm, left_target) in robot.calls
+    assert (robot.right_arm, right_target) in robot.calls
 
 
 def test_validate_joint_delta_reports_per_joint_deltas() -> None:

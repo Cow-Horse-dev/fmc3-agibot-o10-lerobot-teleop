@@ -27,8 +27,9 @@ class PicoFollowerDualArmAgibotO10Config(RobotConfig):
     enable_hand: bool = True
     allow_camera_read_failures: bool = False
     camera_read_timeout_ms: int = 200
+    reset_timeout_s: float = 8.0
     include_eef_pose: bool = True
-    action_control_mode: str = "joint"  # "joint" or "eef_delta"
+    action_control_mode: str = "joint"  # "joint", "eef_delta", or "eef_absolute"
     hand_action_mode: str = "dexterous_10d"  # "dexterous_10d" or "gripper_1d"
     tactile_mode: str = "none"  # "none" or "130d"
     disable_torque_on_disconnect: bool = True

@@ -14,7 +14,7 @@
 # - handedness/controller_side: left, right；wrist_pose_source: auto, left, right；vr_device: pico, pico_wrist。
 # - enable_hand/include_eef_pose/display_data/auto_name_from_task_date/video/mcap/is_ssh/use_depth: true, false。
 # - hand_mode: glove, trigger_gesture；trigger_gesture/reset_gesture: pinch, tripod, cylindrical。
-# - action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
 # - tactile_mode: none, 130d；channel_mode: multiChannel。
 # - channel_id: null 或整数，null 自动 left->0、right->1。
 # - reset_poses_path/root/index_or_path/serial_number_or_name: 路径或设备名字符串。
@@ -29,7 +29,7 @@
 # - robot.handedness: 当前录制的物理手/臂方向。
 # - robot.enable_hand: 是否连接并录制 O10 手。
 # - robot.include_eef_pose: 是否把末端位姿额外加入 observation.state；必须与训练/推理一致。
-# - robot.action_control_mode: joint 录关节目标；eef_delta 录末端增量。
+# - robot.action_control_mode: joint 录关节目标；eef_delta 录末端增量；eef_absolute 录绝对末端位姿。
 # - robot.tactile_mode: 触觉特征维度；none/130d 必须与训练一致。
 # - robot.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
 # - robot.device_id / canfd_id / channel_id: OmniHand 设备、适配器和通道编号。
@@ -76,7 +76,7 @@ robot:
   handedness: left
   enable_hand: true
   include_eef_pose: false
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
   tactile_mode: "none"  # 也决定数据集 root 子目录 (none -> without_tactile, 其他 -> with_tactile)
 
   # O10 手通道模式。
@@ -142,7 +142,7 @@ teleop:
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: pinch  # pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。

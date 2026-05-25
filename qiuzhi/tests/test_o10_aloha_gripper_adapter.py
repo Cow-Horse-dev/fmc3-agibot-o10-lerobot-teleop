@@ -159,6 +159,15 @@ def _load_dual_teleop_module(monkeypatch):
                 *(f"right.{name}" for name in agibot_o10.AGIBOT_O10_HAND_FEATURE_NAMES),
             ]
         ),
+        DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES=tuple(f"eef_absolute_{index}" for index in range(34)),
+        DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES=tuple(
+            [
+                *(f"left.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES),
+                *(f"left.{name}" for name in agibot_o10.AGIBOT_O10_GRIPPER_FEATURE_NAMES),
+                *(f"right.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES),
+                *(f"right.{name}" for name in agibot_o10.AGIBOT_O10_GRIPPER_FEATURE_NAMES),
+            ]
+        ),
         DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES=tuple(f"eef_{index}" for index in range(32)),
         DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES=tuple(_expected_dual_aloha_feature_names()),
         DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES=tuple(

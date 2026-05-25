@@ -164,9 +164,11 @@ def test_dual_record_yaml_has_dataset_section():
     assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
     assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["camera_read_timeout_ms"] == 35
+    assert config["robot"]["reset_timeout_s"] == 8.0
     assert config["robot"]["include_eef_pose"] is False
     assert config["robot"]["action_control_mode"] == "joint"
     assert config["robot"]["tactile_mode"] == "none"
+    assert config["dataset"]["num_image_writer_max_queue_size"] == 180
 
 
 def test_dual_infer_yaml_uses_gripper_state_without_eef_pose():
@@ -236,6 +238,7 @@ def test_dual_pi05_fullft_infer_yaml_uses_async_rtc_schema():
     assert config["robot"]["tactile_mode"] == "none"
     assert config["robot"]["allow_camera_read_failures"] is True
     assert config["robot"]["camera_read_timeout_ms"] == 35
+    assert config["robot"]["reset_timeout_s"] == 8.0
     assert set(config["robot"]["cameras"]) == {"top", "left_wrist", "right_wrist"}
     assert config["robot"]["left"]["gripper_gesture"] == "cylindrical_straight"
     assert config["robot"]["right"]["gripper_gesture"] == "cylindrical_straight"

@@ -111,6 +111,10 @@ def test_create_dataset_uses_dataset_root_directly(tmp_path, monkeypatch):
     assert captured["root"] == str(dataset_root)
 
 
+def test_sync_inference_uses_project_record_loop():
+    assert infer_module.record_loop.__module__ == "lerobot_play.utils.lerobot_record"
+
+
 def test_validate_model_path_expands_user_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -1570,6 +1574,18 @@ def test_async_robot_client_clear_action_queue_advances_stale_action_watermark()
     assert client.action_queue_size == []
     assert client.action_queue.qsize() == 1
     assert client.action_queue.get_nowait().get_timestep() == 61
+
+
+def test_async_robot_client_ready_to_send_observation_before_first_chunk():
+    from lerobot_play.async_inference.robot_client import RobotClient
+
+    client = object.__new__(RobotClient)
+    client.action_queue = Queue()
+    client.action_queue_lock = threading.Lock()
+    client.action_chunk_size = -1
+    client._chunk_size_threshold = 0.5
+
+    assert client._ready_to_send_observation() is True
 
 
 def test_lerobot_play_async_policy_server_loads_policy_through_project_loader(monkeypatch):

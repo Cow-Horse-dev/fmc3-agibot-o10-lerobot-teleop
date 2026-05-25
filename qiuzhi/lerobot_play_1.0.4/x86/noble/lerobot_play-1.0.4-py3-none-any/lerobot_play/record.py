@@ -230,6 +230,12 @@ def _parse_cli_args() -> argparse.Namespace:
         default=0,
     )
     parser.add_argument(
+        "--dataset.num_image_writer_max_queue_size",
+        dest="num_image_writer_max_queue_size",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
         "--dataset.video_encoding_batch_size",
         dest="video_batch_size",
         type=int,
@@ -411,6 +417,7 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "is_ssh": cli.use_ssh,
             "num_image_writer_threads_per_camera": cli.num_threads,
             "num_image_writer_processes": cli.num_processes,
+            "num_image_writer_max_queue_size": cli.num_image_writer_max_queue_size,
             "video_encoding_batch_size": cli.video_batch_size,
         },
     }
@@ -983,6 +990,9 @@ def main():
                 cfg["dataset"].get("num_image_writer_threads_per_camera", 4)
             )
             * max(1, len(getattr(robot, "cameras", {}))),
+            image_writer_max_queue_size=int(
+                cfg["dataset"].get("num_image_writer_max_queue_size", 0)
+            ),
             batch_encoding_size=int(cfg["dataset"].get("video_encoding_batch_size", 1)),
             online_encoding=bool(cfg["dataset"].get("online_encoding", False)),
         )

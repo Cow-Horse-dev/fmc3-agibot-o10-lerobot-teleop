@@ -12,6 +12,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
+import numpy as np
+
 
 AGIBOT_O10_HAND_FEATURE_NAMES = (
     "thumb_cm_roll.pos",
@@ -45,7 +47,7 @@ AGIBOT_O10_EEF_DELTA_FEATURE_NAMES = (
     "delta_orientation.yaw",
 )
 AGIBOT_O10_GRIPPER_FEATURE_NAMES = ("gripper.pos",)
-AGIBOT_O10_ACTION_CONTROL_MODES = ("joint", "eef_delta")
+AGIBOT_O10_ACTION_CONTROL_MODES = ("joint", "eef_delta", "eef_absolute")
 AGIBOT_O10_HAND_ACTION_MODES = ("dexterous_10d", "gripper_1d")
 
 AGIBOT_O10_TRIGGER_GESTURES = {
@@ -505,6 +507,20 @@ def agibot_o10_eef_delta_gripper_action_feature_types() -> dict[str, type]:
     }
 
 
+def agibot_o10_eef_absolute_action_feature_types() -> dict[str, type]:
+    return {
+        **{name: float for name in AGIBOT_O10_POSE_FEATURE_NAMES},
+        **agibot_o10_hand_feature_types(),
+    }
+
+
+def agibot_o10_eef_absolute_gripper_action_feature_types() -> dict[str, type]:
+    return {
+        **{name: float for name in AGIBOT_O10_POSE_FEATURE_NAMES},
+        **agibot_o10_gripper_feature_types(),
+    }
+
+
 def agibot_o10_action_feature_types() -> dict[str, type]:
     return {
         **agibot_o10_joint_action_feature_types(),
@@ -600,6 +616,276 @@ def build_agibot_o10_eef_delta_gripper_action_dict(values: Sequence[float]) -> d
             feature_name: float(values[delta_count + index])
             for index, feature_name in enumerate(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
         },
+    }
+
+
+def build_agibot_o10_eef_absolute_action_dict(values: Sequence[float]) -> dict[str, float]:
+    expected_value_count = len(AGIBOT_O10_POSE_FEATURE_NAMES) + len(AGIBOT_O10_HAND_FEATURE_NAMES)
+    if len(values) != expected_value_count:
+        raise ValueError(
+            "Agibot O10 eef_absolute action must contain "
+            f"{expected_value_count} values, got {len(values)}"
+        )
+
+    pose_count = len(AGIBOT_O10_POSE_FEATURE_NAMES)
+    return {
+        **{
+            feature_name: float(values[index])
+            for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES)
+        },
+        **{
+            feature_name: float(values[pose_count + index])
+            for index, feature_name in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES)
+        },
+    }
+
+
+def build_agibot_o10_eef_absolute_gripper_action_dict(values: Sequence[float]) -> dict[str, float]:
+    expected_value_count = len(AGIBOT_O10_POSE_FEATURE_NAMES) + len(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+    if len(values) != expected_value_count:
+        raise ValueError(
+            "Agibot O10 eef_absolute gripper action must contain "
+            f"{expected_value_count} values, got {len(values)}"
+        )
+
+    pose_count = len(AGIBOT_O10_POSE_FEATURE_NAMES)
+    return {
+        **{
+            feature_name: float(values[index])
+            for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES)
+        },
+        **{
+            feature_name: float(values[pose_count + index])
+            for index, feature_name in enumerate(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+        },
+    }
+
+
+def _coerce_named_values(
+    values: Mapping[str, object] | Sequence[object],
+    feature_names: Sequence[str],
+    label: str,
+) -> list[float]:
+    if isinstance(values, Mapping):
+        missing = [name for name in feature_names if name not in values]
+        if missing:
+            raise ValueError(f"{label} is missing required feature(s): {', '.join(missing)}")
+        return [float(values[name]) for name in feature_names]
+
+    result = [float(value) for value in values]
+    if len(result) != len(feature_names):
+        raise ValueError(
+            f"Expected {len(feature_names)} {label} values, got {len(result)}"
+        )
+    return result
+
+
+def _rotation_matrix_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ],
+        dtype=float,
+    )
+
+
+def _rpy_from_rotation_matrix(rotation: np.ndarray) -> list[float]:
+    sy = np.sqrt(rotation[0, 0] * rotation[0, 0] + rotation[1, 0] * rotation[1, 0])
+    singular = sy < 1e-6
+    if not singular:
+        roll = np.arctan2(rotation[2, 1], rotation[2, 2])
+        pitch = np.arctan2(-rotation[2, 0], sy)
+        yaw = np.arctan2(rotation[1, 0], rotation[0, 0])
+    else:
+        roll = np.arctan2(-rotation[1, 2], rotation[1, 1])
+        pitch = np.arctan2(-rotation[2, 0], sy)
+        yaw = 0.0
+    return [float(roll), float(pitch), float(yaw)]
+
+
+def _quaternion_from_rotation_matrix(rotation: np.ndarray) -> list[float]:
+    rotation = np.asarray(rotation, dtype=float)
+    if rotation.shape != (3, 3):
+        raise ValueError(f"Expected 3x3 rotation matrix, got shape {rotation.shape}")
+    if not np.allclose(rotation @ rotation.T, np.eye(3), atol=1e-6):
+        raise ValueError("Agibot O10 pose rotation matrix is not orthonormal.")
+
+    quaternion = np.zeros(4, dtype=float)
+    trace = np.trace(rotation)
+    if trace > 0:
+        scalar = np.sqrt(trace + 1.0) * 2
+        quaternion[3] = 0.25 * scalar
+        quaternion[0] = (rotation[2, 1] - rotation[1, 2]) / scalar
+        quaternion[1] = (rotation[0, 2] - rotation[2, 0]) / scalar
+        quaternion[2] = (rotation[1, 0] - rotation[0, 1]) / scalar
+    elif rotation[0, 0] > rotation[1, 1] and rotation[0, 0] > rotation[2, 2]:
+        scalar = np.sqrt(1.0 + rotation[0, 0] - rotation[1, 1] - rotation[2, 2]) * 2
+        quaternion[3] = (rotation[2, 1] - rotation[1, 2]) / scalar
+        quaternion[0] = 0.25 * scalar
+        quaternion[1] = (rotation[0, 1] + rotation[1, 0]) / scalar
+        quaternion[2] = (rotation[0, 2] + rotation[2, 0]) / scalar
+    elif rotation[1, 1] > rotation[2, 2]:
+        scalar = np.sqrt(1.0 + rotation[1, 1] - rotation[0, 0] - rotation[2, 2]) * 2
+        quaternion[3] = (rotation[0, 2] - rotation[2, 0]) / scalar
+        quaternion[0] = (rotation[0, 1] + rotation[1, 0]) / scalar
+        quaternion[1] = 0.25 * scalar
+        quaternion[2] = (rotation[1, 2] + rotation[2, 1]) / scalar
+    else:
+        scalar = np.sqrt(1.0 + rotation[2, 2] - rotation[0, 0] - rotation[1, 1]) * 2
+        quaternion[3] = (rotation[1, 0] - rotation[0, 1]) / scalar
+        quaternion[0] = (rotation[0, 2] + rotation[2, 0]) / scalar
+        quaternion[1] = (rotation[1, 2] + rotation[2, 1]) / scalar
+        quaternion[2] = 0.25 * scalar
+
+    norm = float(np.linalg.norm(quaternion))
+    if norm <= 1e-8:
+        raise ValueError("Agibot O10 pose rotation matrix produced a zero quaternion.")
+    return [float(value) for value in quaternion / norm]
+
+
+def agibot_o10_eef_absolute_pose_to_matrix(
+    eef_pose: Mapping[str, object] | Sequence[object],
+) -> np.ndarray:
+    pose_values = _coerce_named_values(
+        eef_pose,
+        AGIBOT_O10_POSE_FEATURE_NAMES,
+        "eef_absolute pose",
+    )
+    qx, qy, qz, qw = pose_values[3:7]
+    norm = float(np.linalg.norm([qx, qy, qz, qw]))
+    if norm <= 1e-8:
+        raise ValueError("Agibot O10 eef_absolute quaternion norm is zero.")
+    qx, qy, qz, qw = (qx / norm, qy / norm, qz / norm, qw / norm)
+    target_pose = np.eye(4, dtype=float)
+    target_pose[:3, 3] = np.array(pose_values[:3], dtype=float)
+    target_pose[:3, :3] = np.array(
+        [
+            [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+            [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+            [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)],
+        ],
+        dtype=float,
+    )
+    return target_pose
+
+
+def agibot_o10_pose_matrix_to_eef_absolute_pose(
+    matrix: Sequence[Sequence[float]] | np.ndarray,
+) -> dict[str, float]:
+    pose_matrix = np.asarray(matrix, dtype=float)
+    if pose_matrix.shape != (4, 4):
+        raise ValueError(f"Expected 4x4 pose matrix, got shape {pose_matrix.shape}")
+    pose_values = [
+        *[float(value) for value in pose_matrix[:3, 3]],
+        *_quaternion_from_rotation_matrix(pose_matrix[:3, :3]),
+    ]
+    return {
+        feature_name: pose_values[index]
+        for index, feature_name in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES)
+    }
+
+
+def agibot_o10_two_absolute_poses_to_eef_delta(
+    previous_pose: Mapping[str, object] | Sequence[object],
+    current_pose: Mapping[str, object] | Sequence[object],
+) -> dict[str, float]:
+    previous_matrix = agibot_o10_eef_absolute_pose_to_matrix(previous_pose)
+    current_matrix = agibot_o10_eef_absolute_pose_to_matrix(current_pose)
+    delta_values = [
+        *[float(value) for value in current_matrix[:3, 3] - previous_matrix[:3, 3]],
+        *_rpy_from_rotation_matrix(previous_matrix[:3, :3].T @ current_matrix[:3, :3]),
+    ]
+    return {
+        feature_name: delta_values[index]
+        for index, feature_name in enumerate(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES)
+    }
+
+
+def agibot_o10_eef_delta_to_absolute_pose(
+    previous_pose: Mapping[str, object] | Sequence[object],
+    eef_delta: Mapping[str, object] | Sequence[object],
+) -> dict[str, float]:
+    previous_matrix = agibot_o10_eef_absolute_pose_to_matrix(previous_pose)
+    delta_values = _coerce_named_values(
+        eef_delta,
+        AGIBOT_O10_EEF_DELTA_FEATURE_NAMES,
+        "eef_delta",
+    )
+    target_matrix = np.array(previous_matrix, dtype=float, copy=True)
+    target_matrix[:3, 3] += np.array(delta_values[:3], dtype=float)
+    target_matrix[:3, :3] = (
+        target_matrix[:3, :3] @ _rotation_matrix_from_rpy(*delta_values[3:6])
+    )
+    return agibot_o10_pose_matrix_to_eef_absolute_pose(target_matrix)
+
+
+def _solve_agibot_o10_ik_offline(
+    arm_kdl: object,
+    target_pose: np.ndarray,
+    seed_joints: Sequence[float],
+) -> list[float]:
+    seed = [float(value) for value in seed_joints]
+    if len(seed) != len(AGIBOT_O10_ARM_FEATURE_NAMES):
+        raise ValueError(
+            f"Expected {len(AGIBOT_O10_ARM_FEATURE_NAMES)} seed joints, got {len(seed)}"
+        )
+
+    try:
+        result = arm_kdl.inverse_kinematics(target_pose, seed, force_calculate=True)
+    except TypeError:
+        result = arm_kdl.inverse_kinematics(target_pose, seed)
+    if len(result) == 0:
+        raise RuntimeError("Agibot O10 eef_absolute IK failed.")
+    joints = [float(value) for value in result[0][: len(AGIBOT_O10_ARM_FEATURE_NAMES)]]
+    if len(joints) != len(AGIBOT_O10_ARM_FEATURE_NAMES):
+        raise ValueError(
+            "Agibot O10 eef_absolute IK returned "
+            f"{len(joints)} joints, expected {len(AGIBOT_O10_ARM_FEATURE_NAMES)}"
+        )
+    return joints
+
+
+def agibot_o10_joint_action_to_eef_absolute_gripper_action(
+    joint_action: Mapping[str, object] | Sequence[object],
+    arm_kdl: object,
+) -> dict[str, float]:
+    action_values = _coerce_named_values(
+        joint_action,
+        (*AGIBOT_O10_ARM_FEATURE_NAMES, *AGIBOT_O10_GRIPPER_FEATURE_NAMES),
+        "joint gripper action",
+    )
+    arm_joint_count = len(AGIBOT_O10_ARM_FEATURE_NAMES)
+    pose_matrix = arm_kdl.forward_kinematics(action_values[:arm_joint_count])
+    return {
+        **agibot_o10_pose_matrix_to_eef_absolute_pose(pose_matrix),
+        AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]: float(action_values[arm_joint_count]),
+    }
+
+
+def agibot_o10_resolve_eef_absolute_gripper_action_to_joints(
+    eef_action: Mapping[str, object] | Sequence[object],
+    arm_kdl: object,
+    seed_joints: Sequence[float],
+) -> dict[str, float]:
+    action_values = _coerce_named_values(
+        eef_action,
+        (*AGIBOT_O10_POSE_FEATURE_NAMES, *AGIBOT_O10_GRIPPER_FEATURE_NAMES),
+        "eef_absolute gripper action",
+    )
+    pose_count = len(AGIBOT_O10_POSE_FEATURE_NAMES)
+    target_pose = agibot_o10_eef_absolute_pose_to_matrix(action_values[:pose_count])
+    joints = _solve_agibot_o10_ik_offline(arm_kdl, target_pose, seed_joints)
+    return {
+        **{
+            feature_name: joints[index]
+            for index, feature_name in enumerate(AGIBOT_O10_ARM_FEATURE_NAMES)
+        },
+        AGIBOT_O10_GRIPPER_FEATURE_NAMES[0]: float(action_values[pose_count]),
     }
 
 

@@ -9,6 +9,13 @@ Teleoperation, data collection, replay, and policy inference stack for AGIBOT O1
 headset for arms and Udexreal gloves for hands. Built on the vendored `lerobot_play`
 package. Supports single-arm (left or right) and dual-arm configurations.
 
+## External LeRobot Reference
+
+The local LeRobot source checkout is at `/home/phl/workspace/lerobot-versions/lerobot`.
+When asked to reference, compare, or borrow LeRobot implementation details, inspect that
+directory first. Treat it as external reference code and do not modify it unless the task
+explicitly asks for changes there.
+
 ## Common Commands
 
 Scripts auto-discover Python via [scripts/lib/common_env.sh](scripts/lib/common_env.sh):
@@ -123,8 +130,8 @@ mapping; hand CANFD over multiChannel (channel 0 = left, 1 = right); arms on CAN
 
 ## Commit Message Format
 
-All git commit messages must follow the `heliangp:提交内容` format
-(e.g. `heliangp:fix JSON role fallback`, `heliangp:add cylindrical_straight gesture`).
+All git commit messages must use the `heliangp:提交内容` format
+(e.g. `heliangp:fix JSON role fallback`, `heliangp:更新配置说明`).
 
 ## Behavioral Guidelines
 

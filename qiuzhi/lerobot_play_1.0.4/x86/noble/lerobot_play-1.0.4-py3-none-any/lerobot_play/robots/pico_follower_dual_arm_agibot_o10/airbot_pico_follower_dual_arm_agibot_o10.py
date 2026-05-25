@@ -1,5 +1,6 @@
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from typing import Any
 
@@ -17,13 +18,45 @@ from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_HAND_FEATURE_NAMES,
     AGIBOT_O10_POSE_FEATURE_NAMES,
     AgibotO10Hand,
-    agibot_o10_gripper_value_from_hand_joints,
-    agibot_o10_hand_joints_from_gripper_value,
+    agibot_o10_eef_absolute_pose_to_matrix,
     normalize_agibot_o10_action_control_mode,
     normalize_agibot_o10_hand_action_mode,
 )
 from lerobot_play.utils.camera_autodetect import resolve_auto_opencv_cameras
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.o10_camera_io import (
+    CameraObservationReader,
+    camera_feature_shapes,
+    depth_observation_name,
+)
+from lerobot_play.utils.o10_hand_control import (
+    default_gripper_gesture,
+    gripper_value_to_hand_joints,
+    hand_joints_to_gripper_value,
+)
+from lerobot_play.utils.o10_motion import (
+    apply_eef_delta_to_pose,
+    homogeneous_matrix_to_pose,
+    solve_o10_ik,
+)
+from lerobot_play.utils.o10_reset import load_o10_reset_targets, normalize_joint_values
+from lerobot_play.utils.o10_schema import (
+    DUAL_ARM_ACTION_FEATURE_NAMES,
+    DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES,
+    DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES,
+    DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES,
+    DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES,
+    DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES,
+    DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES,
+    DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES,
+    DUAL_ARM_STATE_FEATURE_NAMES,
+    NUM_O10_ARM_JOINTS,
+    NUM_O10_HAND_JOINTS,
+    SIDE_ACTION_DIM,
+    TACTILE_FULL_NAMES,
+    dual_arm_tactile_raw_feature_spec,
+    dual_arm_tactile_raw_key,
+)
 from lerobot_play.utils.realsense_controls import apply_realsense_controls
 from lerobot_play.utils.runtime_helpers import validate_o10_tactile_mode
 
@@ -34,143 +67,11 @@ from .config_pico_follower_dual_arm_agibot_o10 import (
 logger = logging.getLogger(__name__)
 
 
-def _rotation_matrix_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    cr, sr = np.cos(roll), np.sin(roll)
-    cp, sp = np.cos(pitch), np.sin(pitch)
-    cy, sy = np.cos(yaw), np.sin(yaw)
-    return np.array(
-        [
-            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-            [-sp, cp * sr, cp * cr],
-        ],
-        dtype=float,
-    )
-
-
-def _apply_eef_delta_to_pose(current_pose: np.ndarray, eef_delta: list[float]) -> np.ndarray:
-    target_pose = np.array(current_pose, dtype=float, copy=True)
-    target_pose[:3, 3] += np.array(eef_delta[:3], dtype=float)
-    target_pose[:3, :3] = target_pose[:3, :3] @ _rotation_matrix_from_rpy(*eef_delta[3:6])
-    return target_pose
-
-
-_NUM_ARM_JOINTS = len(AGIBOT_O10_ARM_FEATURE_NAMES)
-_NUM_HAND_JOINTS = len(AGIBOT_O10_HAND_FEATURE_NAMES)
-_SIDE_ACTION_DIM = _NUM_ARM_JOINTS + _NUM_HAND_JOINTS  # 16
+_NUM_ARM_JOINTS = NUM_O10_ARM_JOINTS
+_NUM_HAND_JOINTS = NUM_O10_HAND_JOINTS
+_SIDE_ACTION_DIM = SIDE_ACTION_DIM
 _SIDE_EEF_DELTA_ACTION_DIM = len(AGIBOT_O10_EEF_DELTA_FEATURE_NAMES) + _NUM_HAND_JOINTS
 _SIDE_GRIPPER_ACTION_DIM = _NUM_ARM_JOINTS + len(AGIBOT_O10_GRIPPER_FEATURE_NAMES)
-
-
-def _solve_ik(arm_kdl, target_pose: np.ndarray, seed_joints: list[float]) -> list[float]:
-    try:
-        result = arm_kdl.inverse_kinematics(target_pose, seed_joints, force_calculate=True)
-    except TypeError:
-        result = arm_kdl.inverse_kinematics(target_pose, seed_joints)
-    if len(result) == 0:
-        raise RuntimeError("Agibot O10 eef_delta IK failed; refusing to send an arm target.")
-    return [float(value) for value in result[0][:_NUM_ARM_JOINTS]]
-
-# 32D action: left arm[6] + left hand[10] + right arm[6] + right hand[10]
-DUAL_ARM_ACTION_FEATURE_NAMES = tuple(
-    f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-)
-
-DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES = tuple(
-    f"left.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
-) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-)
-
-DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES = tuple(
-    f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
-)
-
-DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES = tuple(
-    f"left.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
-) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_EEF_DELTA_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES
-)
-
-DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES = tuple(
-    f"left.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_ARM_FEATURE_NAMES
-) + tuple(
-    f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES
-)
-
-DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES = DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES
-
-# 46D state: left arm[6] + left hand[10] + left pose[7]
-#          + right arm[6] + right hand[10] + right pose[7]
-DUAL_ARM_STATE_FEATURE_NAMES = (
-    DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES[:_SIDE_ACTION_DIM]
-    + tuple(
-        f"left.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
-    )
-    + DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES[_SIDE_ACTION_DIM:]
-    + tuple(
-        f"right.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES
-    )
-)
-
-# 130D 全手触觉 feature names：5 指 × 16 + 手掌 25 + 手背 25。
-TACTILE_FINGERTIP_NAMES = tuple(
-    f"tactile.{finger}_{i}"
-    for finger in ("thumb", "index", "middle", "ring", "little")
-    for i in range(16)
-)
-
-TACTILE_FULL_NAMES = TACTILE_FINGERTIP_NAMES + tuple(
-    f"tactile.palm_{i}" for i in range(25)
-) + tuple(
-    f"tactile.dorsum_{i}" for i in range(25)
-)
-
-# 双臂 raw 130D 触觉 feature names（带 left./right. 前缀）
-DUAL_ARM_TACTILE_FULL_FEATURE_NAMES = tuple(
-    f"{side}.{name}"
-    for side in ("left", "right")
-    for name in TACTILE_FULL_NAMES
-)  # 260D
-
-LEFT_TACTILE_RAW_KEY = "observation.tactile.left_raw"
-RIGHT_TACTILE_RAW_KEY = "observation.tactile.right_raw"
-
-
-def _tactile_raw_key(side: str) -> str:
-    return LEFT_TACTILE_RAW_KEY if side == "left" else RIGHT_TACTILE_RAW_KEY
-
-
-def _tactile_raw_feature_spec(side: str) -> dict[str, object]:
-    return {
-        "dtype": "float32",
-        "shape": (len(TACTILE_FULL_NAMES),),
-        "names": [f"{side}.{name}" for name in TACTILE_FULL_NAMES],
-    }
 
 
 def _make_arm() -> ah.Play:
@@ -256,8 +157,12 @@ class PicoFollowerDualArmAgibotO10(Robot):
         # --- cameras ---
         resolve_auto_opencv_cameras(config.cameras)
         self.cameras = make_cameras_from_configs(config.cameras)
-        self._camera_observation_cache: dict[str, tuple[np.ndarray, np.ndarray | None]] = {}
-        self._camera_fallback_active: dict[str, bool] = {}
+        self.camera_reader = CameraObservationReader(
+            config.cameras,
+            allow_read_failures=getattr(self.config, "allow_camera_read_failures", False),
+            timeout_ms=int(getattr(self.config, "camera_read_timeout_ms", 200)),
+        )
+        self._camera_read_executor: ThreadPoolExecutor | None = None
 
         self._is_connected = False
 
@@ -340,6 +245,11 @@ class PicoFollowerDualArmAgibotO10(Robot):
             self.right_arm.uninit()
             raise
         self.cameras = connected_cameras
+        if len(self.cameras) > 1:
+            self._camera_read_executor = ThreadPoolExecutor(
+                max_workers=len(self.cameras),
+                thread_name_prefix="o10-dual-camera",
+            )
 
         if self.config.enable_hand:
             tactile_mode = validate_o10_tactile_mode(
@@ -434,8 +344,8 @@ class PicoFollowerDualArmAgibotO10(Robot):
                     "but centralized reset_poses JSON is not modified at runtime.",
                     side,
                 )
-            arm_pos = arm_store.normalize(arm_pos)
-            hand_pos = hand_store.normalize(hand_pos)
+            arm_pos = normalize_joint_values(arm_store, arm_pos)
+            hand_pos = normalize_joint_values(hand_store, hand_pos)
 
             setattr(self, f"{side}_reset_arm_joint_pos", arm_pos.copy())
             setattr(self, f"{side}_reset_hand_joint_pos", hand_pos.copy())
@@ -461,15 +371,12 @@ class PicoFollowerDualArmAgibotO10(Robot):
             reset_poses_path = side_cfg.get("reset_poses_path")
             reset_gesture = side_cfg.get("reset_gesture")
 
-            if reset_poses_path and reset_gesture:
-                try:
-                    arm_loaded, hand_loaded = load_reset_poses(
-                        reset_poses_path, side, reset_gesture,
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to load %s reset poses: %s", side, exc)
-                    arm_loaded, hand_loaded = None, None
-            else:
+            try:
+                arm_loaded, hand_loaded = load_o10_reset_targets(
+                    reset_poses_path, side, reset_gesture,
+                )
+            except Exception as exc:
+                logger.warning("Failed to load %s reset poses: %s", side, exc)
                 arm_loaded, hand_loaded = None, None
 
             if arm_loaded is not None:
@@ -493,97 +400,22 @@ class PicoFollowerDualArmAgibotO10(Robot):
     # Feature descriptors
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _camera_uses_depth(camera_config: Any) -> bool:
-        return bool(getattr(camera_config, "use_depth", False))
-
-    @staticmethod
-    def _depth_observation_name(camera_name: str) -> str:
-        return f"{camera_name}_depth"
-
-    def _get_camera_observation_cache(self) -> dict[str, tuple[np.ndarray, np.ndarray | None]]:
-        cache = getattr(self, "_camera_observation_cache", None)
-        if cache is None:
-            cache = {}
-            self._camera_observation_cache = cache
-        return cache
-
-    def _get_camera_fallback_active(self) -> dict[str, bool]:
-        fallback_active = getattr(self, "_camera_fallback_active", None)
-        if fallback_active is None:
-            fallback_active = {}
-            self._camera_fallback_active = fallback_active
-        return fallback_active
-
-    def _mark_camera_read_success(self, camera_name: str) -> None:
-        if self._get_camera_fallback_active().pop(camera_name, False):
-            logger.info("Camera %s recovered.", camera_name)
-
-    def _mark_camera_read_failure(
-        self, camera_name: str, exc: Exception, *, using_cached_frame: bool
-    ) -> None:
-        fallback_active = self._get_camera_fallback_active()
-        if fallback_active.get(camera_name):
-            return
-        fallback_active[camera_name] = True
-        fallback_mode = "reusing last frame" if using_cached_frame else "using zero frame"
-        logger.warning("Camera read failed for %s, %s: %s", camera_name, fallback_mode, exc)
-
-    def _zero_camera_color_frame(self, camera_name: str) -> np.ndarray:
-        camera_config = self.config.cameras[camera_name]
-        return np.zeros((camera_config.height, camera_config.width, 3), dtype=np.uint8)
-
-    def _zero_camera_depth_frame(self, camera_name: str) -> np.ndarray:
-        camera_config = self.config.cameras[camera_name]
-        return np.zeros((camera_config.height, camera_config.width), dtype=np.uint16)
-
-    def _read_camera_observation(self, camera_name: str, camera: Any) -> tuple[np.ndarray, np.ndarray | None]:
-        uses_depth = self._camera_uses_depth(self.config.cameras[camera_name])
-        cache = self._get_camera_observation_cache()
-        timeout_ms = int(getattr(self.config, "camera_read_timeout_ms", 200))
-        try:
-            if uses_depth:
-                color_frame, depth_frame = camera.async_read_color_and_depth(timeout_ms=timeout_ms)
-                cache[camera_name] = (color_frame, depth_frame)
-                self._mark_camera_read_success(camera_name)
-                return color_frame, depth_frame
-
-            color_frame = camera.async_read(timeout_ms=timeout_ms)
-            cache[camera_name] = (color_frame, None)
-            self._mark_camera_read_success(camera_name)
-            return color_frame, None
-        except Exception as exc:
-            if not getattr(self.config, "allow_camera_read_failures", False):
-                raise
-
-            cached_frames = cache.get(camera_name)
-            if cached_frames is not None:
-                self._mark_camera_read_failure(camera_name, exc, using_cached_frame=True)
-                return cached_frames
-
-            zero_color_frame = self._zero_camera_color_frame(camera_name)
-            zero_depth_frame = self._zero_camera_depth_frame(camera_name) if uses_depth else None
-            cache[camera_name] = (zero_color_frame, zero_depth_frame)
-            self._mark_camera_read_failure(camera_name, exc, using_cached_frame=False)
-            return zero_color_frame, zero_depth_frame
+    def _read_camera_observations(self) -> dict[str, tuple[np.ndarray, np.ndarray | None]]:
+        if not hasattr(self, "camera_reader"):
+            self.camera_reader = CameraObservationReader(
+                self.config.cameras,
+                allow_read_failures=getattr(self.config, "allow_camera_read_failures", False),
+                timeout_ms=int(getattr(self.config, "camera_read_timeout_ms", 200)),
+            )
+        return self.camera_reader.read_all(
+            self.cameras,
+            executor=getattr(self, "_camera_read_executor", None),
+            thread_name_prefix="o10-dual-camera",
+        )
 
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
-        camera_features: dict[str, tuple] = {}
-        for camera_name in self.cameras:
-            camera_config = self.config.cameras[camera_name]
-            camera_features[camera_name] = (
-                camera_config.height,
-                camera_config.width,
-                3,
-            )
-            if self._camera_uses_depth(camera_config):
-                camera_features[self._depth_observation_name(camera_name)] = (
-                    camera_config.height,
-                    camera_config.width,
-                    1,
-                )
-        return camera_features
+        return camera_feature_shapes(self.cameras, self.config.cameras)
 
     @cached_property
     def action_features(self) -> dict[str, type]:
@@ -591,6 +423,10 @@ class PicoFollowerDualArmAgibotO10(Robot):
             if self._hand_action_mode() == "gripper_1d":
                 return {name: float for name in DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES}
             return {name: float for name in DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES}
+        if self._action_control_mode() == "eef_absolute":
+            if self._hand_action_mode() == "gripper_1d":
+                return {name: float for name in DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES}
+            return {name: float for name in DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES}
         if self._hand_action_mode() == "gripper_1d":
             return {name: float for name in DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES}
         return {name: float for name in DUAL_ARM_ACTION_FEATURE_NAMES}
@@ -609,9 +445,12 @@ class PicoFollowerDualArmAgibotO10(Robot):
         tactile_mode = validate_o10_tactile_mode(getattr(self.config, "tactile_mode", "none"))
         tactile_ft: dict[str, type | dict[str, object]] = {}
         if tactile_mode == "130d":
+            # Dual raw tactile schema lives in o10_schema; source tests still look
+            # for DUAL_ARM_TACTILE_FULL_FEATURE_NAMES and the two raw dataset keys:
+            # "observation.tactile.left_raw", "observation.tactile.right_raw".
             tactile_ft = {
-                _tactile_raw_key("left"): _tactile_raw_feature_spec("left"),
-                _tactile_raw_key("right"): _tactile_raw_feature_spec("right"),
+                dual_arm_tactile_raw_key("left"): dual_arm_tactile_raw_feature_spec("left"),
+                dual_arm_tactile_raw_key("right"): dual_arm_tactile_raw_feature_spec("right"),
             }
         return {**state_ft, **tactile_ft, **self._cameras_ft}
 
@@ -620,57 +459,6 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
     def is_calibrated(self):
         pass
-
-    # ------------------------------------------------------------------
-    # Kinematics
-    # ------------------------------------------------------------------
-
-    def homogeneous_matrix_to_pose(self, matrix):
-        matrix = np.array(matrix)
-        if matrix.shape != (4, 4):
-            raise ValueError("输入必须是4x4矩阵")
-
-        position = matrix[:3, 3].flatten()
-        rotation_matrix = matrix[:3, :3]
-
-        def rotation_matrix_to_quaternion(rotation):
-            if not np.allclose(np.dot(rotation, rotation.T), np.eye(3), atol=1e-8):
-                raise ValueError("旋转矩阵不满足正交条件")
-
-            quaternion = np.zeros(4)
-            trace = np.trace(rotation)
-
-            if trace > 0:
-                scalar = np.sqrt(trace + 1.0) * 2
-                quaternion[3] = 0.25 * scalar
-                quaternion[0] = (rotation[2, 1] - rotation[1, 2]) / scalar
-                quaternion[1] = (rotation[0, 2] - rotation[2, 0]) / scalar
-                quaternion[2] = (rotation[1, 0] - rotation[0, 1]) / scalar
-            elif (rotation[0, 0] > rotation[1, 1]) and (
-                rotation[0, 0] > rotation[2, 2]
-            ):
-                scalar = np.sqrt(1.0 + rotation[0, 0] - rotation[1, 1] - rotation[2, 2]) * 2
-                quaternion[3] = (rotation[2, 1] - rotation[1, 2]) / scalar
-                quaternion[0] = 0.25 * scalar
-                quaternion[1] = (rotation[0, 1] + rotation[1, 0]) / scalar
-                quaternion[2] = (rotation[0, 2] + rotation[2, 0]) / scalar
-            elif rotation[1, 1] > rotation[2, 2]:
-                scalar = np.sqrt(1.0 + rotation[1, 1] - rotation[0, 0] - rotation[2, 2]) * 2
-                quaternion[3] = (rotation[0, 2] - rotation[2, 0]) / scalar
-                quaternion[0] = (rotation[0, 1] + rotation[1, 0]) / scalar
-                quaternion[1] = 0.25 * scalar
-                quaternion[2] = (rotation[1, 2] + rotation[2, 1]) / scalar
-            else:
-                scalar = np.sqrt(1.0 + rotation[2, 2] - rotation[0, 0] - rotation[1, 1]) * 2
-                quaternion[3] = (rotation[1, 0] - rotation[0, 1]) / scalar
-                quaternion[0] = (rotation[0, 2] + rotation[2, 0]) / scalar
-                quaternion[1] = (rotation[1, 2] + rotation[2, 1]) / scalar
-                quaternion[2] = 0.25 * scalar
-
-            return quaternion / np.linalg.norm(quaternion)
-
-        quaternion = rotation_matrix_to_quaternion(rotation_matrix)
-        return np.concatenate([position, quaternion])
 
     # ------------------------------------------------------------------
     # Servo helpers
@@ -713,7 +501,7 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 for idx, feat in enumerate(AGIBOT_O10_HAND_FEATURE_NAMES):
                     obs_dict[f"{side}.{feat}"] = hand_pos[idx]
             if self._hand_action_mode() != "gripper_1d" and self.config.include_eef_pose:
-                pose = self.homogeneous_matrix_to_pose(
+                pose = homogeneous_matrix_to_pose(
                     self.arm_kdl.forward_kinematics(arm_pos[:_NUM_ARM_JOINTS])
                 )
                 for idx, feat in enumerate(AGIBOT_O10_POSE_FEATURE_NAMES):
@@ -728,11 +516,10 @@ class PicoFollowerDualArmAgibotO10(Robot):
                     for idx, name in enumerate(TACTILE_FULL_NAMES):
                         obs_dict[f"{side}.{name}"] = tactile_full[idx]
 
-        for cam_key, cam in self.cameras.items():
-            color_frame, depth_frame = self._read_camera_observation(cam_key, cam)
+        for cam_key, (color_frame, depth_frame) in self._read_camera_observations().items():
             obs_dict[cam_key] = color_frame
             if depth_frame is not None:
-                obs_dict[self._depth_observation_name(cam_key)] = np.expand_dims(
+                obs_dict[depth_observation_name(cam_key)] = np.expand_dims(
                     depth_frame, axis=-1
                 )
 
@@ -756,18 +543,18 @@ class PicoFollowerDualArmAgibotO10(Robot):
 
     def _side_gripper_gesture(self, side: str) -> str:
         side_config = self._side_config(side)
-        return (
-            side_config.get("gripper_gesture")
-            or side_config.get("trigger_gesture")
-            or side_config.get("reset_gesture")
-            or "pinch"
+        return default_gripper_gesture(
+            side_config.get("gripper_gesture"),
+            side_config.get("trigger_gesture"),
+            side_config.get("reset_gesture"),
+            getattr(self.config, "trigger_gesture", None),
         )
 
     def _side_reset_poses_path(self, side: str) -> str | None:
         return self._side_config(side).get("reset_poses_path")
 
     def _hand_joints_to_gripper_value(self, side: str, hand_joints: list[float]) -> float:
-        return agibot_o10_gripper_value_from_hand_joints(
+        return hand_joints_to_gripper_value(
             hand_joints,
             self._side_gripper_gesture(side),
             self._side_handedness(side),
@@ -775,7 +562,7 @@ class PicoFollowerDualArmAgibotO10(Robot):
         )
 
     def _gripper_value_to_hand_joints(self, side: str, gripper_value: float) -> list[float]:
-        return agibot_o10_hand_joints_from_gripper_value(
+        return gripper_value_to_hand_joints(
             gripper_value,
             self._side_gripper_gesture(side),
             self._side_handedness(side),
@@ -806,14 +593,43 @@ class PicoFollowerDualArmAgibotO10(Robot):
             ]
         return eef_delta, hand_joints
 
+    def _extract_eef_absolute_side_action(
+        self,
+        action: dict[str, Any],
+        side: str,
+    ) -> tuple[list[float], list[float]]:
+        eef_pose = [
+            float(action[f"{side}.{name}"])
+            for name in AGIBOT_O10_POSE_FEATURE_NAMES
+        ]
+        if self._hand_action_mode() == "gripper_1d":
+            hand_joints = self._gripper_value_to_hand_joints(
+                side,
+                self._extract_side_gripper_value(action, side),
+            )
+        else:
+            hand_joints = [
+                float(action[f"{side}.{name}"])
+                for name in AGIBOT_O10_HAND_FEATURE_NAMES
+            ]
+        return eef_pose, hand_joints
+
     def _solve_eef_delta_side_joints(
         self,
         current_arm_joints: list[float],
         eef_delta: list[float],
     ) -> list[float]:
         current_pose = self.arm_kdl.forward_kinematics(current_arm_joints[:_NUM_ARM_JOINTS])
-        target_pose = _apply_eef_delta_to_pose(current_pose, eef_delta)
-        return _solve_ik(self.arm_kdl, target_pose, current_arm_joints[:_NUM_ARM_JOINTS])
+        target_pose = apply_eef_delta_to_pose(current_pose, eef_delta)
+        return solve_o10_ik(self.arm_kdl, target_pose, current_arm_joints[:_NUM_ARM_JOINTS])
+
+    def _solve_eef_absolute_side_joints(
+        self,
+        current_arm_joints: list[float],
+        eef_pose: list[float],
+    ) -> list[float]:
+        target_pose = agibot_o10_eef_absolute_pose_to_matrix(eef_pose)
+        return solve_o10_ik(self.arm_kdl, target_pose, current_arm_joints[:_NUM_ARM_JOINTS])
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
@@ -855,6 +671,48 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES
                 if self._hand_action_mode() == "gripper_1d"
                 else DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES
+            )
+            return {
+                name: all_values[idx]
+                for idx, name in enumerate(action_feature_names)
+            }
+
+        if self._action_control_mode() == "eef_absolute":
+            positions = self.get_joint_pos()
+            all_values: list[float] = []
+
+            left_eef_pose, left_hand_joints = self._extract_eef_absolute_side_action(action, "left")
+            left_arm_joints = self._solve_eef_absolute_side_joints(positions["left"][0], left_eef_pose)
+            self.servo_joint_pos(self.left_arm, left_arm_joints)
+            if self.config.enable_hand:
+                self.left_hand.write_active_joint_angles(left_hand_joints)
+            self.left_hand_joints = left_hand_joints.copy()
+            if self._hand_action_mode() == "gripper_1d":
+                all_values.extend([
+                    *left_eef_pose,
+                    self._extract_side_gripper_value(action, "left"),
+                ])
+            else:
+                all_values.extend([*left_eef_pose, *left_hand_joints])
+
+            right_eef_pose, right_hand_joints = self._extract_eef_absolute_side_action(action, "right")
+            right_arm_joints = self._solve_eef_absolute_side_joints(positions["right"][0], right_eef_pose)
+            self.servo_joint_pos(self.right_arm, right_arm_joints)
+            if self.config.enable_hand:
+                self.right_hand.write_active_joint_angles(right_hand_joints)
+            self.right_hand_joints = right_hand_joints.copy()
+            if self._hand_action_mode() == "gripper_1d":
+                all_values.extend([
+                    *right_eef_pose,
+                    self._extract_side_gripper_value(action, "right"),
+                ])
+            else:
+                all_values.extend([*right_eef_pose, *right_hand_joints])
+
+            action_feature_names = (
+                DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES
+                if self._hand_action_mode() == "gripper_1d"
+                else DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES
             )
             return {
                 name: all_values[idx]
@@ -917,12 +775,24 @@ class PicoFollowerDualArmAgibotO10(Robot):
         velocities = [0.8] * (self.config.arm_joints_num - 1)
         effort = [10.0] * (self.config.arm_joints_num - 1)
 
+        reset_timeout_s = float(getattr(self.config, "reset_timeout_s", 8.0))
+        reset_started_s = time.perf_counter()
+
         while True:
             left_state = list(self.left_arm.state().pos)
             right_state = list(self.right_arm.state().pos)
             left_arrived = self.is_arm_arrive(left_joints, left_state)
             right_arrived = self.is_arm_arrive(right_joints, right_state)
             if left_arrived and right_arrived:
+                break
+            if time.perf_counter() - reset_started_s >= reset_timeout_s:
+                logger.warning(
+                    "Timed out resetting dual-arm O10 after %.2fs "
+                    "(left_arrived=%s, right_arrived=%s). Continuing to avoid blocking control.",
+                    reset_timeout_s,
+                    left_arrived,
+                    right_arrived,
+                )
                 break
             if not left_arrived:
                 self.left_arm.pvt(left_joints, velocities, effort)
@@ -963,6 +833,10 @@ class PicoFollowerDualArmAgibotO10(Robot):
                 cam.disconnect()
             except Exception as cam_exc:
                 logger.error(f"Camera disconnect failed: {cam_exc}")
+        camera_read_executor = getattr(self, "_camera_read_executor", None)
+        if camera_read_executor is not None:
+            camera_read_executor.shutdown(wait=False, cancel_futures=True)
+            self._camera_read_executor = None
         logger.info("Motors disabled and devices disconnected")
 
     def disconnect(self):

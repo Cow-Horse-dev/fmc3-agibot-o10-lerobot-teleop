@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import queue
 import types
 
 import numpy as np
@@ -46,4 +47,22 @@ def test_async_image_writer_reports_worker_write_errors(tmp_path):
         with pytest.raises(RuntimeError, match="Async image writer failed"):
             writer.wait_until_done()
     finally:
+        writer.stop()
+
+
+def test_async_image_writer_raises_when_queue_backlog_is_full(tmp_path):
+    writer = AsyncImageWriter(num_processes=0, num_threads=1, max_queue_size=1)
+    try:
+        writer.queue.put((np.zeros((3, 2, 2), dtype=np.uint8), tmp_path / "queued.png", 1))
+
+        with pytest.raises(RuntimeError, match="Async image writer queue is full"):
+            writer.save_image(np.zeros((3, 2, 2), dtype=np.uint8), tmp_path / "overflow.png")
+    finally:
+        while True:
+            try:
+                writer.queue.get_nowait()
+            except queue.Empty:
+                break
+            else:
+                writer.queue.task_done()
         writer.stop()

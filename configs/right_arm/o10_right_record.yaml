@@ -14,7 +14,7 @@
 # - handedness/controller_side: left, right；wrist_pose_source: auto, left, right；vr_device: pico, pico_wrist。
 # - enable_hand/include_eef_pose/display_data/auto_name_from_task_date/video/mcap/is_ssh/use_depth: true, false。
 # - hand_mode: glove, trigger_gesture；trigger_gesture/gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
-# - action_control_mode: joint, eef_delta；hand_action_mode: dexterous_10d, gripper_1d。
+# - action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode: dexterous_10d, gripper_1d。
 # - tactile_mode: none, 130d；channel_mode: multiChannel。
 # - channel_id: null 或整数，null 自动 left->0、right->1。
 # - reset_poses_path/root/index_or_path/serial_number_or_name: 路径或设备名字符串。
@@ -29,7 +29,7 @@
 # - robot.handedness: 当前录制的物理手/臂方向。
 # - robot.enable_hand: 是否连接并录制 O10 手。
 # - robot.include_eef_pose: 是否把末端位姿额外加入 observation.state；必须与训练/推理一致。
-# - robot.action_control_mode: joint 录关节目标；eef_delta 录末端增量。
+# - robot.action_control_mode: joint 录关节目标；eef_delta 录末端增量；eef_absolute 录绝对末端位姿。
 # - robot.hand_action_mode: dexterous_10d 录 10D 手关节；gripper_1d 录 gripper.pos。
 # - robot.tactile_mode: 触觉特征维度；none/130d 必须与训练一致。
 # - robot.channel_mode: O10 手 CANFD 通道模式，目前实际使用 multiChannel。
@@ -79,7 +79,7 @@ robot:
   handedness: right
   enable_hand: true
   include_eef_pose: false
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
   hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
   # 右臂录制默认保存 O10 raw 130D 触觉到 observation.tactile.right_raw。
   # tactile_mode 也决定数据集 root 子目录 (none -> without_tactile, 其他 -> with_tactile)。
@@ -149,7 +149,7 @@ teleop:
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: cylindrical  # pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
   hand_action_mode: gripper_1d  # dexterous_10d, gripper_1d
   gripper_gesture: cylindrical  # pinch, tripod, cylindrical
 

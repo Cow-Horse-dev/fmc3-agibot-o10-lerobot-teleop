@@ -40,36 +40,69 @@ import time
 from .compute_stats import aggregate_stats, compute_episode_stats
 from .image_writer import AsyncImageWriter, write_image, write_mcap
 from .mcap_writer import AsyncMcapWriter
+try:
+    from lerobot.datasets.feature_utils import (
+        _validate_feature_names,
+        check_delta_timestamps,
+        create_empty_dataset_info,
+        get_delta_indices,
+        get_hf_features_from_features,
+        validate_episode_buffer,
+        validate_frame,
+    )
+except ImportError:
+    from lerobot.datasets.utils import (
+        _validate_feature_names,
+        check_delta_timestamps,
+        create_empty_dataset_info,
+        get_delta_indices,
+        get_hf_features_from_features,
+        validate_episode_buffer,
+        validate_frame,
+    )
+
+try:
+    from lerobot.datasets.io_utils import (
+        embed_images,
+        get_file_size_in_mb,
+        hf_transform_to_torch,
+        load_episodes,
+        load_info,
+        load_nested_dataset,
+        load_stats,
+        load_tasks,
+        write_info,
+        write_json,
+        write_stats,
+        write_tasks,
+    )
+except ImportError:
+    from lerobot.datasets.utils import (
+        embed_images,
+        get_file_size_in_mb,
+        hf_transform_to_torch,
+        load_episodes,
+        load_info,
+        load_nested_dataset,
+        load_stats,
+        load_tasks,
+        write_info,
+        write_json,
+        write_stats,
+        write_tasks,
+    )
+
 from lerobot.datasets.utils import (
     DEFAULT_EPISODES_PATH,
     DEFAULT_FEATURES,
     DEFAULT_IMAGE_PATH,
     INFO_PATH,
-    _validate_feature_names,
-    check_delta_timestamps,
     check_version_compatibility,
-    create_empty_dataset_info,
     create_lerobot_dataset_card,
-    embed_images,
     flatten_dict,
-    get_delta_indices,
-    get_file_size_in_mb,
-    get_hf_features_from_features,
     get_safe_version,
-    hf_transform_to_torch,
     is_valid_version,
-    load_episodes,
-    load_info,
-    load_nested_dataset,
-    load_stats,
-    load_tasks,
     update_chunk_file_indices,
-    validate_episode_buffer,
-    validate_frame,
-    write_info,
-    write_json,
-    write_stats,
-    write_tasks,
 )
 from lerobot.datasets.video_utils import (
     VideoFrame,
@@ -789,6 +822,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.latest_episode = None
         self._image_writer_processes = 0
         self._image_writer_threads = 0
+        self._image_writer_max_queue_size = 0
         self._image_writer_mode = None
         self._current_file_start_frame = (
             None  # Track the starting frame index of the current parquet file
@@ -2228,6 +2262,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.start_image_writer(
                 num_processes=self._image_writer_processes,
                 num_threads=self._image_writer_threads,
+                max_queue_size=self._image_writer_max_queue_size,
             )
         elif self._image_writer_mode == "mcap":
             self.start_mcap_writer(
@@ -2292,7 +2327,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if delete_error is not None:
             raise delete_error
 
-    def start_image_writer(self, num_processes: int = 0, num_threads: int = 4) -> None:
+    def start_image_writer(
+        self,
+        num_processes: int = 0,
+        num_threads: int = 4,
+        max_queue_size: int = 0,
+    ) -> None:
         if isinstance(self.image_writer, AsyncImageWriter):
             logging.warning(
                 "You are starting a new AsyncImageWriter that is replacing an already existing one in the dataset."
@@ -2300,10 +2340,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         self._image_writer_processes = num_processes
         self._image_writer_threads = num_threads
+        self._image_writer_max_queue_size = max_queue_size
         self._image_writer_mode = "image"
         self.image_writer = AsyncImageWriter(
             num_processes=num_processes,
             num_threads=num_threads,
+            max_queue_size=max_queue_size,
         )
 
     def start_mcap_writer(self, num_processes: int = 0, num_threads: int = 4) -> None:
@@ -2357,6 +2399,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         tolerance_s: float = 1e-4,
         image_writer_processes: int = 0,
         image_writer_threads: int = 0,
+        image_writer_max_queue_size: int = 0,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         online_encoding: bool = False,
@@ -2383,10 +2426,15 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.online_encoding = online_encoding
         obj._image_writer_processes = 0
         obj._image_writer_threads = 0
+        obj._image_writer_max_queue_size = 0
         obj._image_writer_mode = None
         if image_writer_processes or image_writer_threads:
             if not use_mcap:
-                obj.start_image_writer(image_writer_processes, image_writer_threads)
+                obj.start_image_writer(
+                    image_writer_processes,
+                    image_writer_threads,
+                    image_writer_max_queue_size,
+                )
             else:
                 obj.start_mcap_writer(image_writer_processes, image_writer_threads)
 

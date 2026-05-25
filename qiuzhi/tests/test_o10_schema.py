@@ -69,6 +69,27 @@ def test_dual_arm_gripper_and_eef_delta_feature_orders():
     )
 
 
+def test_dual_arm_eef_absolute_feature_orders():
+    from lerobot_play.utils import agibot_o10
+    from lerobot_play.utils.o10_schema import (
+        DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES,
+        DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES,
+    )
+
+    assert DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES == (
+        tuple(f"left.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES)
+        + tuple(f"left.{name}" for name in agibot_o10.AGIBOT_O10_HAND_FEATURE_NAMES)
+        + tuple(f"right.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES)
+        + tuple(f"right.{name}" for name in agibot_o10.AGIBOT_O10_HAND_FEATURE_NAMES)
+    )
+    assert DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES == (
+        tuple(f"left.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES)
+        + tuple(f"left.{name}" for name in agibot_o10.AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+        + tuple(f"right.{name}" for name in agibot_o10.AGIBOT_O10_POSE_FEATURE_NAMES)
+        + tuple(f"right.{name}" for name in agibot_o10.AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+    )
+
+
 def test_dual_arm_state_feature_order_inserts_pose_after_each_side():
     from lerobot_play.utils import agibot_o10
     from lerobot_play.utils.o10_schema import DUAL_ARM_STATE_FEATURE_NAMES

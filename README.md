@@ -148,6 +148,83 @@ cd ~/workspace/arm-hand-teleop
   - `teleop.trigger_gesture` 选择闭合姿态形状，可选 `pinch` / `tripod` / `cylindrical` / `cylindrical_straight`（后者 open 时拇指完全伸直，适合圆柱抓握和快递分拣任务）。
   - 双臂可在 `teleop.left.trigger_gesture` / `teleop.right.trigger_gesture` 里为左右手分别指定不同手势。
 
+### 新增 O10 手势
+
+新增一个 `trigger_gesture` / `gripper_gesture` 手势时，核心只需要定义这套手势的左右手 `open` 和 `closed` 端点。`gripper.pos` 的 `0..1` 会自动在这两个端点之间线性插值；录制 `gripper_1d` 数据时，也会把当前 10D 手关节投影回同一条 `open -> closed` 轴。
+
+1. 在 `qiuzhi/.../lerobot_play/utils/agibot_o10.py` 的 `AGIBOT_O10_TRIGGER_GESTURES` 里新增一个 key，例如：
+
+```python
+AGIBOT_O10_TRIGGER_GESTURES = {
+    # ...
+    "my_gesture": {
+        "right": {
+            "open": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "closed": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        },
+        "left": {
+            "open": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "closed": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        },
+    },
+}
+```
+
+这 10 个值的顺序固定为：
+
+```text
+thumb_cm_roll, thumb_cm_yaw, thumb_cm_pitch,
+index_mp_yaw, index_mp_pitch,
+middle_mp_pitch,
+ring_mp_yaw, ring_mp_pitch,
+pinky_mp_yaw, pinky_mp_pitch
+```
+
+2. 在需要使用该手势的 YAML 中把名字改成新 key。录制、推理、回放最好保持一致，否则同一个 `gripper.pos` 会还原成不同手型：
+
+```yaml
+teleop:
+  hand_mode: trigger_gesture
+  trigger_gesture: my_gesture
+  gripper_gesture: my_gesture
+  reset_gesture: my_gesture
+
+robot:
+  gripper_gesture: my_gesture
+  reset_gesture: my_gesture
+```
+
+双臂配置要分别写在 `left/right` 下：
+
+```yaml
+teleop:
+  left:
+    trigger_gesture: my_gesture
+    gripper_gesture: my_gesture
+    reset_gesture: my_gesture
+  right:
+    trigger_gesture: my_gesture
+    gripper_gesture: my_gesture
+    reset_gesture: my_gesture
+
+robot:
+  left:
+    gripper_gesture: my_gesture
+    reset_gesture: my_gesture
+  right:
+    gripper_gesture: my_gesture
+    reset_gesture: my_gesture
+```
+
+3. 如果 `configs/reset_poses/o10_dual_reset.json` 的 `gestures.<name>.<side>.open|closed` 里也写了同名手势，运行时会优先使用 JSON 里的端点；没有同名手势时才使用 `AGIBOT_O10_TRIGGER_GESTURES` 的硬编码端点。也就是说，想让现场复位姿态和 1D gripper 映射完全一致，可以把同名 `open/closed` 同步加到集中式 reset JSON。
+
+4. 修改后建议至少跑：
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_o10_aloha_gripper_adapter.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest qiuzhi/tests/test_dual_arm_config.py -q
+```
+
 ## 配置文件
 
 ### 左臂

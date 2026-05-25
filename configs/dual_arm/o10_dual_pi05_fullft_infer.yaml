@@ -5,7 +5,7 @@
 infer:
   policy: pi05
   task_description: dual arm collaborative express parcel sorting
-  model_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_o10_dual_arm_collaborative_express_parcel_sorting_fullft/pretrained_model
+  model_path: /home/phl/workspace/mymodels/agi_arm_bot/pi05_parcel_sort_from_camera_pen_touch_20260522_20260522_195939/checkpoints/020000/pretrained_model
   save_data: false
   display_data: true
   async_infer: true
@@ -25,6 +25,7 @@ robot:
   hand_action_mode: gripper_1d
   allow_camera_read_failures: true
   camera_read_timeout_ms: 35
+  reset_timeout_s: 8.0
   tactile_mode: "none"
   left:
     port: can0

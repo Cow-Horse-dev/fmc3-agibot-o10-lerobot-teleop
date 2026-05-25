@@ -35,6 +35,22 @@ def _install_stub_module(monkeypatch, name: str, **attrs):
     return module
 
 
+def _trigger_gesture_hand_pos(gesture_name: str, handedness: str, state_key: str) -> list[float]:
+    from lerobot_play.utils.o10_hand_control import trigger_gesture_hand_pos
+
+    return trigger_gesture_hand_pos(None, gesture_name, handedness, state_key)
+
+
+def _gripper_value_to_hand_joints(
+    gripper_value: float,
+    gesture_name: str,
+    handedness: str,
+) -> list[float]:
+    from lerobot_play.utils.o10_hand_control import gripper_value_to_hand_joints
+
+    return gripper_value_to_hand_joints(gripper_value, gesture_name, handedness)
+
+
 def _load_dual_arm_module(monkeypatch):
     class FakeArmKdlNumerical:
         def __init__(self, *args, **kwargs):
@@ -81,16 +97,6 @@ def _load_dual_arm_module(monkeypatch):
         monkeypatch,
         "lerobot_play.teleoperators.pico_leader_single_arm_agibot_o10.agibot_o10_hand",
         AgibotO10GloveTeleoperator=FakeAgibotO10GloveTeleoperator,
-    )
-    _install_stub_module(
-        monkeypatch,
-        "lerobot_play.robots.pico_follower_dual_arm_agibot_o10.airbot_pico_follower_dual_arm_agibot_o10",
-        DUAL_ARM_ACTION_FEATURE_NAMES=tuple(f"action_{index}" for index in range(32)),
-        DUAL_ARM_EEF_DELTA_ACTION_FEATURE_NAMES=tuple(f"eef_delta_action_{index}" for index in range(32)),
-        DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES=tuple(f"gripper_action_{index}" for index in range(14)),
-        DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES=tuple(
-            f"eef_delta_gripper_action_{index}" for index in range(14)
-        ),
     )
     def _fake_load_reset_poses(path, side, gesture):
         return [], []
@@ -146,7 +152,7 @@ def test_trigger_gesture_hand_requires_left_trigger_in_left_mode(monkeypatch, si
     teleop.right_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
     teleop.left_hand_teleoperator = None
     teleop.right_hand_teleoperator = None
-    open_state = module.get_agibot_o10_trigger_gesture_joint_angles(
+    open_state = _trigger_gesture_hand_pos(
         "pinch",
         side,
         "open",
@@ -169,7 +175,7 @@ def test_trigger_gesture_hand_requires_left_trigger_in_left_mode(monkeypatch, si
 
     teleop.ctrl["LTr"] = True
     enabled_state = teleop._get_side_joint_pos(side)
-    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+    expected_closed = _trigger_gesture_hand_pos(
         "pinch",
         side,
         "closed",
@@ -275,7 +281,7 @@ def test_trigger_gesture_grip_button_forces_closed_pose(monkeypatch, side):
     setattr(
         teleop,
         f"{side}_commanded_hand_joint_pos",
-        module.get_agibot_o10_trigger_gesture_joint_angles("pinch", side, "open"),
+        _trigger_gesture_hand_pos("pinch", side, "open"),
     )
     teleop._get_commanded_hand_joint_pos = (
         lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
@@ -292,7 +298,7 @@ def test_trigger_gesture_grip_button_forces_closed_pose(monkeypatch, side):
     teleop.ctrl[button_key] = True
 
     state = teleop._get_side_joint_pos(side)
-    expected_closed = module.get_agibot_o10_trigger_gesture_joint_angles(
+    expected_closed = _trigger_gesture_hand_pos(
         "pinch",
         side,
         "closed",
@@ -322,7 +328,7 @@ def test_space_key_closes_left_cylindrical_grasp(monkeypatch):
     teleop.left_lpfs = [SimpleNamespace(sample=lambda now: 0.0) for _ in range(6)]
     teleop.left_hand_teleoperator = None
 
-    open_cylindrical_grasp = module.get_agibot_o10_trigger_gesture_joint_angles(
+    open_cylindrical_grasp = _trigger_gesture_hand_pos(
         "cylindrical",
         "left",
         "open",
@@ -352,7 +358,7 @@ def test_space_key_closes_left_cylindrical_grasp(monkeypatch):
     keyboard_listener.on_press(space_key)
 
     closed_state = teleop._get_side_joint_pos("left")
-    expected_closed_cylindrical_grasp = module.get_agibot_o10_trigger_gesture_joint_angles(
+    expected_closed_cylindrical_grasp = _trigger_gesture_hand_pos(
         "cylindrical",
         "left",
         "closed",
@@ -385,7 +391,7 @@ def test_trigger_gesture_grip_axis_sets_continuous_gripper_value(monkeypatch, si
     setattr(
         teleop,
         f"{side}_commanded_hand_joint_pos",
-        module.get_agibot_o10_trigger_gesture_joint_angles("pinch", side, "open"),
+        _trigger_gesture_hand_pos("pinch", side, "open"),
     )
     teleop._get_commanded_hand_joint_pos = (
         lambda requested_side: getattr(teleop, f"{requested_side}_commanded_hand_joint_pos").copy()
@@ -402,7 +408,7 @@ def test_trigger_gesture_grip_axis_sets_continuous_gripper_value(monkeypatch, si
     teleop.ctrl[grip_key] = 0.5
 
     state = teleop._get_side_joint_pos(side)
-    expected_half_closed = module.agibot_o10_hand_joints_from_gripper_value(
+    expected_half_closed = _gripper_value_to_hand_joints(
         0.5,
         "pinch",
         side,

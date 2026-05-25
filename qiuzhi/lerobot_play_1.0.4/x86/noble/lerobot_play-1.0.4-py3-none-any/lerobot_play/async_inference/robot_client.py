@@ -456,6 +456,8 @@ class RobotClient:
     def _ready_to_send_observation(self):
         """Flags when the client is ready to send an observation"""
         with self.action_queue_lock:
+            if self.action_chunk_size <= 0:
+                return True
             return (
                 self.action_queue.qsize() / self.action_chunk_size
                 <= self._chunk_size_threshold
@@ -492,7 +494,9 @@ class RobotClient:
                 )
                 current_queue_size = self.action_queue.qsize()
 
+            start_send_observation = time.perf_counter()
             _ = self.send_observation(observation)
+            send_observation_time = time.perf_counter() - start_send_observation
 
             self.logger.debug(
                 f"QUEUE SIZE: {current_queue_size} (Must go: {observation.must_go})"
@@ -514,7 +518,9 @@ class RobotClient:
                 )
 
                 self.logger.debug(
-                    f"Ts={observation.get_timestamp():.6f} | Capturing observation took {obs_capture_time:.6f}s"
+                    f"Ts={observation.get_timestamp():.6f} | "
+                    f"Capturing observation took {obs_capture_time:.6f}s | "
+                    f"Sending observation took {send_observation_time:.6f}s"
                 )
 
             return raw_observation
@@ -550,14 +556,35 @@ class RobotClient:
 
             """Control loop: (1) Performing actions, when available"""
             if self.actions_available():
+                start_action_t = time.perf_counter()
                 _performed_action = self.control_loop_action(verbose)
+                action_ms = (time.perf_counter() - start_action_t) * 1000.0
+            else:
+                action_ms = 0.0
 
             """Control loop: (2) Streaming observations to the remote policy server"""
             if self._ready_to_send_observation():
+                start_observation_t = time.perf_counter()
                 _captured_observation = self.control_loop_observation(current_task, verbose)
+                observation_ms = (time.perf_counter() - start_observation_t) * 1000.0
+            else:
+                observation_ms = 0.0
 
+            loop_ms = (time.perf_counter() - control_loop_start) * 1000.0
+            if loop_ms > self.config.environment_dt * 1000.0:
+                with self.action_queue_lock:
+                    action_queue_size = self.action_queue.qsize()
+                self.logger.warning(
+                    "Slow async client loop: loop_ms=%.2f budget_ms=%.2f "
+                    "action_ms=%.2f observation_ms=%.2f action_queue_size=%s",
+                    loop_ms,
+                    self.config.environment_dt * 1000.0,
+                    action_ms,
+                    observation_ms,
+                    action_queue_size,
+                )
             self.logger.debug(
-                f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}"
+                f"Control loop (ms): {loop_ms:.2f}"
             )
             # Dynamically adjust sleep time to maintain the desired control frequency
             time.sleep(

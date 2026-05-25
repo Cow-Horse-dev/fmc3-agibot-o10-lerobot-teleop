@@ -12,7 +12,7 @@
 # - vr_device: pico, pico_wrist；vr_pose_port/vr_ctrl_port/fps/width/height/device_id/canfd_id 为整数。
 # - enable_hand/allow_camera_read_failures/display_data/use_depth: true, false。
 # - hand_mode: glove, trigger_gesture；trigger_gesture/reset_gesture: pinch, tripod, cylindrical。
-# - action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
 # - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
 # - reset_poses_path/index_or_path/serial_number_or_name: 路径或设备名字符串。
 # - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
@@ -28,7 +28,7 @@
 # - teleop.enable_hand: 是否让遥操作端生成手部控制。
 # - teleop.hand_mode: glove 使用手套 10D 数据；trigger_gesture 使用 Pico grip 映射预设手势。
 # - teleop.trigger_gesture: trigger_gesture 模式下 grip 控制的预设手势。
-# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量。
+# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量；eef_absolute 输出绝对末端位姿。
 # - teleop.reset_poses_path / reset_gesture: reset 使用的 JSON 和手势。
 # - robot: follower 机器人端配置，决定实际 CAN、手、相机和 action schema。
 # - robot.type/id: 机器人类型和日志名；单臂 O10 固定使用 pico_follower_single_arm_agibot_o10。
@@ -84,7 +84,7 @@ teleop:
   enable_hand: true
   hand_mode: trigger_gesture  # glove, trigger_gesture
   trigger_gesture: pinch  # pinch, tripod, cylindrical（仅 trigger_gesture 模式生效）
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
 
   # 统一复位姿态 JSON 路径。
   # 同时保存 arm + hand 的起始关节。
@@ -110,7 +110,7 @@ robot:
 
   # 选择"哪只 follower 手/臂"接收控制。
   handedness: left
-  action_control_mode: joint  # joint, eef_delta
+  action_control_mode: joint  # joint, eef_delta, eef_absolute
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：

@@ -11,7 +11,7 @@
 # - replay.episode_index/fps/device_id/canfd_id: 整数。
 # - robot.type: pico_follower_single_arm_agibot_o10；id: 任意日志名字符串。
 # - port: can0/can1 或实际 CAN 口；handedness: left, right。
-# - action_control_mode: joint, eef_delta；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
+# - action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode 有该项时可选 dexterous_10d, gripper_1d。
 # - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
 # - gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
 # - dataset.repo_id: 数据集名字；当 root 已经指向具体目录时可保持 null。
@@ -57,7 +57,7 @@ robot:
 
   # 选择"哪只 follower 手/臂"执行回放。
   handedness: left
-  action_control_mode: joint  # 与数据集 action schema 保持一致：joint, eef_delta
+  action_control_mode: joint  # 与数据集 action schema 保持一致：joint, eef_delta, eef_absolute
 
   # O10 手通道模式。
   # 当前代码真正支持的只有：

@@ -1,8 +1,6 @@
 import time
 import threading
 
-import numpy as np
-
 from lerobot_play.teleoperators.pico_leader_single_arm_eef.pico_leader_single_arm_eef import (
     PicoLeaderSingleArmEEF,
 )
@@ -10,22 +8,30 @@ from lerobot_play.utils.agibot_o10 import (
     AGIBOT_O10_EEF_DELTA_FEATURE_NAMES,
     AGIBOT_O10_ARM_FEATURE_NAMES,
     AGIBOT_O10_HAND_FEATURE_NAMES,
+    agibot_o10_eef_absolute_gripper_action_feature_types,
+    agibot_o10_eef_absolute_action_feature_types,
     agibot_o10_eef_delta_gripper_action_feature_types,
     agibot_o10_eef_delta_action_feature_types,
     agibot_o10_gripper_action_feature_types,
-    agibot_o10_gripper_value_from_hand_joints,
     agibot_o10_joint_action_feature_types,
+    build_agibot_o10_eef_absolute_action_dict,
+    build_agibot_o10_eef_absolute_gripper_action_dict,
     build_agibot_o10_eef_delta_action_dict,
     build_agibot_o10_eef_delta_gripper_action_dict,
     build_agibot_o10_gripper_action_dict,
     build_agibot_o10_joint_action_dict,
-    agibot_o10_hand_joints_from_gripper_value,
-    get_agibot_o10_reset_pose_gesture_joint_angles,
-    get_agibot_o10_trigger_gesture_joint_angles,
     normalize_agibot_o10_action_control_mode,
     normalize_agibot_o10_hand_action_mode,
 )
-from lerobot_play.utils.joint_target_store import PersistentJointTargetStore, load_reset_poses
+from lerobot_play.utils.joint_target_store import PersistentJointTargetStore
+from lerobot_play.utils.o10_hand_control import (
+    default_gripper_gesture,
+    gripper_value_to_hand_joints,
+    hand_joints_to_gripper_value,
+    trigger_gesture_hand_pos,
+)
+from lerobot_play.utils.o10_motion import homogeneous_matrix_to_pose, rpy_from_rotation_matrix
+from lerobot_play.utils.o10_reset import load_o10_reset_targets, normalize_joint_values
 
 from .agibot_o10_hand import AgibotO10GloveTeleoperator
 from .config_pico_leader_single_arm_agibot_o10 import (
@@ -33,18 +39,12 @@ from .config_pico_leader_single_arm_agibot_o10 import (
 )
 
 
-def _rpy_from_rotation_matrix(rotation: np.ndarray) -> list[float]:
-    sy = np.sqrt(rotation[0, 0] * rotation[0, 0] + rotation[1, 0] * rotation[1, 0])
-    singular = sy < 1e-6
-    if not singular:
-        roll = np.arctan2(rotation[2, 1], rotation[2, 2])
-        pitch = np.arctan2(-rotation[2, 0], sy)
-        yaw = np.arctan2(rotation[1, 0], rotation[0, 0])
-    else:
-        roll = np.arctan2(-rotation[1, 2], rotation[1, 1])
-        pitch = np.arctan2(-rotation[2, 0], sy)
-        yaw = 0.0
-    return [float(roll), float(pitch), float(yaw)]
+def get_agibot_o10_trigger_gesture_joint_angles(
+    gesture_name: str,
+    handedness: str,
+    state_key: str,
+) -> list[float]:
+    return trigger_gesture_hand_pos(None, gesture_name, handedness, state_key)
 
 
 class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
@@ -112,6 +112,10 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             if self._hand_action_mode() == "gripper_1d":
                 return agibot_o10_eef_delta_gripper_action_feature_types()
             return agibot_o10_eef_delta_action_feature_types()
+        if self._action_control_mode() == "eef_absolute":
+            if self._hand_action_mode() == "gripper_1d":
+                return agibot_o10_eef_absolute_gripper_action_feature_types()
+            return agibot_o10_eef_absolute_action_feature_types()
         if self._hand_action_mode() == "gripper_1d":
             return agibot_o10_gripper_action_feature_types()
         return agibot_o10_joint_action_feature_types()
@@ -127,18 +131,17 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         )
 
     def _gripper_gesture(self) -> str:
-        return (
-            getattr(self.config, "gripper_gesture", None)
-            or getattr(self.config, "trigger_gesture", None)
-            or getattr(self.config, "reset_gesture", None)
-            or "pinch"
+        return default_gripper_gesture(
+            getattr(self.config, "gripper_gesture", None),
+            getattr(self.config, "trigger_gesture", None),
+            getattr(self.config, "reset_gesture", None),
         )
 
     def _reset_poses_path(self) -> str | None:
         return getattr(self.config, "reset_poses_path", None)
 
     def _hand_joints_to_gripper_value(self, hand_joints: list[float]) -> float:
-        return agibot_o10_gripper_value_from_hand_joints(
+        return hand_joints_to_gripper_value(
             hand_joints,
             self._gripper_gesture(),
             getattr(self.config, "handedness", "right"),
@@ -157,17 +160,20 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             current_pose[0] - self.last_eef_action_pose[0],
             current_pose[1] - self.last_eef_action_pose[1],
             current_pose[2] - self.last_eef_action_pose[2],
-            *_rpy_from_rotation_matrix(relative_rotation),
+            *rpy_from_rotation_matrix(relative_rotation),
         ]
         self.last_eef_action_pose = current_pose
         return [float(value) for value in delta]
+
+    def _current_eef_absolute_action(self) -> list[float]:
+        return [float(value) for value in self.transform_pose]
 
     def _set_commanded_hand_joint_pos(self, joint_pos: list[float]) -> None:
         with self.hand_state_lock:
             self.commanded_hand_joint_pos = joint_pos.copy()
 
     def _set_reset_arm_joint_pos(self, joint_pos: list[float], *, persist: bool) -> list[float]:
-        normalized_joint_pos = self.arm_reset_store.normalize(joint_pos)
+        normalized_joint_pos = normalize_joint_values(self.arm_reset_store, joint_pos)
         self.reset_arm_joint_pos = normalized_joint_pos.copy()
         return normalized_joint_pos
 
@@ -185,7 +191,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         persist: bool,
         sync_commanded: bool,
     ) -> list[float]:
-        normalized_joint_pos = self.hand_reset_store.normalize(joint_pos)
+        normalized_joint_pos = normalize_joint_values(self.hand_reset_store, joint_pos)
         with self.hand_state_lock:
             self.reset_hand_joint_pos = normalized_joint_pos.copy()
             if sync_commanded:
@@ -215,9 +221,9 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         return [self.lpfs[index].sample(now) for index in range(len(AGIBOT_O10_ARM_FEATURE_NAMES))]
 
     def _apply_reset_arm_joint_pos(self, joint_pos: list[float]) -> None:
-        target_joint_pos = self.arm_reset_store.normalize(joint_pos)
+        target_joint_pos = normalize_joint_values(self.arm_reset_store, joint_pos)
         target_pose = self.arm_kdl.forward_kinematics(target_joint_pos[:6])
-        self.transform_pose = self.homogeneous_matrix_to_pose(target_pose).tolist()
+        self.transform_pose = homogeneous_matrix_to_pose(target_pose).tolist()
         now = time.time()
         for index, joint_value in enumerate(target_joint_pos):
             self.lpfs[index].update(now, joint_value)
@@ -231,7 +237,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
             return
 
         try:
-            arm_loaded, hand_loaded = load_reset_poses(
+            arm_loaded, hand_loaded = load_o10_reset_targets(
                 reset_poses_path, self.config.handedness, reset_gesture,
             )
         except Exception as exc:
@@ -268,7 +274,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         stored_joint_pos = None
         if reset_poses_path and reset_gesture:
             try:
-                _, stored_joint_pos = load_reset_poses(
+                _, stored_joint_pos = load_o10_reset_targets(
                     reset_poses_path, self.config.handedness, reset_gesture,
                 )
             except Exception as exc:
@@ -326,12 +332,8 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         return getattr(self.config, "hand_mode", "glove") == "trigger_gesture"
 
     def _get_trigger_gesture_hand_pos(self, state_key: str) -> list[float]:
-        return get_agibot_o10_reset_pose_gesture_joint_angles(
+        return trigger_gesture_hand_pos(
             self._reset_poses_path(),
-            getattr(self.config, "trigger_gesture", "pinch"),
-            self.handedness,
-            state_key,
-        ) or get_agibot_o10_trigger_gesture_joint_angles(
             getattr(self.config, "trigger_gesture", "pinch"),
             self.handedness,
             state_key,
@@ -341,7 +343,7 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
         self,
         gripper_value: float,
     ) -> list[float]:
-        return agibot_o10_hand_joints_from_gripper_value(
+        return gripper_value_to_hand_joints(
             gripper_value,
             getattr(self.config, "trigger_gesture", "pinch"),
             self.handedness,
@@ -434,6 +436,18 @@ class PicoLeaderSingleArmAgibotO10(PicoLeaderSingleArmEEF):
                 )
             return build_agibot_o10_eef_delta_action_dict(
                 [*self._current_eef_delta_action(), *joint_pos[hand_start:]]
+            )
+        if self._action_control_mode() == "eef_absolute":
+            hand_start = len(AGIBOT_O10_ARM_FEATURE_NAMES)
+            if self._hand_action_mode() == "gripper_1d":
+                return build_agibot_o10_eef_absolute_gripper_action_dict(
+                    [
+                        *self._current_eef_absolute_action(),
+                        self._hand_joints_to_gripper_value(joint_pos[hand_start:]),
+                    ]
+                )
+            return build_agibot_o10_eef_absolute_action_dict(
+                [*self._current_eef_absolute_action(), *joint_pos[hand_start:]]
             )
         if self._hand_action_mode() == "gripper_1d":
             hand_start = len(AGIBOT_O10_ARM_FEATURE_NAMES)

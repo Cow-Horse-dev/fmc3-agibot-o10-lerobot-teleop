@@ -1,4 +1,5 @@
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -169,6 +170,29 @@ class _FailingDataset(_DummyDataset):
         raise RuntimeError("Async image writer failed while writing frame")
 
 
+class _SlowSuccessfulRobot(_SuccessfulRobot):
+    def get_observation(self):
+        time.sleep(0.02)
+        return super().get_observation()
+
+    def send_action(self, action):
+        time.sleep(0.02)
+        return super().send_action(action)
+
+
+class _SlowSuccessfulDataset(_DummyDataset):
+    features = {}
+
+    def add_frame(self, frame, use_mcap=False, online_encoding=False):
+        time.sleep(0.02)
+        super().add_frame(frame, use_mcap, online_encoding)
+
+
+class _ExternalStyleDataset(_DummyDataset):
+    def add_frame(self, frame):
+        self.add_frame_calls += 1
+
+
 def test_record_loop_camera_timeout_stops_and_discards_partial_episode(caplog):
     robot = _FailingRobot()
     dataset = _DummyDataset()
@@ -254,3 +278,81 @@ def test_record_loop_dataset_write_failure_discards_partial_episode(caplog):
     assert events["exit_early"] is True
     assert events["discard_episode"] is True
     assert "Dataset write failed during recording" in caplog.text
+
+
+def test_record_loop_accepts_lerobot_dataset_add_frame_signature():
+    robot = _SuccessfulRobot()
+    dataset = _ExternalStyleDataset()
+    events = {
+        "exit_early": False,
+        "reset_robot": False,
+        "stop_recording": False,
+        "rerecord_episode": False,
+        "discard_episode": False,
+        "start": True,
+    }
+
+    record_loop(
+        robot=robot,
+        events=events,
+        fps=30,
+        teleop_action_processor=_IdentityProcessor(),
+        robot_action_processor=_IdentityProcessor(),
+        robot_observation_processor=_IdentityProcessor(),
+        dataset=dataset,
+        teleop=_SuccessfulTeleop(),
+        policy=None,
+        preprocessor=None,
+        postprocessor=None,
+        control_time_s=0.01,
+        single_task="test task",
+        display_data=False,
+        use_mcap=False,
+        online_encoding=False,
+        episode_index=1,
+        total_episodes=1,
+    )
+
+    assert dataset.add_frame_calls == 1
+    assert events["stop_recording"] is False
+    assert events["discard_episode"] is False
+
+
+def test_record_loop_logs_slow_iteration_breakdown(caplog):
+    robot = _SlowSuccessfulRobot()
+    dataset = _SlowSuccessfulDataset()
+    events = {
+        "exit_early": False,
+        "reset_robot": False,
+        "stop_recording": False,
+        "rerecord_episode": False,
+        "discard_episode": False,
+        "start": True,
+    }
+
+    with caplog.at_level("WARNING"):
+        record_loop(
+            robot=robot,
+            events=events,
+            fps=30,
+            teleop_action_processor=_IdentityProcessor(),
+            robot_action_processor=_IdentityProcessor(),
+            robot_observation_processor=_IdentityProcessor(),
+            dataset=dataset,
+            teleop=_SuccessfulTeleop(),
+            policy=None,
+            preprocessor=None,
+            postprocessor=None,
+            control_time_s=0.04,
+            single_task="test task",
+            display_data=False,
+            use_mcap=False,
+            online_encoding=False,
+            episode_index=1,
+            total_episodes=1,
+        )
+
+    assert "Slow record loop" in caplog.text
+    assert "obs_ms=" in caplog.text
+    assert "send_action_ms=" in caplog.text
+    assert "dataset_add_frame_ms=" in caplog.text

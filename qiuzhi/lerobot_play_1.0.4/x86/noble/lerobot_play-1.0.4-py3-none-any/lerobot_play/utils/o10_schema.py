@@ -41,6 +41,20 @@ DUAL_ARM_EEF_DELTA_GRIPPER_ACTION_FEATURE_NAMES = (
     + tuple(f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES)
 )
 
+DUAL_ARM_EEF_ABSOLUTE_ACTION_FEATURE_NAMES = (
+    tuple(f"left.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES)
+    + tuple(f"left.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES)
+    + tuple(f"right.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES)
+    + tuple(f"right.{name}" for name in AGIBOT_O10_HAND_FEATURE_NAMES)
+)
+
+DUAL_ARM_EEF_ABSOLUTE_GRIPPER_ACTION_FEATURE_NAMES = (
+    tuple(f"left.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES)
+    + tuple(f"left.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+    + tuple(f"right.{name}" for name in AGIBOT_O10_POSE_FEATURE_NAMES)
+    + tuple(f"right.{name}" for name in AGIBOT_O10_GRIPPER_FEATURE_NAMES)
+)
+
 DUAL_ARM_JOINT_ONLY_STATE_FEATURE_NAMES = DUAL_ARM_ACTION_FEATURE_NAMES
 DUAL_ARM_GRIPPER_STATE_FEATURE_NAMES = DUAL_ARM_GRIPPER_ACTION_FEATURE_NAMES
 DUAL_ARM_STATE_FEATURE_NAMES = (

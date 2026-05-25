@@ -9,7 +9,7 @@
 # - enable_hand/allow_camera_read_failures/display_data/display_terminal/use_depth: true, false。
 # - arm_trigger_mode: split, left, right, both；hand_mode: glove, trigger_gesture。
 # - trigger_gesture/gripper_gesture/reset_gesture: pinch, tripod, cylindrical。
-# - action_control_mode: joint, eef_delta；hand_action_mode: dexterous_10d, gripper_1d。
+# - action_control_mode: joint, eef_delta, eef_absolute；hand_action_mode: dexterous_10d, gripper_1d。
 # - channel_mode: multiChannel；channel_id: null 或整数，null 自动 left->0、right->1。
 # - reset_poses_path/index_or_path/serial_number_or_name: 路径或设备名字符串。
 # - camera.type: opencv, intelrealsense, realsense；color_mode: RGB/BGR 或 rgb/bgr。
@@ -24,7 +24,7 @@
 # - teleop.arm_trigger_mode: 控臂门控模式，决定 LTr/RTr 如何使能左右臂跟随。
 # - teleop.hand_mode: glove 使用手套 10D 数据；trigger_gesture 使用 Pico grip 映射预设手势。
 # - teleop.trigger_gesture: 默认手势；每侧 left/right 可单独覆盖。
-# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量。
+# - teleop.action_control_mode: joint 输出关节目标；eef_delta 输出末端增量；eef_absolute 输出绝对末端位姿。
 # - teleop.hand_action_mode: dexterous_10d 输出 10 个手关节；gripper_1d 输出 1 个 gripper.pos。
 # - teleop.left/right.handedness: 该侧物理手/臂的左右属性。
 # - teleop.left/right.wrist_pose_source: 该侧机械臂读取哪个 Pico wrist pose。
@@ -57,7 +57,7 @@ teleop:
   arm_trigger_mode: left  # 可选: split, left, right, both
   hand_mode: trigger_gesture  # 可选: glove, trigger_gesture
   trigger_gesture: cylindrical_straight  # 可选: pinch, tripod, cylindrical, cylindrical_straight (仅 trigger_gesture 模式生效)
-  action_control_mode: joint  # 可选: joint, eef_delta
+  action_control_mode: joint  # 可选: joint, eef_delta, eef_absolute
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   left:
     handedness: left  # 可选: left, right
@@ -78,7 +78,7 @@ robot:
   type: pico_follower_dual_arm_agibot_o10  # 可选: pico_follower_dual_arm_agibot_o10
   id: o10_dual  # 机器人端 id
   enable_hand: true  # 可选: true, false
-  action_control_mode: joint  # 可选: joint, eef_delta
+  action_control_mode: joint  # 可选: joint, eef_delta, eef_absolute
   hand_action_mode: gripper_1d  # 可选: dexterous_10d, gripper_1d
   allow_camera_read_failures: true  # 可选: true, false
   left:

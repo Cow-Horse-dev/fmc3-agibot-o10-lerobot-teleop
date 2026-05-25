@@ -76,7 +76,6 @@ from lerobot.cameras.realsense.configuration_realsense import (
 )  # noqa: F401
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
-from .lerobot_dataset import LeRobotDataset
 from .image_writer import safe_stop_image_writer
 try:
     from lerobot.datasets.feature_utils import build_dataset_frame
@@ -106,11 +105,14 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
+try:
+    from lerobot.utils.device_utils import get_safe_torch_device
+except ImportError:
+    from lerobot.utils.utils import get_safe_torch_device
 from .runtime_helpers import build_dataset_features
 from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import (
-    get_safe_torch_device,
     init_logging,
     log_say,
 )
@@ -122,7 +124,38 @@ from lerobot_play.teleoperators.utils import make_teleoperator_from_config
 from lerobot_play.utils.display_filter import filter_display_observation
 from lerobot_play.utils.rerun_control_display import configure_control_rerun_display
 
+try:
+    from .lerobot_dataset import LeRobotDataset
+except ModuleNotFoundError as exc:
+    if exc.name != "mcap":
+        raise
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
 DEFAULT_RECORD_PREVIEW_FPS = 5.0
+
+
+def _clear_episode_buffer(dataset: LeRobotDataset, restart_image_writer: bool = False) -> None:
+    try:
+        dataset.clear_episode_buffer(restart_image_writer=restart_image_writer)
+    except TypeError:
+        dataset.clear_episode_buffer()
+
+
+def _add_frame_to_dataset(
+    dataset: LeRobotDataset,
+    frame: dict[str, Any],
+    use_mcap: bool,
+    online_encoding: bool,
+) -> None:
+    try:
+        dataset.add_frame(frame, use_mcap, online_encoding)
+    except TypeError as exc:
+        if use_mcap or online_encoding:
+            raise
+        try:
+            dataset.add_frame(frame)
+        except TypeError:
+            raise exc
 
 
 def _get_multi_teleop_arm_types() -> tuple[type, ...]:
@@ -178,6 +211,9 @@ class DatasetRecordConfig:
     # Too many threads might cause unstable teleoperation fps due to main thread being blocked.
     # Not enough threads might cause low camera fps.
     num_image_writer_threads_per_camera: int = 4
+    # Maximum queued image frames before recording fails the current episode.
+    # 0 keeps the queue unbounded.
+    num_image_writer_max_queue_size: int = 0
     # Number of episodes to record before batch encoding videos
     # Set to 1 for immediate encoding (default behavior), or higher for batched encoding
     video_encoding_batch_size: int = 1
@@ -423,9 +459,15 @@ def record_loop(
     preview_worker = _RecordPreviewWorker() if display_data else None
     if preview_worker is not None:
         preview_worker.start()
+    warn_loop_period_s = 1.0 / fps
     try:
         while timestamp < control_time_s:
             start_loop_t = time.perf_counter()
+            obs_ms = 0.0
+            action_ms = 0.0
+            send_action_ms = 0.0
+            dataset_add_frame_ms = 0.0
+            preview_ms = 0.0
 
             if events["exit_early"]:
                 events["exit_early"] = False
@@ -443,14 +485,16 @@ def record_loop(
 
             # Get robot observation
             try:
+                start_obs_t = time.perf_counter()
                 obs = robot.get_observation()
+                obs_ms = (time.perf_counter() - start_obs_t) * 1000.0
             except Exception as exc:
                 logging.error(
                     "Camera read failed during recording; stopping current episode without saving partial data: %s",
                     exc,
                 )
                 if dataset is not None:
-                    dataset.clear_episode_buffer(restart_image_writer=True)
+                    _clear_episode_buffer(dataset, restart_image_writer=True)
                 events["discard_episode"] = True
                 events["stop_recording"] = True
                 events["exit_early"] = True
@@ -491,20 +535,25 @@ def record_loop(
                 act_processed_policy: RobotAction = make_robot_action(
                     action_values, loop_dataset_features
                 )
+                action_ms = (time.perf_counter() - start_loop_t) * 1000.0 - obs_ms
 
             elif policy is None and isinstance(teleop, Teleoperator):
+                start_action_t = time.perf_counter()
                 act = teleop.get_action()
 
                 # Applies a pipeline to the raw teleop action, default is IdentityProcessor
                 act_processed_teleop = teleop_action_processor((act, obs))
+                action_ms = (time.perf_counter() - start_action_t) * 1000.0
 
             elif policy is None and isinstance(teleop, list):
+                start_action_t = time.perf_counter()
                 arm_action = teleop_arm.get_action()
                 arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
                 keyboard_action = teleop_keyboard.get_action()
                 base_action = robot._from_keyboard_to_base_action(keyboard_action)
                 act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
                 act_processed_teleop = teleop_action_processor((act, obs))
+                action_ms = (time.perf_counter() - start_action_t) * 1000.0
             else:
                 logging.info(
                     "No policy or teleoperator provided, skipping action generation."
@@ -523,7 +572,9 @@ def record_loop(
             # Action can eventually be clipped using `max_relative_target`,
             # so the robot return value is the source of truth for dataset logging.
             # TODO(steven, pepijn, adil): we should use a pipeline step to clip the action, so the sent action is the action that we input to the robot.
+            start_send_action_t = time.perf_counter()
             sent_action = robot.send_action(robot_action_to_send)
+            send_action_ms = (time.perf_counter() - start_send_action_t) * 1000.0
 
             # Write to dataset
             if dataset is not None:
@@ -532,19 +583,22 @@ def record_loop(
                 )
                 frame = {**observation_frame, **action_frame, "task": single_task}
                 try:
-                    dataset.add_frame(frame, use_mcap, online_encoding)
+                    start_dataset_t = time.perf_counter()
+                    _add_frame_to_dataset(dataset, frame, use_mcap, online_encoding)
+                    dataset_add_frame_ms = (time.perf_counter() - start_dataset_t) * 1000.0
                 except Exception as exc:
                     logging.error(
                         "Dataset write failed during recording; stopping current episode without saving partial data: %s",
                         exc,
                     )
-                    dataset.clear_episode_buffer(restart_image_writer=True)
+                    _clear_episode_buffer(dataset, restart_image_writer=True)
                     events["discard_episode"] = True
                     events["stop_recording"] = True
                     events["exit_early"] = True
                     break
 
             if preview_worker is not None:
+                start_preview_t = time.perf_counter()
                 display_observation = filter_display_observation(obs_processed, camera_keys)
                 preview_worker.submit(
                     observation=display_observation,
@@ -555,8 +609,28 @@ def record_loop(
                     timestamp_s=frame_index / fps,
                     action=sent_action,
                 )
+                preview_ms = (time.perf_counter() - start_preview_t) * 1000.0
 
             dt_s = time.perf_counter() - start_loop_t
+            if dt_s > warn_loop_period_s:
+                image_writer_backlog = None
+                if dataset is not None:
+                    image_writer = getattr(dataset, "image_writer", None)
+                    if image_writer is not None and hasattr(image_writer, "qsize"):
+                        image_writer_backlog = image_writer.qsize()
+                logging.warning(
+                    "Slow record loop: loop_ms=%.2f budget_ms=%.2f "
+                    "obs_ms=%.2f action_ms=%.2f send_action_ms=%.2f "
+                    "dataset_add_frame_ms=%.2f preview_ms=%.2f image_writer_qsize=%s",
+                    dt_s * 1000.0,
+                    warn_loop_period_s * 1000.0,
+                    obs_ms,
+                    action_ms,
+                    send_action_ms,
+                    dataset_add_frame_ms,
+                    preview_ms,
+                    image_writer_backlog,
+                )
             precise_sleep(1 / fps - dt_s)
 
             frame_index += 1
@@ -600,6 +674,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 num_processes=cfg.dataset.num_image_writer_processes,
                 num_threads=cfg.dataset.num_image_writer_threads_per_camera
                 * len(robot.cameras),
+                max_queue_size=cfg.dataset.num_image_writer_max_queue_size,
             )
         sanity_check_dataset_robot_compatibility(
             dataset, robot, cfg.dataset.fps, dataset_features
@@ -617,6 +692,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             image_writer_processes=cfg.dataset.num_image_writer_processes,
             image_writer_threads=cfg.dataset.num_image_writer_threads_per_camera
             * len(robot.cameras),
+            image_writer_max_queue_size=cfg.dataset.num_image_writer_max_queue_size,
             batch_encoding_size=cfg.dataset.video_encoding_batch_size,
         )
 
@@ -691,7 +767,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 log_say("Re-record episode", cfg.play_sounds)
                 events["rerecord_episode"] = False
                 events["exit_early"] = False
-                dataset.clear_episode_buffer(restart_image_writer=True)
+                _clear_episode_buffer(dataset, restart_image_writer=True)
                 continue
 
             if events.get("discard_episode"):
