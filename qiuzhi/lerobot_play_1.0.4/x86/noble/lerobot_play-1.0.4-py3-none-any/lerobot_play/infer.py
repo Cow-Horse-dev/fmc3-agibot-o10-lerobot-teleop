@@ -69,12 +69,15 @@ from .utils.multi_lora import (
 )
 
 
-SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
+OPENPI_JAX_POLICY_TYPE = "openpi_jax"
+OPENPI_JAX_WS_POLICY_TYPE = "openpi_jax_ws"
+LEROBOT_SUPPORTED_POLICIES = ("act", "diffusion", "pi0", "pi05", "smolvla", "groot")
+SUPPORTED_POLICIES = (*LEROBOT_SUPPORTED_POLICIES, OPENPI_JAX_POLICY_TYPE, OPENPI_JAX_WS_POLICY_TYPE)
 O10_ROBOT_TYPES = (
     "pico_follower_single_arm_agibot_o10",
     "pico_follower_dual_arm_agibot_o10",
 )
-POLICIES_WITHOUT_O10_TACTILE = ("pi0", "pi05")
+POLICIES_WITHOUT_O10_TACTILE = ("pi0", "pi05", OPENPI_JAX_POLICY_TYPE, OPENPI_JAX_WS_POLICY_TYPE)
 PEFT_ADAPTER_CONFIG_FILE = "adapter_config.json"
 PEFT_ADAPTER_WEIGHT_FILES = ("adapter_model.safetensors", "adapter_model.bin")
 PALIGEMMA_TOKENIZER_ENV = "ARM_HAND_TELEOP_PALIGEMMA_TOKENIZER"
@@ -127,6 +130,19 @@ def _validate_model_path(model_path: str) -> bool:
             f"in model directory: {model_path}"
         )
 
+    return True
+
+
+def _validate_openpi_jax_checkpoint_path(model_path: str) -> bool:
+    model_path = os.path.expanduser(model_path)
+    if not os.path.isdir(model_path):
+        raise ValueError(f"OpenPI checkpoint path is not a directory: {model_path}")
+    params_path = os.path.join(model_path, "params")
+    if not os.path.isdir(params_path):
+        raise ValueError(f"OpenPI checkpoint params/ not found: {params_path}")
+    assets_path = os.path.join(model_path, "assets")
+    if not os.path.isdir(assets_path):
+        raise ValueError(f"OpenPI checkpoint assets/ not found: {assets_path}")
     return True
 
 
@@ -192,20 +208,20 @@ def _parse_cli_args() -> argparse.Namespace:
         help="Use async inference",
     )
     parser.add_argument(
-        "--num_episodes", type=int, default=1, help="Number of inference episodes"
+        "--num_episodes", type=int, default=None, help="Number of inference episodes"
     )
     parser.add_argument(
         "--episode_time_sec",
         type=int,
-        default=100,
+        default=None,
         help="Duration of each episode in seconds",
     )
-    parser.add_argument("--fps", type=int, default=30, help="Inference FPS")
-    parser.add_argument("--device", type=str, default="cuda", help="Compute device")
+    parser.add_argument("--fps", type=int, default=None, help="Inference FPS")
+    parser.add_argument("--device", type=str, default=None, help="Compute device")
     parser.add_argument(
         "--server_address",
         type=str,
-        default="localhost:8080",
+        default=None,
         help="Server address for async inference",
     )
     parser.add_argument(
@@ -355,15 +371,15 @@ def _load_config(cli: argparse.Namespace) -> dict:
             infer_cfg["display_data"] = True
         if cli.async_infer:
             infer_cfg["async_infer"] = True
-        if cli.num_episodes != 1:
+        if cli.num_episodes is not None:
             infer_cfg["num_episodes"] = cli.num_episodes
-        if cli.episode_time_sec != 100:
+        if cli.episode_time_sec is not None:
             infer_cfg["episode_time_sec"] = cli.episode_time_sec
-        if cli.fps != 30:
+        if cli.fps is not None:
             infer_cfg["fps"] = cli.fps
-        if cli.device != "cuda":
+        if cli.device is not None:
             infer_cfg["device"] = cli.device
-        if cli.server_address != "localhost:8080":
+        if cli.server_address is not None:
             infer_cfg["server_address"] = cli.server_address
         if cli.save_path is not None:
             infer_cfg["save_path"] = cli.save_path
@@ -377,15 +393,15 @@ def _load_config(cli: argparse.Namespace) -> dict:
             infer_cfg["task_switch_config"] = cli.task_switch_config
 
         robot_cfg = cfg.setdefault("robot", {})
-        if cli.robot_type != "airbot_PTK_follower":
+        if cli.robot_type is not None and cli.robot_type != "airbot_PTK_follower":
             robot_cfg["type"] = cli.robot_type
-        if cli.robot_port != "can0":
+        if cli.robot_port is not None and cli.robot_port != "can0":
             robot_cfg["port"] = cli.robot_port
-        if cli.robot_left_arm_port != "can0":
+        if cli.robot_left_arm_port is not None and cli.robot_left_arm_port != "can0":
             robot_cfg["left_arm_port"] = cli.robot_left_arm_port
-        if cli.robot_right_arm_port != "can1":
+        if cli.robot_right_arm_port is not None and cli.robot_right_arm_port != "can1":
             robot_cfg["right_arm_port"] = cli.robot_right_arm_port
-        if cli.robot_id != "PTK_follower":
+        if cli.robot_id is not None and cli.robot_id != "PTK_follower":
             robot_cfg["id"] = cli.robot_id
         if cli.robot_cameras is not None:
             robot_cfg["cameras"] = yaml.safe_load(cli.robot_cameras)
@@ -414,11 +430,11 @@ def _load_config(cli: argparse.Namespace) -> dict:
             "save_data": cli.save_data,
             "display_data": cli.display_data,
             "async_infer": cli.async_infer,
-            "num_episodes": cli.num_episodes,
-            "episode_time_sec": cli.episode_time_sec,
-            "fps": cli.fps,
-            "device": cli.device,
-            "server_address": cli.server_address,
+            "num_episodes": cli.num_episodes if cli.num_episodes is not None else 1,
+            "episode_time_sec": cli.episode_time_sec if cli.episode_time_sec is not None else 100,
+            "fps": cli.fps if cli.fps is not None else 30,
+            "device": cli.device if cli.device is not None else "cuda",
+            "server_address": cli.server_address if cli.server_address is not None else "localhost:8080",
             "save_path": cli.save_path,
             "actions_per_chunk": cli.actions_per_chunk,
             "chunk_size_threshold": cli.chunk_size_threshold
@@ -506,6 +522,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("infer.policy is required")
     if args.policy not in SUPPORTED_POLICIES:
         raise ValueError(f"Unsupported policy type: {args.policy}")
+    if args.policy in {OPENPI_JAX_POLICY_TYPE, OPENPI_JAX_WS_POLICY_TYPE} and not args.async_infer:
+        raise ValueError(f"{args.policy} only supports async inference")
     if not args.task_description:
         raise ValueError("infer.task_description is required")
     if not args.model_path:
@@ -531,7 +549,12 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError(f"Async inference not supported for policy: {args.policy}")
 
     # 验证模型路径
-    _validate_model_path(args.model_path)
+    if args.policy == OPENPI_JAX_POLICY_TYPE:
+        _validate_openpi_jax_checkpoint_path(args.model_path)
+    elif args.policy == OPENPI_JAX_WS_POLICY_TYPE:
+        pass
+    else:
+        _validate_model_path(args.model_path)
 
     # 验证相机配置
     if args.robot_cameras:
@@ -1427,20 +1450,21 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
     # 创建机器人配置
     robot_config = _create_robot_config(args)
-    schema_robot = make_robot_from_config(robot_config)
-    try:
-        robot_features = build_dataset_features(
-            schema_robot,
-            use_videos=bool(getattr(schema_robot, "cameras", {})),
-        )
-        _load_and_validate_policy_config(
-            args.policy,
-            args.model_path,
-            args.device,
-            robot_features,
-        )
-    finally:
-        _disconnect_robot_cameras(schema_robot, label="schema probe")
+    if args.policy not in {OPENPI_JAX_POLICY_TYPE, OPENPI_JAX_WS_POLICY_TYPE}:
+        schema_robot = make_robot_from_config(robot_config)
+        try:
+            robot_features = build_dataset_features(
+                schema_robot,
+                use_videos=bool(getattr(schema_robot, "cameras", {})),
+            )
+            _load_and_validate_policy_config(
+                args.policy,
+                args.model_path,
+                args.device,
+                robot_features,
+            )
+        finally:
+            _disconnect_robot_cameras(schema_robot, label="schema probe")
 
     # 创建客户端配置
     client_cfg = RobotClientConfig(
@@ -1464,7 +1488,12 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         init_rerun(session_name="inference")
 
     # 创建并启动客户端
-    client = RobotClient(client_cfg)
+    if args.policy == OPENPI_JAX_WS_POLICY_TYPE:
+        from .async_inference.openpi_ws_robot_client import OpenPIWebsocketRobotClient
+
+        client = OpenPIWebsocketRobotClient(client_cfg)
+    else:
+        client = RobotClient(client_cfg)
     client.task_switch_coordinator = task_switch_coordinator
     client_robot = getattr(client, "robot", None)
     if client_robot is not None:

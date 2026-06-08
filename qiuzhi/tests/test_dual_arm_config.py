@@ -59,6 +59,7 @@ def test_dual_control_yaml_parses():
         "configs/dual_arm/o10_dual_record.yaml",
         "configs/dual_arm/o10_dual_infer.yaml",
         "configs/dual_arm/o10_dual_pi05_fullft_infer.yaml",
+        "configs/dual_arm/o10_dual_openpi_jax_infer.yaml",
     ],
 )
 def test_o10_top_camera_configs_rotate_physical_camera_upright(config_path):
@@ -244,6 +245,40 @@ def test_dual_pi05_fullft_infer_yaml_uses_async_rtc_schema():
     assert config["robot"]["right"]["gripper_gesture"] == "cylindrical_straight"
     assert config["robot"]["left"]["reset_gesture"] == "cylindrical_straight"
     assert config["robot"]["right"]["reset_gesture"] == "cylindrical_straight"
+
+
+def test_dual_openpi_jax_infer_yaml_matches_parcel_sorting_training_schema():
+    config = _load_config("configs/dual_arm/o10_dual_openpi_jax_infer.yaml")
+
+    assert config["infer"]["policy"] == "openpi_jax"
+    assert config["infer"]["async_infer"] is True
+    assert config["infer"]["fps"] == 30
+    assert config["infer"]["actions_per_chunk"] == 50
+    assert config["infer"]["task_description"] == "sort the express parcels"
+    assert config["infer"]["model_path"] == (
+        "/home/phl/workspace/mymodels/agi_arm_bot/jax/pi05/parcel_sorting_v21_full/130000"
+    )
+    assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["action_control_mode"] == "joint"
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["tactile_mode"] == "none"
+    assert set(config["robot"]["cameras"]) == {"top", "left_wrist", "right_wrist"}
+
+
+def test_dual_openpi_jax_ws_infer_yaml_uses_official_server_schema():
+    config = _load_config("configs/dual_arm/o10_dual_openpi_jax_ws_infer.yaml")
+
+    assert config["infer"]["policy"] == "openpi_jax_ws"
+    assert config["infer"]["async_infer"] is True
+    assert config["infer"]["server_address"] == "localhost:8000"
+    assert config["infer"]["model_path"] == "openpi-websocket"
+    assert config["infer"]["actions_per_chunk"] == 50
+    assert config["infer"]["task_description"] == "sort the express parcels"
+    assert config["robot"]["type"] == "pico_follower_dual_arm_agibot_o10"
+    assert config["robot"]["action_control_mode"] == "joint"
+    assert config["robot"]["hand_action_mode"] == "gripper_1d"
+    assert config["robot"]["tactile_mode"] == "none"
+    assert set(config["robot"]["cameras"]) == {"top", "left_wrist", "right_wrist"}
 
 
 def test_dual_control_and_record_yaml_use_left_trigger_mode_for_two_arm_enable():

@@ -30,6 +30,8 @@ RTC_MAX_GUIDANCE_WEIGHT_ENV = "ARM_HAND_TELEOP_RTC_MAX_GUIDANCE_WEIGHT"
 RTC_PREFIX_ATTENTION_SCHEDULE_ENV = "ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE"
 RTC_DEBUG_ENV = "ARM_HAND_TELEOP_RTC_DEBUG"
 TransferState = services_pb2.TransferState  # type: ignore[attr-defined]
+OPENPI_JAX_POLICY_TYPE = "openpi_jax"
+SUPPORTED_LOCAL_POLICIES = tuple(SUPPORTED_POLICIES) + (OPENPI_JAX_POLICY_TYPE,)
 
 
 def _effective_pretrained_path(model_path: str) -> str:
@@ -42,6 +44,12 @@ def _load_policy(policy_type: str, model_path: str, device: str):
     from lerobot_play.infer import _load_policy as load_policy
 
     return load_policy(policy_type, model_path, device)
+
+
+def _load_openpi_jax_policy(model_path: str, device: str):
+    from lerobot_play.openpi_jax_policy import OpenPIJaxPolicyAdapter
+
+    return OpenPIJaxPolicyAdapter.from_checkpoint(model_path)
 
 
 def _build_policy_preprocessor_overrides(
@@ -242,10 +250,10 @@ class PolicyServer(BasePolicyServer):
                 f"Policy specs must be a RemotePolicyConfig. Got {type(policy_specs)}"
             )
 
-        if policy_specs.policy_type not in SUPPORTED_POLICIES:
+        if policy_specs.policy_type not in SUPPORTED_LOCAL_POLICIES:
             raise ValueError(
                 f"Policy type {policy_specs.policy_type} not supported. "
-                f"Supported policies: {SUPPORTED_POLICIES}"
+                f"Supported policies: {SUPPORTED_LOCAL_POLICIES}"
             )
 
         self.logger.info(
@@ -263,6 +271,21 @@ class PolicyServer(BasePolicyServer):
         self.observation_rename_map = dict(policy_specs.rename_map)
 
         start = time.perf_counter()
+        if self.policy_type == OPENPI_JAX_POLICY_TYPE:
+            self.policy = _load_openpi_jax_policy(
+                policy_specs.pretrained_name_or_path,
+                self.device,
+            )
+            _apply_rtc_env_config(self.policy)
+            self.preprocessor = None
+            self.postprocessor = None
+            self.postprocess_action_dim = getattr(self.policy, "action_dim", None)
+            end = time.perf_counter()
+            self.logger.info(
+                f"Time taken to put OpenPI JAX policy on {self.device}: {end - start:.4f} seconds"
+            )
+            return services_pb2.Empty()
+
         self.policy = _load_policy(
             self.policy_type,
             policy_specs.pretrained_name_or_path,
@@ -327,14 +350,22 @@ class PolicyServer(BasePolicyServer):
             return {}
 
         rtc_config = self.policy.config.rtc_config
+        prev_chunk_left_over = previous_chunk[:, consumed_actions:, :]
+        execution_horizon = rtc_config.execution_horizon
+        if self.policy_type == OPENPI_JAX_POLICY_TYPE:
+            remaining_actions = prev_chunk_left_over.shape[1]
+            fixed_shape_left_over = torch.zeros_like(previous_chunk)
+            fixed_shape_left_over[:, :remaining_actions, :] = prev_chunk_left_over
+            prev_chunk_left_over = fixed_shape_left_over
+            execution_horizon = min(execution_horizon, remaining_actions)
         inference_delay = max(
             1,
             round(float(getattr(self.config, "inference_latency", 0.0)) * self.config.fps),
         )
         return {
-            "prev_chunk_left_over": previous_chunk[:, consumed_actions:, :],
+            "prev_chunk_left_over": prev_chunk_left_over,
             "inference_delay": inference_delay,
-            "execution_horizon": rtc_config.execution_horizon,
+            "execution_horizon": execution_horizon,
         }
 
     def _get_action_chunk(
@@ -358,7 +389,44 @@ class PolicyServer(BasePolicyServer):
 
         return chunk
 
+    def _predict_openpi_jax_action_chunk(self, observation_t):
+        start = time.perf_counter()
+        predict_kwargs = self._rtc_predict_kwargs(observation_t.get_timestep())
+        action_tensor = self.policy.predict_action_chunk_from_raw(
+            observation_t.get_observation(),
+            **predict_kwargs,
+        )
+        if not isinstance(action_tensor, torch.Tensor):
+            action_tensor = torch.as_tensor(action_tensor, dtype=torch.float32)
+        if action_tensor.ndim != 3:
+            action_tensor = action_tensor.unsqueeze(0)
+
+        chunk_size = int(self.actions_per_chunk or action_tensor.shape[1])
+        action_tensor = action_tensor[:, :chunk_size, :].detach().cpu()
+        if self._rtc_enabled():
+            rtc_action_tensor = self.policy.get_last_rtc_action_chunk()
+            if not isinstance(rtc_action_tensor, torch.Tensor):
+                rtc_action_tensor = torch.as_tensor(rtc_action_tensor, dtype=torch.float32)
+            if rtc_action_tensor.ndim != 3:
+                rtc_action_tensor = rtc_action_tensor.unsqueeze(0)
+            self._rtc_previous_action_chunk = rtc_action_tensor[:, :chunk_size, :].detach().cpu()
+            self._rtc_previous_timestep = observation_t.get_timestep()
+        action_chunk = self._time_action_chunk(
+            observation_t.get_timestamp(),
+            list(action_tensor.squeeze(0)),
+            observation_t.get_timestep(),
+        )
+        self.logger.info(
+            f"OpenPI JAX observation {observation_t.get_timestep()} | "
+            f"Total time: {1000 * (time.perf_counter() - start):.2f}ms | "
+            f"action shape: {action_tensor.shape}"
+        )
+        return action_chunk
+
     def _predict_action_chunk(self, observation_t):
+        if self.policy_type == OPENPI_JAX_POLICY_TYPE:
+            return self._predict_openpi_jax_action_chunk(observation_t)
+
         start_prepare = time.perf_counter()
         self._switch_policy_for_task(observation_t.get_observation().get("task"))
         observation = _raw_observation_to_observation_compat(
@@ -436,9 +504,14 @@ def serve(cfg: PolicyServerConfig):
 
     policy_server.logger.info(f"PolicyServer started on {cfg.host}:{cfg.port}")
     server.start()
-    server.wait_for_termination()
-
-    policy_server.logger.info("Server terminated")
+    try:
+        server.wait_for_termination()
+    finally:
+        policy_server.logger.info("Server terminated")
+        policy = getattr(policy_server, "policy", None)
+        close_policy = getattr(policy, "close", None)
+        if close_policy is not None:
+            close_policy()
 
 
 def main() -> None:

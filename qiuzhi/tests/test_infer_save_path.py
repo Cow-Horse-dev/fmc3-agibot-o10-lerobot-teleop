@@ -126,6 +126,152 @@ def test_validate_model_path_expands_user_home(tmp_path, monkeypatch):
     assert _validate_model_path("~/models/agi_arm_bot") is True
 
 
+def test_validate_args_accepts_openpi_jax_checkpoint_without_lerobot_config(tmp_path):
+    checkpoint_dir = tmp_path / "10000"
+    (checkpoint_dir / "params").mkdir(parents=True)
+    (checkpoint_dir / "assets" / "parcel_sorting_v21").mkdir(parents=True)
+
+    args = SimpleNamespace(
+        policy="openpi_jax",
+        task_description="sort the express parcels",
+        model_path=str(checkpoint_dir),
+        num_episodes=1,
+        episode_time_sec=10,
+        fps=30,
+        actions_per_chunk=50,
+        chunk_size_threshold=0.8,
+        async_infer=True,
+        robot_cameras=None,
+        save_path=None,
+        task_switch_config=None,
+    )
+
+    _validate_args(args)
+
+    assert args.model_path == str(checkpoint_dir)
+
+
+def test_validate_args_rejects_openpi_jax_sync_inference(tmp_path):
+    checkpoint_dir = tmp_path / "10000"
+    (checkpoint_dir / "params").mkdir(parents=True)
+    (checkpoint_dir / "assets").mkdir()
+
+    args = SimpleNamespace(
+        policy="openpi_jax",
+        task_description="sort the express parcels",
+        model_path=str(checkpoint_dir),
+        num_episodes=1,
+        episode_time_sec=10,
+        fps=30,
+        actions_per_chunk=50,
+        chunk_size_threshold=0.8,
+        async_infer=False,
+        robot_cameras=None,
+        save_path=None,
+        task_switch_config=None,
+    )
+
+    with pytest.raises(ValueError, match="openpi_jax only supports async inference"):
+        _validate_args(args)
+
+
+def test_validate_args_accepts_openpi_jax_ws_without_local_checkpoint():
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "openpi_jax_ws",
+                "task_description": "sort the express parcels",
+                "model_path": "openpi-websocket",
+                "async_infer": True,
+                "actions_per_chunk": 50,
+                "chunk_size_threshold": 0.8,
+            },
+            "robot": {"cameras": {}},
+        }
+    )
+
+    _validate_args(args)
+
+
+def test_validate_args_rejects_openpi_jax_ws_sync_inference():
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "openpi_jax_ws",
+                "task_description": "sort the express parcels",
+                "model_path": "openpi-websocket",
+                "async_infer": False,
+                "actions_per_chunk": 50,
+                "chunk_size_threshold": 0.8,
+            },
+            "robot": {"cameras": {}},
+        }
+    )
+
+    with pytest.raises(ValueError, match="openpi_jax_ws only supports async inference"):
+        _validate_args(args)
+
+
+def test_load_config_overrides_yaml_num_episodes_when_cli_explicit(tmp_path):
+    import lerobot_play.infer as infer_module
+
+    config_path = tmp_path / "infer.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "infer": {
+                    "policy": "openpi_jax_ws",
+                    "task_description": "sort",
+                    "model_path": "openpi-websocket",
+                    "async_infer": True,
+                    "num_episodes": 100000,
+                    "episode_time_sec": 3600,
+                },
+                "robot": {"type": "pico_follower_dual_arm_agibot_o10"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = infer_module._load_config(
+        SimpleNamespace(
+            yaml=str(config_path),
+            policy=None,
+            task_description=None,
+            model_path=None,
+            save_data=False,
+            display_data=False,
+            async_infer=False,
+            num_episodes=1,
+            episode_time_sec=2,
+            fps=None,
+            device=None,
+            server_address=None,
+            save_path=None,
+            actions_per_chunk=None,
+            chunk_size_threshold=None,
+            debug_visualize_queue_size=False,
+            task_switch_config=None,
+            robot_type=None,
+            robot_port=None,
+            robot_left_arm_port=None,
+            robot_right_arm_port=None,
+            robot_id=None,
+            robot_cameras=None,
+            robot_handedness=None,
+            robot_channel_mode=None,
+            robot_device_id=None,
+            robot_canfd_id=None,
+            robot_channel_id=None,
+            robot_reset_poses_path=None,
+            robot_reset_gesture=None,
+        )
+    )
+
+    assert cfg["infer"]["num_episodes"] == 1
+    assert cfg["infer"]["episode_time_sec"] == 2
+
+
 @pytest.mark.parametrize(
     ("policy_type", "policy_class_name"),
     [
@@ -1004,6 +1150,74 @@ def test_async_inference_resets_robot_before_control_loop(tmp_path, monkeypatch)
     assert events[:3] == ["reset", "start", "control"]
 
 
+def test_async_inference_uses_openpi_websocket_robot_client(monkeypatch):
+    import lerobot_play.infer as infer_module
+    from lerobot_play.async_inference import openpi_ws_robot_client as ws_client_module
+
+    constructed = []
+    control_calls = []
+
+    class FakeOpenPIWebsocketRobotClient:
+        def __init__(self, cfg):
+            constructed.append(cfg)
+            self.robot = SimpleNamespace(cameras={})
+            self.action_queue_size = []
+
+        def start(self):
+            return True
+
+        def receive_actions(self):
+            return None
+
+        def control_loop(self, task, control_time_s=None):
+            control_calls.append((task, control_time_s))
+            return None, None
+
+        def clear_action_queue(self, advance_action_watermark=False):
+            return None
+
+        def stop(self):
+            return None
+
+    monkeypatch.setattr(
+        ws_client_module,
+        "OpenPIWebsocketRobotClient",
+        FakeOpenPIWebsocketRobotClient,
+    )
+    monkeypatch.setattr(infer_module, "_reset_robot_for_inference_start", lambda *args, **kwargs: None)
+    monkeypatch.setattr(infer_module, "visualize_action_queue_size", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        infer_module,
+        "make_robot_from_config",
+        lambda robot_config: pytest.fail("openpi_jax_ws should not schema-probe the robot before client construction"),
+    )
+
+    args = _config_to_args(
+        {
+            "infer": {
+                "policy": "openpi_jax_ws",
+                "task_description": "sort the express parcels",
+                "model_path": "openpi-websocket",
+                "async_infer": True,
+                "num_episodes": 1,
+                "episode_time_sec": 2,
+                "server_address": "127.0.0.1:8000",
+                "actions_per_chunk": 50,
+                "chunk_size_threshold": 0.8,
+            },
+            "robot": {"cameras": {}},
+        }
+    )
+
+    result = _run_async_inference(args)
+
+    assert constructed[0].policy_type == "openpi_jax_ws"
+    assert constructed[0].server_address == "127.0.0.1:8000"
+    assert constructed[0].pretrained_name_or_path == "openpi-websocket"
+    assert control_calls == [("sort the express parcels", 2)]
+    assert result["status"] == "success"
+
+
 def test_reset_to_training_start_maps_gripper_state_to_hand_joints(tmp_path, monkeypatch):
     import lerobot_play.infer as infer_module
 
@@ -1647,6 +1861,88 @@ def test_lerobot_play_async_policy_server_loads_policy_through_project_loader(mo
     assert "TACTILE" not in postprocessor_overrides["unnormalizer_processor"]["norm_map"]
 
 
+def test_lerobot_play_async_policy_server_loads_openpi_jax_without_lerobot_processors(
+    monkeypatch,
+):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import RemotePolicyConfig
+    from lerobot.transport import services_pb2
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    loaded = []
+    fake_policy = SimpleNamespace(action_dim=14)
+
+    def fake_load_openpi_jax_policy(model_path, device):
+        loaded.append((model_path, device))
+        return fake_policy
+
+    monkeypatch.setattr(
+        "lerobot_play.async_inference.policy_server._load_openpi_jax_policy",
+        fake_load_openpi_jax_policy,
+    )
+    monkeypatch.setattr(
+        "lerobot_play.async_inference.policy_server.make_pre_post_processors",
+        lambda *args, **kwargs: pytest.fail("openpi_jax should not use LeRobot processors"),
+    )
+
+    server = PolicyServer(PolicyServerConfig())
+    server.shutdown_event.clear()
+    policy_specs = RemotePolicyConfig(
+        policy_type="openpi_jax",
+        pretrained_name_or_path="/tmp/openpi/checkpoints/10000",
+        lerobot_features={"observation.state": {"dtype": "float32"}},
+        actions_per_chunk=50,
+        device="cuda",
+        rename_map={},
+    )
+    request = services_pb2.PolicySetup(data=pickle.dumps(policy_specs))
+    context = SimpleNamespace(peer=lambda: "test-client")
+
+    server.SendPolicyInstructions(request, context)
+
+    assert loaded == [("/tmp/openpi/checkpoints/10000", "cuda")]
+    assert server.policy is fake_policy
+    assert server.preprocessor is None
+    assert server.postprocessor is None
+    assert server.postprocess_action_dim == 14
+
+
+def test_lerobot_play_async_policy_server_predicts_openpi_jax_from_raw_observation():
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import TimedObservation
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    captured = {}
+
+    class FakeOpenPIJaxPolicy:
+        action_dim = 14
+
+        def predict_action_chunk_from_raw(self, raw_observation):
+            captured["raw_observation"] = raw_observation
+            return torch.arange(2 * 14, dtype=torch.float32).reshape(1, 2, 14)
+
+    server = PolicyServer(PolicyServerConfig())
+    server.policy_type = "openpi_jax"
+    server.policy = FakeOpenPIJaxPolicy()
+    server.actions_per_chunk = 1
+
+    action_chunk = server._predict_action_chunk(
+        TimedObservation(
+            timestamp=1.0,
+            timestep=7,
+            observation={
+                "observation.state": np.zeros(14, dtype=np.float32),
+                "task": "sort the express parcels",
+            },
+        )
+    )
+
+    assert captured["raw_observation"]["task"] == "sort the express parcels"
+    assert len(action_chunk) == 1
+    assert action_chunk[0].get_timestep() == 7
+    assert action_chunk[0].get_action().shape == (14,)
+
+
 def test_lerobot_play_async_policy_server_renames_observation_features_for_legacy_helper(
     monkeypatch,
 ):
@@ -1755,6 +2051,104 @@ def test_lerobot_play_async_policy_server_can_enable_rtc(monkeypatch):
     assert calls[1]["inference_delay"] == 3
     assert calls[1]["execution_horizon"] == 4
     assert calls[1]["prev_chunk_left_over"].shape == (1, 2, 2)
+
+
+def test_lerobot_play_async_policy_server_forwards_rtc_to_openpi_jax():
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot.async_inference.helpers import TimedObservation
+    from lerobot.policies.rtc.configuration_rtc import RTCConfig
+    from lerobot_play.async_inference.policy_server import PolicyServer
+
+    calls = []
+
+    class FakeOpenPIJaxPolicy:
+        def __init__(self):
+            self.config = SimpleNamespace(
+                rtc_config=RTCConfig(enabled=True, execution_horizon=4),
+            )
+            self.action_dim = 2
+            self._last_rtc_action_chunk = None
+
+        def predict_action_chunk_from_raw(self, raw_observation, **kwargs):
+            calls.append((raw_observation, kwargs))
+            self._last_rtc_action_chunk = torch.arange(12, dtype=torch.float32).reshape(1, 3, 4)
+            return torch.zeros((1, 3, 2), dtype=torch.float32)
+
+        def get_last_rtc_action_chunk(self):
+            return self._last_rtc_action_chunk
+
+    server = PolicyServer(PolicyServerConfig(fps=30, inference_latency=0.1))
+    server.policy_type = "openpi_jax"
+    server.policy = FakeOpenPIJaxPolicy()
+    server.actions_per_chunk = 2
+
+    server._predict_action_chunk(
+        TimedObservation(
+            timestamp=0.0,
+            timestep=0,
+            observation={"state": np.zeros(14, dtype=np.float32)},
+        )
+    )
+    server._predict_action_chunk(
+        TimedObservation(
+            timestamp=0.1,
+            timestep=1,
+            observation={"state": np.ones(14, dtype=np.float32)},
+        )
+    )
+
+    assert calls[0][1] == {}
+    assert calls[1][1]["inference_delay"] == 3
+    assert calls[1][1]["execution_horizon"] == 1
+    assert calls[1][1]["prev_chunk_left_over"].shape == (1, 2, 4)
+    assert torch.equal(
+        calls[1][1]["prev_chunk_left_over"][0, 0],
+        torch.arange(4, 8, dtype=torch.float32),
+    )
+    assert torch.equal(
+        calls[1][1]["prev_chunk_left_over"][0, 1],
+        torch.zeros(4, dtype=torch.float32),
+    )
+
+
+def test_lerobot_play_async_policy_server_closes_openpi_policy_on_shutdown(monkeypatch):
+    from lerobot.async_inference.configs import PolicyServerConfig
+    from lerobot_play.async_inference import policy_server as policy_server_module
+
+    calls = []
+
+    class FakePolicy:
+        def close(self):
+            calls.append("policy.close")
+
+    class FakePolicyServer:
+        policy = FakePolicy()
+        logger = SimpleNamespace(
+            info=lambda *args, **kwargs: calls.append("logger.info"),
+        )
+
+    class FakeGrpcServer:
+        def add_insecure_port(self, address):
+            calls.append(("add_insecure_port", address))
+
+        def start(self):
+            calls.append("server.start")
+
+        def wait_for_termination(self):
+            calls.append("server.wait_for_termination")
+
+    monkeypatch.setattr(policy_server_module, "PolicyServer", lambda cfg: FakePolicyServer())
+    monkeypatch.setattr(policy_server_module.grpc, "server", lambda executor: FakeGrpcServer())
+    monkeypatch.setattr(
+        policy_server_module.services_pb2_grpc,
+        "add_AsyncInferenceServicer_to_server",
+        lambda policy_server, server: calls.append("add_servicer"),
+    )
+
+    policy_server_module.serve(PolicyServerConfig(host="127.0.0.1", port=9999))
+
+    assert "server.wait_for_termination" in calls
+    assert calls[-1] == "policy.close"
 
 
 def test_lerobot_play_async_policy_server_trims_pi05_padding_before_postprocess(
