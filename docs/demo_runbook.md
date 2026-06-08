@@ -183,7 +183,48 @@ ARM_HAND_TELEOP_RTC_PREFIX_ATTENTION_SCHEDULE=EXP \
 ./scripts/o10/right_arm/switch_o10_right_fullft_task.sh black_to_yellow
 ```
 
-## 6. 现场恢复命令
+## 6. OpenPI JAX PI0.5 双臂异步推理（D435 top）
+
+用途：运行 OpenPI JAX 版 PI0.5 双臂异步推理，用 D435 作为 top 相机。
+
+任务：
+
+```text
+sort the express parcels
+```
+
+模型：
+
+```text
+/home/phl/workspace/mymodels/agi_arm_bot/jax/pi05/parcel_sorting_v21_full/130000
+```
+
+相机：
+
+- top：Intel RealSense D435，serial `419522071539`，不翻转。
+- left_wrist：Intel RealSense D405，serial `260322276846`。
+- right_wrist：Intel RealSense D405，serial `260322273018`。
+
+启动：
+
+```bash
+cd /home/phl/workspace/arm-hand-teleop
+
+ARM_HAND_TELEOP_OPENPI_WS_PORT=8771 \
+ARM_HAND_TELEOP_OPENPI_JAX_WS_INFER_CONFIG=configs/dual_arm/o10_dual_openpi_jax_ws_infer_top_d435.yaml \
+./scripts/o10/dual_arm/infer_o10_dual_openpi_jax_ws_async.sh
+```
+
+停止：终端按 `Ctrl+C`。脚本会一起清理 OpenPI websocket policy server。
+
+回退普通 USB top 相机时，直接使用默认配置启动：
+
+```bash
+cd /home/phl/workspace/arm-hand-teleop
+./scripts/o10/dual_arm/infer_o10_dual_openpi_jax_ws_async.sh
+```
+
+## 7. 现场恢复命令
 
 查看还在跑的 demo 进程：
 

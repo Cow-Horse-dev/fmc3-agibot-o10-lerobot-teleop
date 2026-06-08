@@ -281,6 +281,20 @@ def test_dual_openpi_jax_ws_infer_yaml_uses_official_server_schema():
     assert set(config["robot"]["cameras"]) == {"top", "left_wrist", "right_wrist"}
 
 
+def test_dual_openpi_jax_ws_top_d435_config_keeps_wrist_cameras_and_no_rotation():
+    config = _load_config("configs/dual_arm/o10_dual_openpi_jax_ws_infer_top_d435.yaml")
+
+    top_camera = config["robot"]["cameras"]["top"]
+    assert config["infer"]["policy"] == "openpi_jax_ws"
+    assert top_camera["type"] == "intelrealsense"
+    assert top_camera["serial_number_or_name"] == "419522071539"
+    assert top_camera["use_depth"] is False
+    assert top_camera["color_mode"] == "rgb"
+    assert top_camera["rotation"] == "NO_ROTATION"
+    assert config["robot"]["cameras"]["left_wrist"]["serial_number_or_name"] == "260322276846"
+    assert config["robot"]["cameras"]["right_wrist"]["serial_number_or_name"] == "260322273018"
+
+
 def test_dual_control_and_record_yaml_use_left_trigger_mode_for_two_arm_enable():
     with open("configs/dual_arm/o10_dual_control.yaml") as f:
         control_config = yaml.safe_load(f)
