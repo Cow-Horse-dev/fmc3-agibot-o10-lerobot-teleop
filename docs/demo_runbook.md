@@ -209,10 +209,11 @@ sort the express parcels
 
 ```bash
 cd /home/phl/workspace/arm-hand-teleop
-
+DISPLAY= PYTHONUNBUFFERED=1 \
 ARM_HAND_TELEOP_OPENPI_WS_PORT=8771 \
 ARM_HAND_TELEOP_OPENPI_JAX_WS_INFER_CONFIG=configs/dual_arm/o10_dual_openpi_jax_ws_infer_top_d435.yaml \
-./scripts/o10/dual_arm/infer_o10_dual_openpi_jax_ws_async.sh
+./scripts/o10/dual_arm/infer_o10_dual_openpi_jax_ws_async.sh 2>&1 | tee /tmp/infer_dbg2.log
+
 ```
 
 停止：终端按 `Ctrl+C`。脚本会一起清理 OpenPI websocket policy server。

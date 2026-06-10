@@ -7,7 +7,7 @@ infer:
   task_description: sort the express parcels
   model_path: openpi-websocket
   save_data: false
-  display_data: true
+  display_data: false
   async_infer: true
   num_episodes: 100000
   episode_time_sec: 3600
