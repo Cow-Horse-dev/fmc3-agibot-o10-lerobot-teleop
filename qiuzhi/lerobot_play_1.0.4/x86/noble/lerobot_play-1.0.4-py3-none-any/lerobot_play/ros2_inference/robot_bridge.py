@@ -9,6 +9,7 @@ import threading
 import time
 
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_srvs.srv import Trigger
@@ -48,6 +49,10 @@ class Ros2RobotBridge(RobotClient):
         super().__init__(config)  # connects robot, builds self.policy_config, queues, barrier
         # The inherited gRPC channel/stub are left unused (insecure_channel is lazy).
 
+        # Serialize ALL robot I/O (send_action/get_observation on the main control
+        # loop vs. return_zero on the spin thread's reset callback) through one lock.
+        self._robot_io_lock = threading.Lock()
+
         self.node = Node("lerobot_robot_bridge")
         self._obs_pub = self.node.create_publisher(Observation, OBS_TOPIC, _best_effort_qos())
         self._schema_pub = self.node.create_publisher(RobotSchema, SCHEMA_TOPIC, _latched_qos())
@@ -56,6 +61,19 @@ class Ros2RobotBridge(RobotClient):
         )
         self.node.create_service(Trigger, "~/reset", self._on_reset)
         self.node.create_service(Trigger, "~/stop", self._on_stop)
+
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self.node)
+
+    # --- robot I/O serialization ---------------------------------------------
+
+    def control_loop_action(self, verbose: bool = False):
+        with self._robot_io_lock:
+            return super().control_loop_action(verbose)
+
+    def control_loop_observation(self, task: str, verbose: bool = False):
+        with self._robot_io_lock:
+            return super().control_loop_observation(task, verbose)
 
     # --- transport overrides -------------------------------------------------
 
@@ -83,28 +101,39 @@ class Ros2RobotBridge(RobotClient):
 
     def receive_actions(self, verbose: bool = False):
         # Satisfy the inherited 2-party start_barrier, then spin so the action
-        # subscription callback fires. This thread is the second barrier party that
-        # control_loop() rendezvous with.
+        # subscription + service callbacks fire. This thread is the second barrier
+        # party that control_loop() rendezvous with.
         self.start_barrier.wait()
         self.node.get_logger().info("ROS2 action receiver spinning")
         while self.running:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            self._executor.spin_once(timeout_sec=0.05)
 
     def stop(self):
         super().stop()  # sets shutdown_event, disconnects robot, closes unused gRPC channel
-        try:
-            self.node.destroy_node()
-        except Exception:  # noqa: BLE001 - best-effort teardown
-            pass
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            try:
+                executor.shutdown()
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                pass
+        node = getattr(self, "node", None)
+        if node is not None:
+            try:
+                node.destroy_node()
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                pass
 
     # --- service handlers ----------------------------------------------------
 
     def _on_reset(self, request, response):
         try:
-            self.robot.return_zero()
+            with self._robot_io_lock:
+                self.clear_action_queue(advance_action_watermark=True)
+                self.robot.return_zero()
             response.success = True
             response.message = "reset complete"
         except Exception as exc:  # noqa: BLE001
+            self.node.get_logger().error(f"reset failed: {exc}")
             response.success = False
             response.message = f"reset failed: {exc}"
         return response
