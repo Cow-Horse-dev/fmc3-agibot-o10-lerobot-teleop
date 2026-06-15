@@ -4,14 +4,11 @@ dummy gRPC request/context shims."""
 
 from __future__ import annotations
 
-import argparse
 import pickle  # nosec - matches the existing gRPC SendPolicyInstructions contract
 import threading
-import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
 from lerobot.async_inference.configs import PolicyServerConfig
 from lerobot.async_inference.helpers import TimedObservation
@@ -106,12 +103,15 @@ def _build_server_config() -> PolicyServerConfig:
     cli_args = _parse_cli_args()
     cfg = _load_config(cli_args)
     args = _config_to_args(cfg)
+    fps = int(getattr(args, "fps", 30))
+    # inference_latency / obs_queue_timeout are not surfaced by the infer YAML/args,
+    # so use sensible defaults matching the async PolicyServer convention.
     return PolicyServerConfig(
         host="0.0.0.0",
         port=0,  # gRPC server is never started; this node uses ROS2 transport.
-        fps=int(getattr(args, "fps", 30)),
-        inference_latency=float(getattr(args, "inference_latency", 1.0 / int(getattr(args, "fps", 30)))),
-        obs_queue_timeout=float(getattr(args, "obs_queue_timeout", 1.0)),
+        fps=fps,
+        inference_latency=1.0 / fps,
+        obs_queue_timeout=1.0,
     )
 
 
