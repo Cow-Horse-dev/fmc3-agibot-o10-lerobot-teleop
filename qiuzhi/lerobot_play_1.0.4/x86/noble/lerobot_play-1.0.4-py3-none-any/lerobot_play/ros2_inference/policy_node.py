@@ -108,7 +108,7 @@ def _build_server_config() -> PolicyServerConfig:
     # so use sensible defaults matching the async PolicyServer convention.
     return PolicyServerConfig(
         host="0.0.0.0",
-        port=0,  # gRPC server is never started; this node uses ROS2 transport.
+        port=8080,  # inert: the gRPC server is never started, but PolicyServerConfig rejects port < 1
         fps=fps,
         inference_latency=1.0 / fps,
         obs_queue_timeout=1.0,

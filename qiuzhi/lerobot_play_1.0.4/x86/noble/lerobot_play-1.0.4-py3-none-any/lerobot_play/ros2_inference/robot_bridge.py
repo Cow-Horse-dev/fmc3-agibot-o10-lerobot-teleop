@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import threading
-import time
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
@@ -146,12 +145,19 @@ class Ros2RobotBridge(RobotClient):
 
 
 def _build_args() -> argparse.Namespace:
-    from lerobot_play.infer import _parse_cli_args, _load_config, _config_to_args, _validate_args
+    from lerobot_play.infer import (
+        _parse_cli_args,
+        _load_config,
+        _config_to_args,
+        _apply_policy_robot_schema_defaults,
+        _validate_args,
+    )
 
     cli_args = _parse_cli_args()
     cfg = _load_config(cli_args)
     args = _config_to_args(cfg)
     args.async_infer = True
+    _apply_policy_robot_schema_defaults(args)
     _validate_args(args)
     return args
 
