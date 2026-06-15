@@ -31,6 +31,8 @@ COMMAND_MODULES = {
     "async_policy_server": "lerobot_play.async_inference.policy_server",
     "control": "lerobot_play.control",
     "train": "lerobot_play.train",
+    "ros2_robot_bridge": "lerobot_play.ros2_inference.robot_bridge",
+    "ros2_policy_node": "lerobot_play.ros2_inference.policy_node",
 }
 
 SCRIPT_COMMANDS = {

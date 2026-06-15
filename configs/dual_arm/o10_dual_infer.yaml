@@ -100,3 +100,11 @@ robot:
       rotation: ROTATE_180
     left_wrist: left_wrist
     right_wrist: right_wrist
+
+# --- ROS2 remote inference bridge (run_lerobot_play.py ros2_robot_bridge / ros2_policy_node) ---
+# Machine B runs the bridge (scripts/o10/dual_arm/ros2_bridge_o10_dual.sh, reads the `robot` block).
+# Machine A runs the policy node (scripts/o10/dual_arm/ros2_policy_o10_dual.sh, reads `infer.fps`).
+# Both must share ROS_DOMAIN_ID and have sourced /opt/ros/jazzy + ros2_ws/install/setup.bash.
+# Topics: /lerobot/observation (BEST_EFFORT), /lerobot/action_chunk (RELIABLE),
+#         /lerobot/robot_schema (latched handshake carrying the policy_type + model_path).
+# model_path must resolve on BOTH machines (B validates/probes it, A loads the checkpoint).
