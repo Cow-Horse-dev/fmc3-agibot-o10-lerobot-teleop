@@ -152,19 +152,23 @@ gRPC `RemotePolicyConfig` does: `policy_type`, `pretrained_name_or_path` (`model
 `lerobot_features`, `actions_per_chunk`, `rename_map`, `task`. A loads the policy and
 builds processors on receipt. This keeps A generic and hardware-free.
 
-`RobotSchema.msg` carries `lerobot_features` and `rename_map` as JSON strings (simple,
-versionable) plus the scalar fields. `model_path` must resolve **on A** (the checkpoint
-lives on A, the GPU host); B only names it.
+`RobotSchema` carries the **pickled `RemotePolicyConfig`** as a byte field, plus a few
+plain fields for logging/visibility. This is the one place pickle is retained: B
+constructs the exact `RemotePolicyConfig` that the reused `SendPolicyInstructions`
+already expects (its `lerobot_features` holds `PolicyFeature` objects that are not
+trivially JSON-serializable), and A unpickles and feeds it to that method unchanged.
+The trade-off is acceptable because the handshake is one-time, on a trusted LAN, and on
+the same repo/version — unlike the high-frequency obs/action path, which stays fully
+typed. `model_path` must resolve **on A** (the checkpoint lives on A, the GPU host); B
+only names it.
 
 ```
 # RobotSchema.msg  — latched startup handshake (replaces gRPC RemotePolicyConfig)
 std_msgs/Header   header
-string            policy_type
-string            model_path            # = pretrained_name_or_path, must resolve on A
-string            lerobot_features      # JSON
-string            rename_map            # JSON
-int64             actions_per_chunk
-string            task
+uint8[]           remote_policy_config  # pickle.dumps(RemotePolicyConfig)
+string            policy_type           # plain copy, for logging/introspection
+string            model_path            # plain copy = pretrained_name_or_path
+int64             actions_per_chunk     # plain copy
 ```
 
 ## Reset / episode / lifecycle
