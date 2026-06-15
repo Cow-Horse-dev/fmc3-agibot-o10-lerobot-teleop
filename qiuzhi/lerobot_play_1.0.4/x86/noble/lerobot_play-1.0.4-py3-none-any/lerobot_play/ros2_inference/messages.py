@@ -28,12 +28,18 @@ class ObservationFields:
 
 @dataclass
 class ActionPointFields:
+    # Wire schema: {int64 timestep, float64[] position}.
+    # Per-point TimedAction.timestamp is NOT transported; see ActionChunkFields.
     timestep: int
     position: list[float]
 
 
 @dataclass
 class ActionChunkFields:
+    # Only the chunk-level timestamp is transported on the wire.
+    # Per-point TimedAction.timestamp is NOT preserved: all actions reconstructed
+    # by unpack_action_chunk carry this single chunk timestamp. Ordering relies on
+    # the integer timestep field in each ActionPointFields, not on timestamps.
     base_timestep: int
     timestamp: float
     joint_names: list[str]
@@ -76,7 +82,7 @@ def pack_observation(obs: TimedObservation) -> ObservationFields:
 
     return ObservationFields(
         timestep=int(obs.get_timestep()),
-        must_go=bool(getattr(obs, "must_go", False)),
+        must_go=bool(getattr(obs, "must_go", False)),  # must_go is set after construction; defensive default
         task=str(raw.get("task", "")),
         timestamp=float(obs.get_timestamp()),
         state_names=state_names,
@@ -103,6 +109,12 @@ def unpack_observation(fields: ObservationFields) -> dict[str, Any]:
 def pack_action_chunk(
     timed_actions: list[TimedAction], joint_names: list[str]
 ) -> ActionChunkFields:
+    """Pack a list of TimedAction into ActionChunkFields for ROS transport.
+
+    Only the chunk-level timestamp (from the first action) is preserved on the
+    wire. Per-point TimedAction.timestamp values are NOT transported; ordering
+    relies on the integer timestep in each ActionPointFields.
+    """
     if not timed_actions:
         raise ValueError("Cannot pack an empty action chunk")
     points = [
@@ -121,6 +133,13 @@ def pack_action_chunk(
 
 
 def unpack_action_chunk(fields: ActionChunkFields) -> list[TimedAction]:
+    """Reconstruct TimedAction list from ActionChunkFields.
+
+    All reconstructed actions carry the chunk-level timestamp (fields.timestamp);
+    per-point timestamps are not available on the wire. This is intentional:
+    TimedAction.timestamp is used only for coarse latency logging, so sharing
+    the chunk timestamp across all points is acceptable. Ordering is by timestep.
+    """
     return [
         TimedAction(
             timestamp=fields.timestamp,

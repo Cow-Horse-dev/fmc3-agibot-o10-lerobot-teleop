@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 
@@ -91,3 +92,31 @@ def test_action_chunk_round_trip_preserves_timesteps_and_positions():
     assert [a.get_timestep() for a in restored] == [5, 6]
     np.testing.assert_allclose(restored[0].get_action().numpy(), [0.1, 0.2, 0.3], atol=1e-6)
     np.testing.assert_allclose(restored[1].get_action().numpy(), [0.4, 0.5, 0.6], atol=1e-6)
+
+
+def test_pack_observation_preserves_timestamp():
+    obs, _ = _make_timed_observation()
+    fields = pack_observation(obs)
+    assert fields.timestamp == 123.5
+
+
+def test_pack_observation_rejects_non_color_array():
+    raw = {"depth": np.zeros((48, 64, 1), dtype=np.uint16)}
+    obs = TimedObservation(timestamp=1.0, observation=raw, timestep=0)
+    with pytest.raises(ValueError):
+        pack_observation(obs)
+
+
+def test_unpack_observation_rejects_corrupt_jpeg():
+    fields = ObservationFields(
+        timestep=0, must_go=False, task="", timestamp=0.0,
+        state_names=[], state_positions=[],
+        image_keys=["top"], image_jpegs=[b"not-a-real-jpeg"],
+    )
+    with pytest.raises(ValueError):
+        unpack_observation(fields)
+
+
+def test_pack_action_chunk_rejects_empty():
+    with pytest.raises(ValueError):
+        pack_action_chunk([], ["a", "b"])
