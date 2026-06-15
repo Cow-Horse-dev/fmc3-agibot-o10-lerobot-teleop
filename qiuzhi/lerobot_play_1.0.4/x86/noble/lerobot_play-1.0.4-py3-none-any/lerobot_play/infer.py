@@ -1444,6 +1444,10 @@ def _run_sync_inference(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
+    return _run_async_inference_with_client_factory(args)
+
+
+def _run_async_inference_with_client_factory(args: argparse.Namespace, client_factory=None) -> Dict[str, Any]:
     """运行异步推理"""
     log_say("Starting asynchronous inference")
     start_time = time.time()
@@ -1488,7 +1492,9 @@ def _run_async_inference(args: argparse.Namespace) -> Dict[str, Any]:
         init_rerun(session_name="inference")
 
     # 创建并启动客户端
-    if args.policy == OPENPI_JAX_WS_POLICY_TYPE:
+    if client_factory is not None:
+        client = client_factory(client_cfg)
+    elif args.policy == OPENPI_JAX_WS_POLICY_TYPE:
         from .async_inference.openpi_ws_robot_client import OpenPIWebsocketRobotClient
 
         client = OpenPIWebsocketRobotClient(client_cfg)
